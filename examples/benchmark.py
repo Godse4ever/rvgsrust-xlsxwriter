@@ -47,7 +47,7 @@ def benchmark_rvgs(data, filename="bench_rvgs.xlsx"):
     wb = RVGSWorkbook()
     ws = wb.add_worksheet()
 
-    fmt = RVGSWorkbook().add_format()
+    fmt = wb.add_format()
     fmt.set_bold()
 
     # Headers
@@ -109,8 +109,7 @@ def main():
     print("=" * 60)
 
     for rows in [1000, 10000, 100000]:
-        print(f"
---- {rows:,} rows ---")
+        print(f"\n--- {rows:,} rows ---")
         data = generate_data(rows)
 
         results = []

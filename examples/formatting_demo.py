@@ -5,7 +5,7 @@ Shows every formatting option available
 """
 from rvgsrust_xlsxwriter import Workbook
 
-wb = Workbook("formatting_demo.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet("Formats")
 
 # Title
@@ -159,5 +159,5 @@ ws.set_column_width(3, 15)
 ws.set_column_width(4, 15)
 ws.set_column_width(5, 15)
 
-wb.close()
+wb.close("formatting_demo.xlsx")
 print("Created: formatting_demo.xlsx")

@@ -26,7 +26,7 @@ df = pd.DataFrame({
 df["Revenue"] = (df["Price"] * df["Quantity"]).round(2)
 
 # Create workbook
-wb = Workbook("pandas_output.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet("Inventory")
 
 # Formats
@@ -107,5 +107,5 @@ ws.set_column_width(5, 14)
 ws.freeze_panes(1, 0)
 ws.autofit()
 
-wb.close()
+wb.close("pandas_output.xlsx")
 print("Created: pandas_output.xlsx")

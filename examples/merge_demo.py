@@ -5,7 +5,7 @@ Shows all merge_range capabilities
 """
 from rvgsrust_xlsxwriter import Workbook
 
-wb = Workbook("merge_demo.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet("Merging")
 
 # Title
@@ -91,5 +91,5 @@ for col in range(2, 7):
 for col in range(7):
     ws.set_column_width(col, 14)
 
-wb.close()
+wb.close("merge_demo.xlsx")
 print("Created: merge_demo.xlsx")

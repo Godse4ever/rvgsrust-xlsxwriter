@@ -6,7 +6,7 @@ Demonstrates: writing, formatting, borders, colors, fonts, merging
 from rvgsrust_xlsxwriter import Workbook
 
 # Create workbook
-wb = Workbook("basic_example.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet("Sales Report")
 
 # Create formats
@@ -79,5 +79,5 @@ ws.freeze_panes(3, 0)
 ws.autofit()
 
 # Close and save
-wb.close()
+wb.close("basic_example.xlsx")
 print("Created: basic_example.xlsx")

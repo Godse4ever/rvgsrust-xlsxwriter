@@ -21,7 +21,7 @@ df = pl.DataFrame({
 })
 
 # Create workbook
-wb = Workbook("polars_output.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet("Employees")
 
 # Header format
@@ -87,5 +87,5 @@ ws.freeze_panes(1, 0)
 # Auto-fit
 ws.autofit()
 
-wb.close()
+wb.close("polars_output.xlsx")
 print("Created: polars_output.xlsx")
