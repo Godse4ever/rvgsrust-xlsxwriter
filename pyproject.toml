@@ -1,0 +1,54 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "rvgsrust-xlsxwriter"
+version = "0.1.0"
+description = "The most feature-complete, Pythonic Rust-powered XLSX library. Built on rust_xlsxwriter."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "RVGS Team", email = "your-email@example.com"},
+]
+keywords = ["excel", "xlsx", "spreadsheet", "rust", "polars", "pandas", "fast"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+pandas = ["pandas>=1.3", "pyarrow>=7.0"]
+polars = ["polars>=0.18"]
+all = ["pandas>=1.3", "polars>=0.18", "pyarrow>=7.0"]
+dev = ["pytest>=7.0", "pytest-benchmark>=4.0", "black", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter"
+Documentation = "https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter#readme"
+Repository = "https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter"
+Issues = "https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter/issues"
+
+[tool.maturin]
+python-source = "python"
+module-name = "rvgsrust_xlsxwriter._core"
+manifest-path = "Cargo.toml"
+compatibility = "manylinux2014"
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100

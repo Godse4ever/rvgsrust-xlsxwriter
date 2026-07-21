@@ -1,0 +1,28 @@
+[package]
+name = "rvgsrust-xlsxwriter"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Python bindings for rust_xlsxwriter - feature-complete XLSX writing"
+repository = "https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter"
+
+[lib]
+name = "rvgsrust_xlsxwriter"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
+rust_xlsxwriter = { version = "0.86", features = ["constant_memory", "zlib"] }
+# Arrow support for zero-copy DataFrame writing
+arrow = { version = "54.0", optional = true }
+pyo3-arrow = { version = "0.8", optional = true }
+
+[features]
+default = ["arrow"]
+arrow = ["dep:arrow", "dep:pyo3-arrow"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
