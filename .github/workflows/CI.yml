@@ -19,7 +19,7 @@ jobs:
         python-version: '3.11'
 
     - name: Set up Rust
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
 
     - name: Install dependencies
       run: |
@@ -33,12 +33,19 @@ jobs:
       run: |
         pytest tests/ -v
 
+  # This crate builds against pyo3's stable ABI (abi3-py38, see
+  # Cargo.toml), which means a single wheel per OS/architecture works
+  # across Python 3.8-3.12 -- there is no need to rebuild once per
+  # Python version like a non-abi3 extension would. The previous
+  # version of this job matrixed over both `os` and `python-version`
+  # (3 x 5 = 15 redundant builds producing 15 near-identical wheels);
+  # matrixing on `os` alone cuts CI compute roughly 5x for the same
+  # published artifacts.
   build-wheels:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
 
     steps:
     - uses: actions/checkout@v4
@@ -46,10 +53,10 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: '3.11'
 
     - name: Set up Rust
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
 
     - name: Install maturin
       run: pip install maturin
@@ -60,7 +67,7 @@ jobs:
     - name: Upload wheels
       uses: actions/upload-artifact@v4
       with:
-        name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+        name: wheels-${{ matrix.os }}
         path: target/wheels/*.whl
 
   publish:
@@ -77,7 +84,7 @@ jobs:
         python-version: '3.11'
 
     - name: Set up Rust
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
 
     - name: Install maturin
       run: pip install maturin
