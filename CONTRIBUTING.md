@@ -14,7 +14,7 @@ Thank you for your interest in contributing! This project is built with Rust (Py
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter.git
+git clone https://github.com/Godse4ever/rvgsrust-xlsxwriter.git
 cd rvgsrust-xlsxwriter
 
 # Build and install in development mode

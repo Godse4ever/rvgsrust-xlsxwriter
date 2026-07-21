@@ -24,7 +24,7 @@ Quick Start
 -----------
     from rvgsrust_xlsxwriter import Workbook
 
-    wb = Workbook("report.xlsx")
+    wb = Workbook()
     ws = wb.add_worksheet("Sheet1")
 
     fmt = wb.add_format()
@@ -37,7 +37,7 @@ Quick Start
     ws.merge_range(1, 0, 1, 2, "Merged Cell", fmt)
     ws.autofit()
 
-    wb.close()
+    wb.close("report.xlsx")
 
 """
 

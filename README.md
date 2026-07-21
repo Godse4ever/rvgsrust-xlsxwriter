@@ -161,7 +161,7 @@ ws.write_formula(5, 0, "=SUM(A1:A4)")
 ws.write_formula(5, 1, "=AVERAGE(B1:B4)", money_format)
 
 # Hyperlink
-ws.write_url(6, 0, "https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter")
+ws.write_url(6, 0, "https://github.com/Godse4ever/rvgsrust-xlsxwriter")
 ```
 
 ### Dates & Times
