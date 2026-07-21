@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Python bindings for rust_xlsxwriter - feature-complete XLSX writing"
-repository = "https://github.com/YOUR_USERNAME/rvgsrust-xlsxwriter"
+repository = "https://github.com/Godse4ever/rvgsrust-xlsxwriter"
 
 [lib]
 name = "rvgsrust_xlsxwriter"
@@ -12,14 +12,23 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
-rust_xlsxwriter = { version = "0.86", features = ["constant_memory", "zlib"] }
-# Arrow support for zero-copy DataFrame writing
-arrow = { version = "54.0", optional = true }
-pyo3-arrow = { version = "0.8", optional = true }
-
-[features]
-default = ["arrow"]
-arrow = ["dep:arrow", "dep:pyo3-arrow"]
+# Pinned to 0.75 deliberately: as of this writing, rust_xlsxwriter 0.86
+# requires `zip ^2.5`, and no 2.x release of `zip` currently satisfies
+# that constraint on crates.io (only pre-2.x and 8.x/9.0-pre are
+# published), so `cargo build` fails dependency resolution on 0.86
+# outright. Re-verify and bump this once that's resolved upstream --
+# some worksheet method signatures changed between 0.75 and later
+# releases (e.g. write_string/write_number/write_boolean gained
+# `_with_format` counterparts instead of an Option<&Format> parameter),
+# so re-check src/lib.rs against whatever version you land on.
+rust_xlsxwriter = { version = "0.75", features = ["zlib"] }
+# NOTE: native Arrow-based zero-copy DataFrame writing is planned (see
+# python/rvgsrust_xlsxwriter/dataframe.py) but not implemented yet -- the
+# `arrow`/`pyo3-arrow` deps were declared but never referenced from src/,
+# and pyo3-arrow 0.8's pyo3 ^0.24 requirement conflicts with the pyo3 0.22
+# pinned below (cargo refuses to link two `pyo3-ffi` versions at once).
+# Re-add both once this crate is upgraded to pyo3 0.24+, or once a
+# pyo3-arrow release compatible with pyo3 0.22 is available.
 
 [profile.release]
 lto = true
