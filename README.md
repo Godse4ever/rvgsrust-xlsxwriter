@@ -102,6 +102,26 @@ wb.close()
 
 ## Features
 
+### Bulk Writes (recommended for large datasets)
+
+```python
+data = [
+    {"Name": "Alice", "Department": "Engineering", "Salary": 95000},
+    {"Name": "Bob", "Department": "Sales", "Salary": 72000},
+    # ... thousands more rows
+]
+
+header_fmt = wb.add_format()
+header_fmt.set_bold()
+
+# One call for the entire dataset, instead of one write() call per
+# cell -- this is the fast path, see Benchmarks below.
+ws.write_records(0, 0, data, header_format=header_fmt)
+
+# Column order/subset and header row are both optional:
+ws.write_records(0, 0, data, headers=["Name", "Salary"], write_header=False)
+```
+
 ### Complete Formatting
 
 ```python
@@ -137,6 +157,9 @@ fmt.set_rotation(45)
 fmt.set_num_format("$#,##0.00")
 fmt.set_num_format("0.00%")
 fmt.set_num_format("yyyy-mm-dd")
+
+# All setters return self, so they chain:
+wb.add_format().set_bold().set_font_size(12).set_background_color("#4472C4")
 ```
 
 ### Cell Merging
@@ -257,15 +280,34 @@ Run the included benchmark to see performance on your machine:
 python examples/benchmark.py
 ```
 
-**Expected results** (your machine may vary):
+**Use `write_records()` for bulk data, not per-cell `write()`.** `write_records()`
+takes an entire list of dicts in a single Python->Rust call instead of one call per
+cell, which matters a lot at scale:
 
-| Rows | xlsxwriter (Python) | rustpy-xlsxwriter | rvgsrust-xlsxwriter |
-|------|--------------------|--------------------|---------------------|
-| 1,000 | ~0.05s | ~0.007s | ~0.007s |
-| 10,000 | ~0.5s | ~0.07s | ~0.07s |
-| 100,000 | ~5s | ~0.7s | ~0.7s |
+```python
+ws.write_records(0, 0, data, header_format=header_fmt)  # one call for the whole sheet
+```
 
-All Rust-based libraries are in the same performance tier. The difference is **features**, not speed.
+**Measured results** (this repo's sandbox; single core, your machine will vary --
+mean of 3 runs after a discarded warmup run):
+
+| Rows | xlsxwriter (Python) | rvgsrust (`write_records`, bulk) | rvgsrust (`write`, per-cell) | rustpy-xlsxwriter |
+|------|--------------------|-----------------------------------|-------------------------------|--------------------|
+| 1,000 | 0.036s | 0.0043s | 0.0050s | 0.0031s |
+| 10,000 | 0.266s | 0.0440s | 0.0486s | 0.0268s |
+| 100,000 | 2.821s | 0.550s | 0.562s | 0.269s |
+
+Honest take: both Rust-backed libraries are 5-10x faster than pure-Python
+`xlsxwriter`. Between the two, `rustpy-xlsxwriter` is currently ~1.7-2x faster than
+`rvgsrust-xlsxwriter` at this dataset size, even using the bulk `write_records()`
+path. The remaining gap traces to `rustpy-xlsxwriter` building against
+`rust_xlsxwriter`'s `constant_memory` feature (streams rows instead of buffering the
+whole sheet) plus a newer `zip`/`pyo3` stack -- this repo is currently pinned to
+`rust_xlsxwriter 0.75` because later versions' `zip` requirement doesn't resolve
+against a Rust toolchain older than ~1.85 (see the comment in `Cargo.toml`). On a
+machine with a current Rust toolchain, bumping to `rust_xlsxwriter 0.95` with
+`features = ["constant_memory", "zmij", "zlib"]` is untested here but worth trying,
+and should close most or all of the remaining gap.
 
 ---
 

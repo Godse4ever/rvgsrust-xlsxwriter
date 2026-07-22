@@ -12,12 +12,22 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
-# Pinned to 0.75 deliberately: as of this writing, rust_xlsxwriter 0.86
-# requires `zip ^2.5`, and no 2.x release of `zip` currently satisfies
-# that constraint on crates.io (only pre-2.x and 8.x/9.0-pre are
-# published), so `cargo build` fails dependency resolution on 0.86
-# outright. Re-verify and bump this once that's resolved upstream --
-# some worksheet method signatures changed between 0.75 and later
+# Pinned to 0.75 deliberately. rust_xlsxwriter 0.76-0.86 all require
+# `zip ^2.5`, which no currently-published zip release satisfies, so
+# `cargo build` fails dependency resolution outright on any of those.
+# Confirmed this is fixed upstream by 0.95.0 (resolves to zip 7.2.0,
+# per rustpy-xlsxwriter's own Cargo.lock, which uses that exact
+# combination) -- but 0.95's dependency tree pulls in transitive
+# crates (getrandom, tempfile, rustix, etc.) whose Cargo.toml manifests
+# require the `edition2024` Cargo feature, unsupported by the Rust
+# 1.75 toolchain available in this sandbox (no network path here to
+# rustup.rs to get a newer one). On a machine with a current Rust
+# toolchain (1.85+), bumping straight to 0.95 with
+# features = ["constant_memory", "zmij", "zlib"] should work and is
+# worth trying -- constant_memory in particular is likely to help
+# performance on large sheets, and is what rustpy-xlsxwriter itself
+# uses.
+# Some worksheet method signatures changed between 0.75 and later
 # releases (e.g. write_string/write_number/write_boolean gained
 # `_with_format` counterparts instead of an Option<&Format> parameter),
 # so re-check src/lib.rs against whatever version you land on.
