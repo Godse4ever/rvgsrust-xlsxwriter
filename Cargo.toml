@@ -32,13 +32,40 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 # `_with_format` counterparts instead of an Option<&Format> parameter),
 # so re-check src/lib.rs against whatever version you land on.
 rust_xlsxwriter = { version = "0.75", features = ["zlib"] }
-# NOTE: native Arrow-based zero-copy DataFrame writing is planned (see
-# python/rvgsrust_xlsxwriter/dataframe.py) but not implemented yet -- the
-# `arrow`/`pyo3-arrow` deps were declared but never referenced from src/,
-# and pyo3-arrow 0.8's pyo3 ^0.24 requirement conflicts with the pyo3 0.22
-# pinned below (cargo refuses to link two `pyo3-ffi` versions at once).
-# Re-add both once this crate is upgraded to pyo3 0.24+, or once a
-# pyo3-arrow release compatible with pyo3 0.22 is available.
+
+# Native Arrow zero-copy DataFrame support (write_dataframe()). Reads
+# via the Arrow PyCapsule Interface (__arrow_c_stream__), so no per-cell
+# Python object extraction is needed for pyarrow.Table, pandas.DataFrame
+# (2.x+), or polars.DataFrame (via .to_arrow()). Deliberately NOT using
+# arrow's own `pyarrow` cargo feature (which would pull in `pyo3 ^0.23`
+# and conflict with the pyo3 0.22 pinned above, the same trap
+# `pyo3-arrow` was in) -- instead this reads the PyCapsule ourselves via
+# pyo3 0.22's own PyCapsule type and arrow's plain (non-pyo3) `ffi`
+# feature. See src/lib.rs's record_batches_from_arrow() for the
+# capsule-ownership handling, and the Roadmap in README.md for which
+# Arrow types are and aren't supported yet (currently: int64, float64,
+# string/utf8, large_utf8, bool).
+arrow = { version = "54.0", features = ["ffi"] }
+# Transitive pins, both required only by this sandbox's old (apt-
+# installed, 1.75) cargo -- newer indexmap/half releases need Cargo
+# features or a rustc version this toolchain doesn't have. Likely
+# removable on a machine with a current Rust toolchain.
+#
+# Toolchain note: in this same sandbox, `cargo check`/`cargo build`
+# work fine with these two pins, but `cargo metadata` (which maturin
+# calls internally) additionally resolves dependencies for every target
+# platform up front -- including wasm32 -- and hits a *third* crate
+# (wit-bindgen, pulled in transitively for wasm targets this project
+# never builds for) with the same edition2024 requirement, with no
+# amount of pinning able to satisfy it here. Built successfully instead
+# via `cargo build --release` directly + manually placing the resulting
+# .so, bypassing maturin's metadata step. This is specific to this
+# sandbox's outdated apt-installed cargo (1.75) -- the CI workflow in
+# .github/workflows/CI.yml uses dtolnay/rust-toolchain@stable, i.e. a
+# current Rust toolchain, so `maturin develop`/`build` should work
+# there without any of this.
+indexmap = "=2.6.0"
+half = "=2.4.1"
 
 [profile.release]
 lto = true

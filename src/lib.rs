@@ -1,6 +1,9 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods, PyString};
+use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
+use arrow::array::{Array, BooleanArray, Float64Array, Int64Array, LargeStringArray, RecordBatch, StringArray};
+use arrow::datatypes::DataType as ArrowDataType;
+use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use rust_xlsxwriter::{
     Color, FormatAlign, FormatBorder, FormatPattern,
     Workbook as RustWorkbook, Worksheet as RustWorksheet, Format as RustFormat,
@@ -158,8 +161,144 @@ fn merge_value(
 }
 
 // ============================================
-// FORMAT CLASS
+// ARROW ZERO-COPY DATAFRAME READING
 // ============================================
+// Reads a Polars/Pandas/PyArrow object into native arrow-rs RecordBatches
+// via the Arrow PyCapsule Interface (__arrow_c_stream__), without
+// extracting individual Python objects per cell. This is Phase 1: it
+// supports the four core types (int64, float64, string, bool) that
+// exercise the full read -> classify -> write path end to end; wider
+// type coverage (unsigned ints, dates/timestamps, decimals) is tracked
+// as follow-up work, not attempted here.
+
+/// Pulls RecordBatches out of any object exposing `__arrow_c_stream__`
+/// (pyarrow.Table, pandas.DataFrame 2.x+) or a `.to_arrow()` method
+/// (polars.DataFrame, which returns a pyarrow object with the capsule
+/// method).
+fn record_batches_from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch>> {
+    let stream_source: Bound<'_, PyAny> = if obj.hasattr("__arrow_c_stream__")? {
+        obj.clone()
+    } else if obj.hasattr("to_arrow")? {
+        obj.call_method0("to_arrow")?
+    } else {
+        return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "write_dataframe() expects an object exposing __arrow_c_stream__ \
+             (pyarrow.Table, pandas.DataFrame) or a .to_arrow() method (polars.DataFrame)",
+        ));
+    };
+
+    let capsule_obj = stream_source.call_method0("__arrow_c_stream__")?;
+    let capsule = capsule_obj.downcast::<PyCapsule>().map_err(|_| {
+        PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "__arrow_c_stream__() did not return a PyCapsule",
+        )
+    })?;
+
+    let raw_ptr = capsule.pointer() as *mut FFI_ArrowArrayStream;
+    if raw_ptr.is_null() {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "__arrow_c_stream__() returned a null pointer",
+        ));
+    }
+
+    // SAFETY: raw_ptr points at a valid, producer-allocated
+    // ArrowArrayStream C struct for the lifetime of `capsule_obj` (which
+    // we're still holding above). ptr::read takes a bitwise copy of the
+    // struct -- including its function-pointer callbacks and
+    // private_data pointer -- giving us an owned FFI_ArrowArrayStream
+    // whose Drop impl will call the stream's release() callback exactly
+    // once. Per the Arrow C Data Interface spec, once a consumer takes
+    // ownership this way it MUST null out the *original* struct's
+    // release field so the capsule's own destructor doesn't invoke
+    // release() a second time on the same private_data (a double-free).
+    let stream: FFI_ArrowArrayStream = unsafe {
+        let s = std::ptr::read(raw_ptr);
+        (*raw_ptr).release = None;
+        s
+    };
+
+    let reader = ArrowArrayStreamReader::try_new(stream).map_err(to_pyerr)?;
+    reader
+        .collect::<std::result::Result<Vec<RecordBatch>, arrow::error::ArrowError>>()
+        .map_err(to_pyerr)
+}
+
+/// A typed reference into one column of a RecordBatch, resolved once per
+/// batch rather than re-checked on every cell.
+enum ArrowColumn<'a> {
+    Int64(&'a Int64Array),
+    Float64(&'a Float64Array),
+    Utf8(&'a StringArray),
+    LargeUtf8(&'a LargeStringArray),
+    Bool(&'a BooleanArray),
+}
+
+fn resolve_arrow_column(array: &dyn Array) -> PyResult<ArrowColumn<'_>> {
+    match array.data_type() {
+        ArrowDataType::Int64 => Ok(ArrowColumn::Int64(
+            array.as_any().downcast_ref::<Int64Array>().unwrap(),
+        )),
+        ArrowDataType::Float64 => Ok(ArrowColumn::Float64(
+            array.as_any().downcast_ref::<Float64Array>().unwrap(),
+        )),
+        ArrowDataType::Utf8 => Ok(ArrowColumn::Utf8(
+            array.as_any().downcast_ref::<StringArray>().unwrap(),
+        )),
+        ArrowDataType::LargeUtf8 => Ok(ArrowColumn::LargeUtf8(
+            array.as_any().downcast_ref::<LargeStringArray>().unwrap(),
+        )),
+        ArrowDataType::Boolean => Ok(ArrowColumn::Bool(
+            array.as_any().downcast_ref::<BooleanArray>().unwrap(),
+        )),
+        other => Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+            "write_dataframe(): column type {other:?} isn't supported yet \
+             (supported in this initial implementation: int64, float64, \
+             string/utf8, large_utf8, bool)"
+        ))),
+    }
+}
+
+fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
+    match col {
+        ArrowColumn::Int64(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Num(a.value(row) as f64)
+            }
+        }
+        ArrowColumn::Float64(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Num(a.value(row))
+            }
+        }
+        ArrowColumn::Utf8(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Str(a.value(row).to_string())
+            }
+        }
+        ArrowColumn::LargeUtf8(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Str(a.value(row).to_string())
+            }
+        }
+        ArrowColumn::Bool(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Bool(a.value(row))
+            }
+        }
+    }
+}
+
+
 #[pyclass]
 struct Format {
     inner: RustFormat,
@@ -546,6 +685,90 @@ impl Worksheet {
                     .map_err(to_pyerr)?;
             }
             row_cursor += 1;
+        }
+
+        Ok(())
+    }
+
+    // Zero-copy bulk write from a Polars/Pandas/PyArrow object, via the
+    // Arrow PyCapsule Interface. Unlike write_records(), which still
+    // does a PyO3 extract() per cell, this reads directly from Arrow's
+    // native columnar buffers -- no Python object is touched once the
+    // initial __arrow_c_stream__() call hands over the data. Phase 1:
+    // supports int64/float64/string/bool columns; see the README's
+    // Roadmap for wider type coverage.
+    #[pyo3(signature = (start_row, start_col, data, header_format=None, write_header=true))]
+    fn write_dataframe(
+        &self,
+        py: Python<'_>,
+        start_row: u32,
+        start_col: u16,
+        data: &Bound<'_, PyAny>,
+        header_format: Option<&Format>,
+        write_header: bool,
+    ) -> PyResult<()> {
+        let batches = record_batches_from_arrow(data)?;
+        if batches.is_empty() {
+            return Ok(());
+        }
+
+        let schema = batches[0].schema();
+        let field_names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
+
+        // Check every column's type up front so we fail with one clear
+        // error instead of partway through a partially-written sheet.
+        for field in schema.fields() {
+            match field.data_type() {
+                ArrowDataType::Int64
+                | ArrowDataType::Float64
+                | ArrowDataType::Utf8
+                | ArrowDataType::LargeUtf8
+                | ArrowDataType::Boolean => {}
+                other => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
+                        "write_dataframe(): column '{}' has type {other:?}, \
+                         which isn't supported yet (supported: int64, \
+                         float64, string/utf8, large_utf8, bool)",
+                        field.name()
+                    )));
+                }
+            }
+        }
+
+        let head_fmt = header_format.map(|f| f.inner.clone());
+
+        let wb_ref = self.workbook.borrow(py);
+        let mut wb = wb_ref.inner.borrow_mut();
+        let sheet = wb.worksheet_from_index(self.index).map_err(to_pyerr)?;
+
+        let mut row_cursor = start_row;
+        if write_header {
+            for (i, name) in field_names.iter().enumerate() {
+                write_value(
+                    sheet,
+                    row_cursor,
+                    start_col + i as u16,
+                    &CellValue::Str(name.clone()),
+                    head_fmt.as_ref(),
+                )
+                .map_err(to_pyerr)?;
+            }
+            row_cursor += 1;
+        }
+
+        for batch in &batches {
+            let columns: Vec<ArrowColumn<'_>> = (0..batch.num_columns())
+                .map(|c| resolve_arrow_column(batch.column(c).as_ref()))
+                .collect::<PyResult<Vec<_>>>()?;
+
+            for r in 0..batch.num_rows() {
+                for (c, col) in columns.iter().enumerate() {
+                    let cv = arrow_cell_value(col, r);
+                    write_value(sheet, row_cursor, start_col + c as u16, &cv, None)
+                        .map_err(to_pyerr)?;
+                }
+                row_cursor += 1;
+            }
         }
 
         Ok(())
