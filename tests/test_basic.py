@@ -224,3 +224,59 @@ def test_write_out_of_bounds_raises():
     ws = wb.add_worksheet()
     with pytest.raises(Exception):
         ws.write(2_000_000, 0, "too far down")
+
+
+def test_write_records_basic():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    records = [
+        {"Name": "Alice", "Age": 30, "Active": True},
+        {"Name": "Bob", "Age": 25, "Active": False},
+    ]
+    ws.write_records(0, 0, records)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert [c.value for c in sheet[1]] == ["Name", "Age", "Active"]
+    assert [c.value for c in sheet[2]] == ["Alice", 30, True]
+    assert [c.value for c in sheet[3]] == ["Bob", 25, False]
+
+
+def test_write_records_explicit_headers_and_no_header_row():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    records = [{"a": 1, "b": 2, "c": 3}]
+    # Explicit headers control column order/subset; write_header=False
+    # skips the header row entirely.
+    ws.write_records(0, 0, records, headers=["c", "a"], write_header=False)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert [c.value for c in sheet[1]] == [3, 1]
+
+
+def test_write_records_with_formats():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    header_fmt = wb.add_format()
+    header_fmt.set_bold()
+    ws.write_records(0, 0, [{"Name": "Alice"}], header_format=header_fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].value == "Name"
+    assert sheet["A1"].font.bold is True
+    assert sheet["A2"].value == "Alice"
+
+
+def test_write_records_empty_list_is_noop():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_records(0, 0, [])  # should not raise
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].value is None
+
+
+def test_write_records_rejects_non_dict_records():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    with pytest.raises(Exception):
+        ws.write_records(0, 0, ["not", "a", "dict"])

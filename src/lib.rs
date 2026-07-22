@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
 use rust_xlsxwriter::{
     Color, FormatAlign, FormatBorder, FormatPattern,
@@ -444,6 +444,111 @@ impl Worksheet {
             }
             Ok(())
         })
+    }
+
+    // Writes an entire list-of-dicts dataset in a single Python->Rust
+    // call, instead of one call per row or per cell. This exists
+    // specifically to remove the FFI-crossing bottleneck: benchmarking
+    // showed per-cell write() making 500,000 individual PyO3 calls for
+    // a 100k-row x 5-col sheet, where write_records() makes exactly
+    // one. All Python object access here (dict lookups, key
+    // extraction) happens natively against the passed-in PyList/PyDict
+    // without re-entering Python bytecode, so cost scales with data
+    // size, not with how many times Python and Rust hand control back
+    // and forth.
+    //
+    // `headers` controls column order and which keys are pulled from
+    // each record; if omitted, it's taken from the first record's
+    // keys (insertion order, matching Python dict semantics).
+    #[pyo3(signature = (start_row, start_col, records, headers=None, format=None, header_format=None, write_header=true))]
+    #[allow(clippy::too_many_arguments)]
+    fn write_records(
+        &self,
+        py: Python<'_>,
+        start_row: u32,
+        start_col: u16,
+        records: &Bound<'_, PyList>,
+        headers: Option<Vec<String>>,
+        format: Option<&Format>,
+        header_format: Option<&Format>,
+        write_header: bool,
+    ) -> PyResult<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        let headers: Vec<String> = match headers {
+            Some(h) => h,
+            None => {
+                let first = records.get_item(0)?;
+                let first_dict = first.downcast::<PyDict>().map_err(|_| {
+                    PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                        "write_records() expects a list of dicts, or an explicit `headers` list",
+                    )
+                })?;
+                first_dict
+                    .keys()
+                    .iter()
+                    .map(|k| k.extract::<String>())
+                    .collect::<PyResult<Vec<String>>>()?
+            }
+        };
+
+        // Single pass: borrow the worksheet once, then read each dict
+        // value and write it immediately. This avoids materializing a
+        // full Vec<Vec<CellValue>> copy of the dataset before writing
+        // (100k+ extra heap allocations for a 100k-row sheet) -- read
+        // and write are interleaved instead.
+        let data_fmt = format.map(|f| f.inner.clone());
+        let head_fmt = header_format.map(|f| f.inner.clone());
+
+        let wb_ref = self.workbook.borrow(py);
+        let mut wb = wb_ref.inner.borrow_mut();
+        let sheet = wb.worksheet_from_index(self.index).map_err(to_pyerr)?;
+
+        // dict.get_item(key) converts `key` to a Python object on
+        // every call (K: ToPyObject) -- passing a &str/&String there
+        // allocates a brand new PyUnicode object per lookup, which
+        // adds up to 500,000 allocations for a 100k-row x 5-col sheet.
+        // Building each header's Python string object once up front
+        // and reusing it removes that per-cell allocation.
+        let header_objs: Vec<Bound<'_, PyString>> =
+            headers.iter().map(|h| PyString::new_bound(py, h)).collect();
+
+        let mut row_cursor = start_row;
+        if write_header {
+            for (i, h) in headers.iter().enumerate() {
+                write_value(
+                    sheet,
+                    row_cursor,
+                    start_col + i as u16,
+                    &CellValue::Str(h.clone()),
+                    head_fmt.as_ref(),
+                )
+                .map_err(to_pyerr)?;
+            }
+            row_cursor += 1;
+        }
+
+        for record in records.iter() {
+            let dict = record.downcast::<PyDict>().map_err(|_| {
+                PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                    "write_records() expects every record to be a dict",
+                )
+            })?;
+            for (i, key_obj) in header_objs.iter().enumerate() {
+                let value = dict.get_item(key_obj)?;
+                let cv = match value {
+                    Some(v) => classify(&v)?,
+                    None => CellValue::Blank,
+                };
+                write_value(sheet, row_cursor, start_col + i as u16, &cv, data_fmt.as_ref())
+                    .map_err(to_pyerr)?;
+            }
+            row_cursor += 1;
+        }
+
+        Ok(())
     }
 
     #[pyo3(signature = (first_row, first_col, last_row, last_col, value, format=None))]
