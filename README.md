@@ -265,6 +265,11 @@ population phase is comparatively cheap next to XML assembly.
 
 ## Polars / Pandas Integration
 
+`write_polars_dataframe()` / `write_pandas_dataframe()` automatically use the
+zero-copy Arrow path under the hood (see below) whenever possible, falling back
+to per-cell writes only if you pass `column_formats` or a column type it doesn't
+support yet.
+
 ### Polars (Zero-Copy)
 
 ```python
@@ -277,7 +282,7 @@ df = pl.DataFrame({
     "Sales": [100.5, 200.75, 150.0],
 })
 
-wb = Workbook("output.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet()
 
 header_fmt = wb.add_format()
@@ -287,7 +292,7 @@ header_fmt.set_font_color("white")
 
 write_polars_dataframe(ws, df, header_format=header_fmt)
 ws.autofit()
-wb.close()
+wb.close("output.xlsx")
 ```
 
 ### Pandas
@@ -302,16 +307,38 @@ df = pd.DataFrame({
     "Price": [9.99, 19.99],
 })
 
-wb = Workbook("output.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet()
 
 write_pandas_dataframe(ws, df)
-wb.close()
+wb.close("output.xlsx")
 ```
 
-> **Note:** Native zero-copy Arrow integration is planned for v0.2. Current DataFrame support uses optimized Python-side iteration.
+### Direct Arrow access (PyArrow, or anything with `__arrow_c_stream__`)
+
+```python
+import pyarrow as pa
+
+table = pa.table({"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"]})
+
+ws.write_dataframe(0, 0, table, header_format=header_fmt)
+```
+
+`write_dataframe()` reads directly from the object's Arrow buffers via the
+[Arrow PyCapsule Interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html)
+-- no per-cell Python object extraction. Works with anything exposing
+`__arrow_c_stream__` (PyArrow, Pandas 2.x+) or a `.to_arrow()` method (Polars).
+
+**Current type support:** `int64`, `float64`, `string`/`utf8`, `large_utf8`
+(the type Pandas commonly uses for string columns), `bool`. Other types raise
+a clear `TypeError` naming the unsupported column -- wider coverage
+(unsigned ints, dates/timestamps, decimals) is tracked in the
+[Roadmap](#roadmap). `write_dataframe()` doesn't yet support per-column
+formats or non-header-row formatting; use `write_records()`/`write()` if you
+need those.
 
 ---
+
 
 ## Benchmarks
 
@@ -321,22 +348,30 @@ Run the included benchmark to see performance on your machine:
 python examples/benchmark.py
 ```
 
-**Use `write_records()` for bulk data, not per-cell `write()`.** `write_records()`
-takes an entire list of dicts in a single Python->Rust call instead of one call per
-cell, which matters a lot at scale:
+**Use `write_records()` for bulk dict data, or `write_dataframe()` for
+Polars/Pandas/PyArrow -- not per-cell `write()`.** Both take the entire dataset in
+a single Python->Rust call instead of one call per cell, which matters a lot at
+scale:
 
 ```python
-ws.write_records(0, 0, data, header_format=header_fmt)  # one call for the whole sheet
+ws.write_records(0, 0, data, header_format=header_fmt)          # list of dicts
+ws.write_dataframe(0, 0, arrow_table, header_format=header_fmt) # Arrow-backed data, zero-copy
 ```
 
 **Measured results** (this repo's sandbox; single core, your machine will vary --
-mean of 3 runs after a discarded warmup run):
+mean of 3-5 runs after a discarded warmup run):
 
-| Rows | xlsxwriter (Python) | rvgsrust (`write_records`, bulk) | rvgsrust (`write`, per-cell) | rustpy-xlsxwriter |
-|------|--------------------|-----------------------------------|-------------------------------|--------------------|
-| 1,000 | 0.036s | 0.0043s | 0.0050s | 0.0031s |
-| 10,000 | 0.266s | 0.0440s | 0.0486s | 0.0268s |
-| 100,000 | 2.821s | 0.550s | 0.562s | 0.269s |
+| Rows | xlsxwriter (Python) | rvgsrust (`write`, per-cell) | rvgsrust (`write_records`, bulk dict) | rvgsrust (`write_dataframe`, Arrow) | rustpy-xlsxwriter |
+|------|--------------------|-------------------------------|------------------------------------------|----------------------------------------|--------------------|
+| 1,000 | 0.036s | 0.0050s | 0.0043s | -- | 0.0031s |
+| 10,000 | 0.266s | 0.0486s | 0.0440s | 0.0388s | 0.0268s |
+| 100,000 | 2.821s | 0.562s | 0.550s | 0.4956s | 0.269s |
+
+`write_dataframe()` is ~15-19% faster than `write_records()` on identical data --
+real, but smaller than you might expect from "zero-copy": both paths converge on
+the same underlying `rust_xlsxwriter` write calls, which is the larger remaining
+cost; Arrow only removes the Python-side reading cost, which `write_records()`'s
+own optimizations (see commit history) had already made fairly cheap.
 
 Honest take: both Rust-backed libraries are 5-10x faster than pure-Python
 `xlsxwriter`. Between the two, `rustpy-xlsxwriter` is currently ~1.7-2x faster than
@@ -357,7 +392,7 @@ and should close most or all of the remaining gap.
 | Version | Features |
 |---------|----------|
 | **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images |
-| **v0.2** | 🚧 Charts, conditional formatting, native Arrow zero-copy |
+| **v0.2** | ✅ Bulk `write_records()`; native Arrow zero-copy `write_dataframe()` (Phase 1: int64/float64/utf8/large_utf8/bool). 🚧 Charts, conditional formatting, remaining Arrow types (unsigned ints, dates/timestamps, decimals), per-column formatting for `write_dataframe()` |
 | **v0.3** | 🚧 Data validation, tables, Sparklines |
 | **v0.4** | 🚧 Full xlsxwriter API compatibility layer |
 
