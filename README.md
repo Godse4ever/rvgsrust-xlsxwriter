@@ -374,16 +374,22 @@ cost; Arrow only removes the Python-side reading cost, which `write_records()`'s
 own optimizations (see commit history) had already made fairly cheap.
 
 Honest take: both Rust-backed libraries are 5-10x faster than pure-Python
-`xlsxwriter`. Between the two, `rustpy-xlsxwriter` is currently ~1.7-2x faster than
-`rvgsrust-xlsxwriter` at this dataset size, even using the bulk `write_records()`
-path. The remaining gap traces to `rustpy-xlsxwriter` building against
-`rust_xlsxwriter`'s `constant_memory` feature (streams rows instead of buffering the
-whole sheet) plus a newer `zip`/`pyo3` stack -- this repo is currently pinned to
-`rust_xlsxwriter 0.75` because later versions' `zip` requirement doesn't resolve
-against a Rust toolchain older than ~1.85 (see the comment in `Cargo.toml`). On a
-machine with a current Rust toolchain, bumping to `rust_xlsxwriter 0.95` with
-`features = ["constant_memory", "zmij", "zlib"]` is untested here but worth trying,
-and should close most or all of the remaining gap.
+`xlsxwriter`. Between the two, `rustpy-xlsxwriter` was ~1.7-2x faster than
+`rvgsrust-xlsxwriter` at this dataset size when these numbers were measured
+(against `rust_xlsxwriter 0.75`, `write_records()`'s bulk path), tracing to
+`rustpy-xlsxwriter` building against `rust_xlsxwriter`'s `constant_memory`
+feature (streams rows instead of buffering the whole sheet) plus a newer
+`zip`/`pyo3` stack.
+
+**This repo is now pinned to `rust_xlsxwriter 0.96`** with `zlib` + `zmij`
+(a drop-in ~10% faster numeric-write backend, no API changes needed) -- see
+`Cargo.toml` for why that couldn't be verified in the sandbox these numbers
+were measured in (a hard rustc-1.75 compiler wall in `rust_xlsxwriter`'s own
+source, confirmed directly, not a guess) and what to check once it's built on
+a real machine. The benchmark table above still reflects 0.75; re-running
+`examples/benchmark.py` after building against 0.96 will give current numbers.
+`constant_memory` itself isn't wired up yet (see `Cargo.toml`'s note) -- doing
+so is likely to close some or all of the remaining gap to `rustpy-xlsxwriter`.
 
 ---
 

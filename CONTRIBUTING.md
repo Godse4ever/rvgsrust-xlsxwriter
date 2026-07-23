@@ -6,7 +6,9 @@ Thank you for your interest in contributing! This project is built with Rust (Py
 
 ### Prerequisites
 
-- Rust 1.70+ (`rustup update`)
+- Rust 1.83+ (`rustup update`) -- required by `rust_xlsxwriter 0.96`'s own
+  `zip` dependency (confirmed directly; see the comment in `Cargo.toml` for
+  the full story if you're on an older toolchain and hit a build error)
 - Python 3.8+
 - `maturin` (`pip install maturin`)
 
