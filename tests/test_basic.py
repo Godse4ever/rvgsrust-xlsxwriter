@@ -148,6 +148,24 @@ def test_merge_range():
     assert "A1:C1" in [str(r) for r in sheet.merged_cells.ranges]
 
 
+def test_merge_range_preserves_numeric_and_bool_types():
+    # merge_range() historically stringified every value (so a merged
+    # number/bool would break SUM()/logic over it). It should now
+    # preserve real types by merging with an empty string, then
+    # overwriting the anchor cell with the real typed value.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    ws.merge_range(0, 0, 0, 2, 12345.67, fmt)
+    ws.merge_range(1, 0, 1, 2, True, fmt)
+    ws.merge_range(2, 0, 2, 2, False, fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].value == 12345.67 and isinstance(sheet["A1"].value, float)
+    assert sheet["A2"].value is True
+    assert sheet["A3"].value is False
+
+
 def test_formula():
     wb = Workbook()
     ws = wb.add_worksheet()
