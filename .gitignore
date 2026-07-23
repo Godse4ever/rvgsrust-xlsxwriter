@@ -22,9 +22,12 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Virtual environments
 venv/
@@ -44,11 +47,22 @@ env/
 Thumbs.db
 
 # Test outputs
-*.xlsx
-*.csv
-!examples/*.xlsx
+test_output.xlsx
+test_df_output.xlsx
 
 # Maturin
 python/rvgsrust_xlsxwriter/_core*.so
 python/rvgsrust_xlsxwriter/_core*.pyd
 python/rvgsrust_xlsxwriter/_core*.dll
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
