@@ -91,13 +91,22 @@ fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue> {
     if value.is_none() {
         Ok(CellValue::Blank)
     } else if let Ok(b) = value.extract::<bool>() {
+        // Must stay first, before both numeric checks below: Python's
+        // bool is an int subclass and PyO3 will happily coerce it to
+        // f64/i64 if given the chance, silently turning True/False into
+        // numbers instead of real boolean cells.
         Ok(CellValue::Bool(b))
-    } else if let Ok(s) = value.extract::<String>() {
-        Ok(CellValue::Str(s))
     } else if let Ok(f) = value.extract::<f64>() {
+        // Numeric checks before the String check: strings don't have
+        // __float__/__index__, so this never misclassifies a string --
+        // it just avoids paying for a failed String-extraction attempt
+        // on every number, which is the common case for numeric-heavy
+        // data.
         Ok(CellValue::Num(f))
     } else if let Ok(i) = value.extract::<i64>() {
         Ok(CellValue::Num(i as f64))
+    } else if let Ok(s) = value.extract::<String>() {
+        Ok(CellValue::Str(s))
     } else {
         Ok(CellValue::Str(value.str()?.to_string()))
     }
@@ -125,26 +134,6 @@ fn write_value(
     }
 }
 
-// merge_range in rust_xlsxwriter only accepts a `&str`, so non-string
-// values are formatted to their Excel-visible text representation.
-// (Note: if you later bump to a rust_xlsxwriter version where
-// `merge_range` becomes generic over `IntoExcelData`, this can be
-// widened to preserve real numeric/boolean cell types.)
-fn cell_value_to_string(cv: &CellValue) -> String {
-    match cv {
-        CellValue::Blank => String::new(),
-        CellValue::Str(s) => s.clone(),
-        CellValue::Num(n) => {
-            if n.fract() == 0.0 {
-                format!("{}", *n as i64)
-            } else {
-                n.to_string()
-            }
-        }
-        CellValue::Bool(b) => b.to_string(),
-    }
-}
-
 fn merge_value(
     sheet: &mut RustWorksheet,
     first_row: u32,
@@ -154,10 +143,19 @@ fn merge_value(
     cv: &CellValue,
     fmt: &RustFormat,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
-    let text = cell_value_to_string(cv);
-    sheet
-        .merge_range(first_row, first_col, last_row, last_col, &text, fmt)
-        .map(|_| ())
+    // merge_range() itself only accepts a plain &str -- confirmed this
+    // is still true as of rust_xlsxwriter 0.95.0 (checked the actual
+    // source directly; it isn't generic over IntoExcelData like
+    // write_string/write_number/etc are), so a version bump alone
+    // wouldn't fix this. The crate's own documentation demonstrates the
+    // correct workaround: establish the merge (and its format) with an
+    // empty string, then overwrite the anchor cell with the real typed
+    // value via the appropriate write_x_with_format call. This
+    // preserves numeric/boolean cell types across the merge, so e.g.
+    // SUM() over a merged numeric range still works, instead of every
+    // merged value silently becoming text.
+    sheet.merge_range(first_row, first_col, last_row, last_col, "", fmt)?;
+    write_value(sheet, first_row, first_col, cv, Some(fmt))
 }
 
 // ============================================
@@ -675,6 +673,20 @@ impl Worksheet {
                     "write_records() expects every record to be a dict",
                 )
             })?;
+
+            // NOTE: a "read via dict.values() when this record's key
+            // order matches headers" fast path was tried here and
+            // reverted. A length-only check silently misaligned columns
+            // when a same-length record had its keys in a different
+            // order (verified this really happens); fixing that
+            // required comparing actual key order too (via dict.iter(),
+            // since dict.keys()/dict.values() each materialize a new
+            // PyList per call and cost more than they saved). Once
+            // correct, it measured as a wash against the get_item path
+            // below (0.98-0.99x, i.e. not faster) -- the safety check
+            // costs about what the hash lookups it would have replaced
+            // cost. Not worth the added code complexity for no
+            // measured benefit.
             for (i, key_obj) in header_objs.iter().enumerate() {
                 let value = dict.get_item(key_obj)?;
                 let cv = match value {
