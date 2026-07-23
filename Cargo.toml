@@ -12,26 +12,55 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
-# Pinned to 0.75 deliberately. rust_xlsxwriter 0.76-0.86 all require
-# `zip ^2.5`, which no currently-published zip release satisfies, so
-# `cargo build` fails dependency resolution outright on any of those.
-# Confirmed this is fixed upstream by 0.95.0 (resolves to zip 7.2.0,
-# per rustpy-xlsxwriter's own Cargo.lock, which uses that exact
-# combination) -- but 0.95's dependency tree pulls in transitive
-# crates (getrandom, tempfile, rustix, etc.) whose Cargo.toml manifests
-# require the `edition2024` Cargo feature, unsupported by the Rust
-# 1.75 toolchain available in this sandbox (no network path here to
-# rustup.rs to get a newer one). On a machine with a current Rust
-# toolchain (1.85+), bumping straight to 0.95 with
-# features = ["constant_memory", "zmij", "zlib"] should work and is
-# worth trying -- constant_memory in particular is likely to help
-# performance on large sheets, and is what rustpy-xlsxwriter itself
-# uses.
-# Some worksheet method signatures changed between 0.75 and later
-# releases (e.g. write_string/write_number/write_boolean gained
-# `_with_format` counterparts instead of an Option<&Format> parameter),
-# so re-check src/lib.rs against whatever version you land on.
+# Pinned to 0.75 deliberately -- confirmed, via an actual attempted
+# bump in this sandbox (not just dependency-resolution guesswork), that
+# every version from 0.76 through 0.95 is unbuildable here:
+#
+# - 0.76-0.86 all require `zip ^2.5`, which no currently-published zip
+#   release satisfies (cargo build fails dependency resolution
+#   outright).
+# - 0.93-0.95 require `zip = "7.2"` specifically, and zip 7.2.0's own
+#   MSRV is rustc 1.83 (confirmed via rustpy-xlsxwriter's own Cargo.lock,
+#   which resolves to that exact zip version).
+# - 0.87-0.92 require an older zip line (^3.0/^4.0) that *does* resolve
+#   with enough transitive pinning (indexmap, half, getrandom -- three
+#   separate major-version lines of it turned out to be in the graph
+#   simultaneously) -- dependency resolution actually succeeds here.
+#   But compilation itself then fails with a hard error (E0716,
+#   "temporary value dropped while borrowed") in rust_xlsxwriter's own
+#   worksheet.rs (a `&utility::column_number_to_name(col_num)` pattern
+#   in a temporary-lifetime position), present in every 0.87-0.95
+#   version checked. This is NOT a dependency-pinning problem -- it's
+#   the crate's own source requiring a newer rustc than this sandbox's
+#   1.75 provides, full stop, independent of the zip issues above.
+#
+# None of this is a problem with THIS project's code. On a machine with
+# a current Rust toolchain (rustc 1.83+, which resolves all three
+# issues above simultaneously), bumping straight to 0.95 with
+# features = ["constant_memory", "zlib"] should work with NO src/lib.rs
+# changes required: every write_x_with_format/merge_range/ExcelDateTime/
+# DocProperties/Image/FormatAlign signature this project actually calls
+# was diffed directly against 0.95's source and is byte-identical to
+# 0.75's. (constant_memory itself needs one more thing beyond the
+# version bump though -- see the note further down.) Also worth trying:
+# the "zmij" feature (a faster zip/deflate backend rustpy-xlsxwriter
+# also uses) and rust_xlsxwriter's own "polars" feature (dep:polars --
+# native Polars integration built into the crate itself, a possible
+# alternative or complement to this project's own hand-rolled Arrow
+# path in write_dataframe()).
 rust_xlsxwriter = { version = "0.75", features = ["zlib"] }
+# IMPORTANT if you do bump and add the "constant_memory" feature: it is
+# NOT automatic just by enabling the Cargo feature. It requires calling
+# a *different* constructor -- Workbook::add_worksheet_with_constant_memory()
+# instead of add_worksheet() -- to opt in per-worksheet (confirmed from
+# 0.95's source). Getting the actual performance benefit means adding a
+# new code path in src/lib.rs's Workbook::add_worksheet() (e.g. a
+# `constant_memory: bool` parameter), not just flipping the feature on.
+# It also comes with usage restrictions on that worksheet (rows must be
+# written in strictly increasing order, which write_records()/
+# write_dataframe() already do -- but check the crate's own
+# "restrictions when using constant memory mode" docs for the rest
+# before wiring it up).
 
 # Native Arrow zero-copy DataFrame support (write_dataframe()). Reads
 # via the Arrow PyCapsule Interface (__arrow_c_stream__), so no per-cell
