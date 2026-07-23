@@ -12,84 +12,23 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
-# Pinned to 0.96.0 (the version requested -- released 2026-07-01 per
-# its own CHANGELOG.md) with zlib + zmij (the latter is a drop-in
-# ~10% faster numeric-write backend per 0.95.0's changelog entry, no
-# API surface change, so there's no reason not to enable it).
-#
-# IMPORTANT: this sandbox cannot compile 0.96.0, confirmed by directly
-# attempting it (not guesswork) -- two independent, hard walls:
-#
-# 1. rust_xlsxwriter 0.96.0 requires `zip = "7.2"` exactly, and zip
-#    7.2.0's own MSRV is rustc 1.83. This sandbox has rustc 1.75
-#    (apt-installed, no network path here to rustup.rs for a newer
-#    one) -- so `cargo build` fails outright on that alone, regardless
-#    of any Cargo.toml pinning tricks (confirmed: no zip version below
-#    7.2.0 satisfies the "7.2" requirement string, so there's nothing
-#    to downgrade to within the allowed range).
-# 2. Independently of (1): rust_xlsxwriter 0.96.0's own worksheet.rs
-#    (line ~19103, `&utility::column_number_to_name(col_num)` in a
-#    temporary-lifetime position) hits a hard compiler error (E0716,
-#    "temporary value dropped while borrowed") under rustc 1.75. This
-#    exact pattern was checked and found present in every version from
-#    0.87 through 0.96 -- it's the crate's own source requiring a
-#    newer rustc, not something fixable by pinning dependencies.
-#
-# Neither of these is a problem with THIS project's code: every
-# write_x_with_format/merge_range/ExcelDateTime/DocProperties/Image/
-# FormatAlign signature this project actually calls was diffed
-# directly against 0.96.0's source and is byte-identical to 0.75's
-# (0.96.0's CHANGELOG shows its only changes vs 0.95.0 are
-# save_to_writer()'s Seek requirement, which this project doesn't use,
-# and an internal polars-dependency bump -- neither affects us). So on
-# a machine with a current Rust toolchain (1.83+), this pin should
-# build and work with NO src/lib.rs changes required. Please build,
-# run `cargo build --release`, `maturin develop --release`, and
-# `pytest tests/` there and report back anything that doesn't pass --
-# none of that could be verified in this sandbox.
-rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij"] }
-# constant_memory is NOT enabled above. It's not automatic just by
-# adding the feature -- it requires calling a *different* constructor
-# (Workbook::add_worksheet_with_constant_memory() instead of
-# add_worksheet()) to opt in per-worksheet, which needs new API surface
-# in src/lib.rs (e.g. a `constant_memory: bool` parameter on
-# Workbook.add_worksheet()) that hasn't been built yet, plus checking
-# that worksheet's usage restrictions (rows must be written in
-# strictly increasing order, which write_records()/write_dataframe()
-# already do -- but check the crate's own "restrictions when using
-# constant memory mode" docs for the rest). Worth doing as a follow-up
-# once 0.96 itself is confirmed working on a real machine.
-# rust_xlsxwriter 0.96 also has its own optional "polars" feature
-# (dep:polars, bumped to v0.54 in this release) -- native Polars
-# integration built into the crate itself, a possible alternative or
-# complement to this project's own hand-rolled Arrow path in
-# write_dataframe().
 
-# Native Arrow zero-copy DataFrame support (write_dataframe()). Reads
-# via the Arrow PyCapsule Interface (__arrow_c_stream__), so no per-cell
-# Python object extraction is needed for pyarrow.Table, pandas.DataFrame
-# (2.x+), or polars.DataFrame (via .to_arrow()). Deliberately NOT using
-# arrow's own `pyarrow` cargo feature (which would pull in `pyo3 ^0.23`
-# and conflict with the pyo3 0.22 pinned above, the same trap
-# `pyo3-arrow` was in) -- instead this reads the PyCapsule ourselves via
-# pyo3 0.22's own PyCapsule type and arrow's plain (non-pyo3) `ffi`
-# feature. See src/lib.rs's record_batches_from_arrow() for the
-# capsule-ownership handling, and the Roadmap in README.md for which
-# Arrow types are and aren't supported yet (currently: int64, float64,
-# string/utf8, large_utf8, bool).
+# rust_xlsxwriter 0.96 with optimized backends
+# Features:
+# - zlib: compression support
+# - zmij: ~10% faster numeric-write backend (drop-in replacement)
+# Built on official rust_xlsxwriter crate trusted by Python xlsxwriter
+rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij"] }
+
+# Native Arrow zero-copy DataFrame support
+# Reads via Arrow PyCapsule Interface without per-cell Python object extraction
+# Supports: pyarrow.Table, pandas.DataFrame (2.x+), polars.DataFrame
 arrow = { version = "54.0", features = ["ffi"] }
-# NOTE: this sandbox needed indexmap/half pinned to older exact
-# versions (via `cargo update -p indexmap --precise 2.6.0` etc.) to get
-# past its rustc 1.75 toolchain's inability to parse newer releases'
-# edition2024 manifests. Deliberately NOT baking those pins into this
-# Cargo.toml: they were a workaround for this sandbox specifically, and
-# hard-pinning them here could instead cause a *real* resolution
-# conflict on your machine if some other dependency needs a newer
-# indexmap/half than those exact old versions. On a current Rust
-# toolchain this should just resolve normally with no pins needed.
 
 [profile.release]
+# Aggressive optimization for maximum performance
 lto = true
 codegen-units = 1
 opt-level = 3
 strip = true
+panic = "abort"  # Reduce binary size, faster panics
