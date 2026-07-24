@@ -13,22 +13,55 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 
-# rust_xlsxwriter 0.96 with optimized backends
-# Features:
-# - zlib: compression support
-# - zmij: ~10% faster numeric-write backend (drop-in replacement)
-# Built on official rust_xlsxwriter crate trusted by Python xlsxwriter
-rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij"] }
+# rust_xlsxwriter 0.96, with:
+# - zlib: compression backend
+# - zmij: ~10% faster numeric-write backend (drop-in, no API change)
+# - constant_memory: enables Workbook.add_worksheet(constant_memory=True)
+#   in src/lib.rs, which streams rows to a temp file instead of
+#   buffering the whole sheet. Restriction (confirmed from
+#   rust_xlsxwriter's own src/performance.rs): rows must be written in
+#   non-decreasing order, and violating that does NOT raise a clean
+#   error (confirmed from worksheet.rs's check_dimensions/store_string
+#   -- it silently proceeds rather than returning an XlsxError, so this
+#   is the caller's responsibility, not something this crate protects
+#   against). write_records()/write_dataframe() both already write
+#   row-by-row in increasing order, so they're safe with it.
+#
+# Toolchain note: this exact pin could not be compiled in the sandbox
+# this was developed in (rustc 1.75, apt-installed) -- confirmed via
+# actual build attempts, not assumption: rust_xlsxwriter 0.96 requires
+# `zip = "7.2"` exactly, and zip 7.2.0's own MSRV is rustc 1.83;
+# independently, 0.96's own worksheet.rs also hits a hard compiler
+# error (E0716) under rustc 1.75 regardless of the zip issue. Neither
+# is a problem with this project's code -- every API signature this
+# project calls was diffed directly against 0.96's source and found
+# identical to the previously-working 0.75 pin. Needs rustc 1.83+ to
+# build; verify with `cargo build --release` there.
+rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij", "constant_memory"] }
 
-# Native Arrow zero-copy DataFrame support
-# Reads via Arrow PyCapsule Interface without per-cell Python object extraction
-# Supports: pyarrow.Table, pandas.DataFrame (2.x+), polars.DataFrame
+# Native Arrow zero-copy DataFrame support (write_dataframe()). Reads
+# via the Arrow PyCapsule Interface (__arrow_c_stream__) -- no per-cell
+# Python object extraction. Supports pyarrow.Table, pandas.DataFrame
+# (2.x+, exposes the capsule interface directly), and polars.DataFrame
+# (via .to_arrow()). Deliberately not using arrow's own "pyarrow"
+# feature, which requires pyo3 ^0.23 and would conflict with the pyo3
+# 0.22 pinned above -- reads the PyCapsule directly instead via pyo3's
+# own PyCapsule type. See src/lib.rs's record_batches_from_arrow().
 arrow = { version = "54.0", features = ["ffi"] }
 
 [profile.release]
-# Aggressive optimization for maximum performance
+# Aggressive optimization for maximum performance.
 lto = true
 codegen-units = 1
 opt-level = 3
 strip = true
-panic = "abort"  # Reduce binary size, faster panics
+# NOT setting panic = "abort" here: for a PyO3 extension module this is
+# a reliability problem, not a pure perf win. With the default
+# panic = "unwind", a Rust panic (e.g. an unexpected unwrap() failure
+# anywhere in this crate or a dependency) gets caught by PyO3 at the
+# FFI boundary and surfaces as a normal, recoverable Python exception.
+# With panic = "abort", the same panic takes down the entire Python
+# process -- there's no way for calling code to catch it, log it, or
+# continue. The binary-size/panic-speed benefit isn't worth trading
+# away Python's normal exception-handling model for every caller of
+# this library.

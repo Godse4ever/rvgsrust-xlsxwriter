@@ -298,3 +298,46 @@ def test_write_records_rejects_non_dict_records():
     ws = wb.add_worksheet()
     with pytest.raises(Exception):
         ws.write_records(0, 0, ["not", "a", "dict"])
+
+
+def test_add_worksheet_constant_memory_param():
+    # Locks in the API contract for constant_memory=True: parameter
+    # name, default (False), and that a constant_memory worksheet
+    # combined with write_records()/write_dataframe() (both of which
+    # write row-by-row in increasing order, satisfying constant memory
+    # mode's write-order restriction) produces a correct workbook.
+    #
+    # NOTE: this can only meaningfully exercise the real streaming/
+    # temp-file behavior once built against rust_xlsxwriter 0.96 with
+    # the constant_memory feature on a toolchain that can compile it --
+    # see Cargo.toml. It still verifies the parameter is accepted, has
+    # the right default, and doesn't change write_records()'s output.
+    wb = Workbook()
+    ws_normal = wb.add_worksheet("Normal")
+    ws_streamed = wb.add_worksheet("Streamed", constant_memory=True)
+
+    ws_normal.write(0, 0, "regular")
+    ws_streamed.write_records(
+        0, 0, [{"a": 1, "b": 2}, {"a": 3, "b": 4}]
+    )
+    wb.close(TEST_FILE)
+
+    book = _load()
+    assert book["Normal"]["A1"].value == "regular"
+    assert [c.value for c in book["Streamed"][1]] == ["a", "b"]
+    assert [c.value for c in book["Streamed"][2]] == [1, 2]
+    assert [c.value for c in book["Streamed"][3]] == [3, 4]
+
+
+def test_add_worksheet_constant_memory_defaults_false():
+    # constant_memory=False (the default) and omitting it entirely
+    # must behave identically.
+    wb = Workbook()
+    ws_default = wb.add_worksheet("Default")
+    ws_explicit_false = wb.add_worksheet("ExplicitFalse", constant_memory=False)
+    ws_default.write(0, 0, "x")
+    ws_explicit_false.write(0, 0, "y")
+    wb.close(TEST_FILE)
+    book = _load()
+    assert book["Default"]["A1"].value == "x"
+    assert book["ExplicitFalse"]["A1"].value == "y"

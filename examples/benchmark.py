@@ -92,6 +92,34 @@ def benchmark_rvgs_write_records(data, filename="bench_rvgs_records.xlsx"):
     return filename
 
 
+def benchmark_rvgs_write_records_constant_memory(data, filename="bench_rvgs_constant_memory.xlsx"):
+    """Same as benchmark_rvgs_write_records(), but on a
+    constant_memory=True worksheet (streams rows to a temp file
+    instead of buffering the whole sheet -- see Cargo.toml for the
+    write-order restriction this requires; write_records() already
+    writes row-by-row in increasing order, so it satisfies it).
+
+    Requires the installed rvgsrust_xlsxwriter build to have been
+    compiled with rust_xlsxwriter's `constant_memory` Cargo feature
+    (it is, per Cargo.toml, but only takes effect once actually built
+    on a toolchain that can compile rust_xlsxwriter 0.96 -- see the
+    Cargo.toml comment for why that couldn't be done in this project's
+    development sandbox). If the installed build predates that,
+    add_worksheet() will raise a TypeError on the constant_memory=
+    keyword, and run_benchmark() below will report and skip it rather
+    than crashing the whole run.
+    """
+    wb = RVGSWorkbook()
+    ws = wb.add_worksheet(constant_memory=True)
+
+    fmt = wb.add_format()
+    fmt.set_bold()
+
+    ws.write_records(0, 0, data, header_format=fmt)
+    wb.close(filename)
+    return filename
+
+
 def benchmark_rvgs_write_dataframe_polars(df, filename="bench_rvgs_polars.xlsx"):
     """Zero-copy DataFrame write via Arrow PyCapsule Interface (Polars).
     Fastest path: directly reads from Arrow columnar buffers.
@@ -241,6 +269,14 @@ def main():
             print("\n📊 RVGSRust-XLSXWriter Tests:")
             
             result = run_benchmark("  • write_records() [bulk dict]", benchmark_rvgs_write_records, data)
+            if result:
+                results.append(result)
+
+            result = run_benchmark(
+                "  • write_records() [constant_memory]",
+                benchmark_rvgs_write_records_constant_memory,
+                data,
+            )
             if result:
                 results.append(result)
             

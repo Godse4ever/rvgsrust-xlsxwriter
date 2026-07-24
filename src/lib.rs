@@ -961,12 +961,47 @@ impl Workbook {
         }
     }
 
-    #[pyo3(signature = (name=None))]
-    fn add_worksheet(slf: Py<Self>, py: Python<'_>, name: Option<&str>) -> PyResult<Py<Worksheet>> {
+    // constant_memory=True routes to rust_xlsxwriter's
+    // add_worksheet_with_constant_memory() instead of add_worksheet(),
+    // streaming each row to a temp file as it's written instead of
+    // buffering the whole sheet in memory. It comes with a hard
+    // restriction, confirmed directly from rust_xlsxwriter 0.96's own
+    // source (src/performance.rs's "Restrictions when using constant
+    // memory mode" section): rows must be written in non-decreasing
+    // order -- once you've written to row n, you can no longer write to
+    // any row < n.
+    //
+    // IMPORTANT: violating that restriction does NOT raise a clean
+    // error. Checked this directly too (worksheet.rs's check_dimensions
+    // and store_string): the row-order check only affects internal
+    // dimension-tracking bookkeeping, not whether the write is allowed
+    // to proceed -- an out-of-order write on a constant_memory
+    // worksheet silently continues rather than returning an XlsxError.
+    // The underlying crate does not protect you here; the caller must
+    // guarantee monotonic row order.
+    //
+    // write_records() and write_dataframe() both already write
+    // strictly row-by-row in increasing order (see their
+    // implementations below), so they're safe to use with
+    // constant_memory=True. Plain write()/write_row()/write_column()/
+    // merge_range() calls are NOT restricted from being called out of
+    // order by anything in this binding layer -- doing so on a
+    // constant_memory worksheet is the caller's responsibility to avoid.
+    #[pyo3(signature = (name=None, constant_memory=false))]
+    fn add_worksheet(
+        slf: Py<Self>,
+        py: Python<'_>,
+        name: Option<&str>,
+        constant_memory: bool,
+    ) -> PyResult<Py<Worksheet>> {
         let index = {
             let wb_ref = slf.borrow(py);
             let mut wb = wb_ref.inner.borrow_mut();
-            let sheet = wb.add_worksheet();
+            let sheet = if constant_memory {
+                wb.add_worksheet_with_constant_memory()
+            } else {
+                wb.add_worksheet()
+            };
             if let Some(n) = name {
                 sheet.set_name(n).map_err(to_pyerr)?;
             }
