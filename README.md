@@ -6,7 +6,7 @@
 
 [![PyPI version](https://badge.fury.io/py/rvgsrust-xlsxwriter.svg)](https://pypi.org/project/rvgsrust-xlsxwriter/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.83%2B-orange.svg)](https://www.rust-lang.org)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org)
 
 ---
@@ -15,7 +15,7 @@
 
 | Feature | `xlsxwriter` (Python) | `rustpy-xlsxwriter` | `rvgsrust-xlsxwriter` |
 |---------|----------------------|---------------------|----------------------|
-| Speed | Baseline (1x) | ~10x faster | ~5x faster ⚡ |
+| Speed | Baseline (1x) | ~7-10x faster* | ~5-6x faster* ⚡ |
 | **Cell Merging** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Full Format API** | ✅ Yes | ⚠️ Limited | ✅ **Complete** |
 | **Borders (all sides)** | ✅ Yes | ⚠️ Basic | ✅ **All sides + colors** |
@@ -30,7 +30,9 @@
 | **Charts** | ✅ Yes | ❌ No | 🚧 *Coming v0.2* |
 | **Conditional Format** | ✅ Yes | ❌ No | 🚧 *Coming v0.2* |
 
-**We win on completeness.** Both `rustpy-xlsxwriter` and `rvgsrust-xlsxwriter` use the same Rust core, but we expose *every* feature so you never have to fall back to Python. We're competitive on speed and gaining ground with every release.
+**We win on completeness.** Both `rustpy-xlsxwriter` and `rvgsrust-xlsxwriter` use the same Rust core, but we expose *every* feature so you never have to fall back to Python.
+
+*Speed figures above are from measurements against `rust_xlsxwriter 0.75`, before this project's 0.96 upgrade -- see [Performance & Benchmarks](#performance--benchmarks) below for the honest, current status and how to reproduce them on your own machine.
 
 ---
 
@@ -61,7 +63,7 @@ pip install rvgsrust-xlsxwriter[all]
 from rvgsrust_xlsxwriter import Workbook
 
 # Create workbook
-wb = Workbook("report.xlsx")
+wb = Workbook()
 ws = wb.add_worksheet("Sales")
 
 # Create a rich format
@@ -95,7 +97,7 @@ ws.write_formula(1, 3, "=B2+C2", data_format)
 ws.autofit()
 
 # Save
-wb.close()
+wb.close("report.xlsx")
 ```
 
 ---
@@ -310,16 +312,28 @@ ws.write_dataframe(0, 0, table, header_format=header_fmt)
 
 ## Performance & Benchmarks
 
-See [PERFORMANCE.md](PERFORMANCE.md) for detailed optimization strategies and benchmarking results.
+See [PERFORMANCE.md](PERFORMANCE.md) for optimization strategies and details.
 
-**Quick comparison (100,000 rows × 5 columns):**
+**Quick comparison (100,000 rows × 5 columns) -- measured against
+`rust_xlsxwriter 0.75`, before this project's upgrade to 0.96
+(`zmij` + `constant_memory` feature flags). Not yet re-measured against
+0.96 -- run the benchmark yourself (below) for current numbers on your
+machine and build.**
 
-| Strategy | Time | Speedup |
+| Strategy | Time (0.75-era) | Speedup vs. xlsxwriter |
 |----------|------|---------|
-| `write_dataframe()` (Polars, zero-copy) | **0.496s** | **5.7x** |
+| `write_dataframe()` (Polars, zero-copy) | 0.496s | 5.7x |
 | `write_records()` (bulk dict) | 0.550s | 5.1x |
 | `write()` per-cell | 0.562s | 5.0x |
+| `rustpy-xlsxwriter` (native API) | ~0.27-0.38s | ~7-10x |
 | Pure Python xlsxwriter | 2.821s | 1x (baseline) |
+
+Honest take at the time of this measurement: `rustpy-xlsxwriter` was
+faster than `rvgsrust-xlsxwriter`, tracing to it building against
+`rust_xlsxwriter`'s `constant_memory` feature. That feature is now
+available here too (`Workbook.add_worksheet(constant_memory=True)`),
+but isn't wired into any default path, and its actual effect on this
+gap hasn't been measured yet.
 
 **Run the benchmark on your machine:**
 

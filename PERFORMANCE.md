@@ -13,13 +13,26 @@ lto = true              # Link-time optimization: ~10-15% faster
 codegen-units = 1      # Single codegen unit for better optimization
 opt-level = 3          # Aggressive optimization (-O3)
 strip = true           # Remove debug symbols (~50% smaller binary)
-panic = "abort"        # Faster panic handling
 ```
 
-### rust_xlsxwriter 0.96 Enhancements
-- **zmij backend**: Drop-in ~10% faster numeric-write backend
-- **zlib compression**: Better XLSX compression ratios
-- **Auto-threading**: Multi-threaded worksheet assembly on save
+(Not using `panic = "abort"`: for a PyO3 extension, that turns any Rust
+panic into a hard crash of the whole Python process instead of a
+catchable exception. See the comment in Cargo.toml.)
+
+### rust_xlsxwriter 0.96
+
+- **zmij backend** (feature flag, enabled): drop-in ~10% faster
+  numeric-write backend, per rust_xlsxwriter's own changelog.
+- **zlib compression**: compression backend.
+- **constant_memory** (feature flag, enabled but not yet wired into a
+  Python-facing default): streams rows to a temp file instead of
+  buffering the whole sheet. Available via
+  `wb.add_worksheet(constant_memory=True)`; see the write-order
+  restriction noted in Cargo.toml before using it.
+
+Note: automatic per-worksheet parallel XML assembly on save (below) is
+not new to 0.96 -- it's been present in rust_xlsxwriter for a while and
+was already active under the previous 0.75 pin too.
 
 ## Runtime Optimization Strategies
 
@@ -38,7 +51,9 @@ for row_idx, row in enumerate(data, 1):
         ws.write(row_idx, col_idx, value)
 ```
 
-**Benchmark (100,000 rows × 5 columns):**
+**Benchmark (100,000 rows × 5 columns, measured against `rust_xlsxwriter
+0.75` prior to the 0.96 upgrade -- not yet re-verified against 0.96,
+see [Performance Comparison](#performance-comparison) below):**
 - `write_records()`: ~0.55s
 - Per-cell `write()`: ~0.56s (overhead dominates)
 - Pure Python xlsxwriter: ~2.8s
@@ -59,7 +74,7 @@ ws = wb.add_worksheet()
 write_polars_dataframe(ws, df, header_format=header_fmt)
 ```
 
-**Benchmark (100,000 rows × 5 columns):**
+**Benchmark (100,000 rows × 5 columns, same 0.75-era caveat as above):**
 - `write_dataframe()` (Polars): ~0.496s
 - `write_records()` (dict): ~0.550s
 - `write()` per-cell: ~0.562s
@@ -182,18 +197,30 @@ for row_idx, row in enumerate(all_values):
 
 ### 100,000 rows × 5 columns (dict data with formatting)
 
-| Library | Strategy | Time | Speedup |
+**These numbers are from before the 0.96 upgrade** (measured against
+`rust_xlsxwriter 0.75`, no `zmij`/`constant_memory`). They have not been
+re-measured against the current 0.96 pin -- do that yourself with
+`python examples/benchmark.py` before relying on them; see "Benchmarking
+Your Machine" below.
+
+| Library | Strategy | Time (0.75-era) | Speedup vs. xlsxwriter |
 |---------|----------|------|---------|
-| **rvgsrust** | `write_records()` | **0.550s** | **5.1x** |
-| **rvgsrust** | `write_dataframe()` (Polars) | **0.496s** | **5.7x** |
-| rustpy-xlsxwriter | native API | ~0.27s | ~10.4x |
+| **rvgsrust** | `write_records()` | 0.550s | 5.1x |
+| **rvgsrust** | `write_dataframe()` (Polars) | 0.496s | 5.7x |
+| rustpy-xlsxwriter | native API | ~0.27-0.38s | ~7-10x |
 | xlsxwriter | per-cell | 2.821s | 1x (baseline) |
 
 **Notes:**
-- rustpy-xlsxwriter still fastest due to `constant_memory` feature (streams rows)
-- rvgsrust competitive after upgrade to 0.96 + zmij
-- v0.2 roadmap: implement streaming mode to close gap
-- rvgsrust trades 2-3% speed for **complete feature parity** (charts, conditional formatting, etc.)
+- rustpy-xlsxwriter was faster than rvgsrust at the time of this
+  measurement, tracing to `rustpy-xlsxwriter` building against
+  `rust_xlsxwriter`'s `constant_memory` feature (see the Multithreading
+  section) plus a newer `zip`/`pyo3` stack.
+- `constant_memory` is now available on this side too (see
+  `Workbook.add_worksheet(constant_memory=True)`), but its actual
+  effect on this gap hasn't been measured -- it isn't wired into any
+  default path, and none of the numbers in this document reflect it.
+- Treat "rvgsrust competitive on speed" as a goal this project is
+  working toward, not a currently-measured result.
 
 ## Benchmarking Your Machine
 
@@ -218,7 +245,9 @@ This tests:
 - rustpy-xlsxwriter (if installed)
 - xlsxwriter (if installed)
 
-Output example:
+Output format (illustrative -- shows what the script prints, not a
+captured real run; run it yourself for actual numbers on your machine
+and build):
 ```
 ──────────────────────────────────────────────────────────────────────────────
 BENCHMARK: 100,000 rows × 5 columns
@@ -238,22 +267,18 @@ BENCHMARK: 100,000 rows × 5 columns
 
 RESULTS                                    MEAN (s)     MIN (s)      MAX (s)
 ────────────────────────────────────────────────────────────────────────────
-write_dataframe() [Polars]                 0.4956       0.4900       0.5012 🏆 FASTEST
-write_records() [bulk dict]                0.5500       0.5400       0.5600 (0.90x)
-write_dataframe() [Pandas]                 0.5600       0.5500       0.5700 (0.88x)
-write() [per-cell]                         0.5620       0.5500       0.5750 (0.88x)
-FastExcel.sheet() [native]                 0.2700       0.2650       0.2800 (1.84x)
-xlsxwriter (pure Python)                   2.8210       2.8000       2.8500 (0.18x)
+<library/strategy>                         <mean>       <min>        <max>   <marker>
+...
 ```
 
 ## Optimization Checklist
 
 For maximum performance in your application:
 
-- [ ] **Use `write_dataframe()` for DataFrames** (fastest: ~0.49s/100k rows)
-- [ ] **Use `write_records()` for dict/record data** (fast: ~0.55s/100k rows)
-- [ ] **Avoid per-cell `write()` in loops** (avoid: ~0.56s/100k rows)
-- [ ] **Use multiple sheets for parallel assembly** (auto-threaded)
+- [ ] **Use `write_dataframe()` for DataFrames** (fastest of the paths measured so far -- see caveat above)
+- [ ] **Use `write_records()` for dict/record data** (close behind `write_dataframe()`)
+- [ ] **Avoid per-cell `write()` in loops** (slowest of the three -- see caveat above)
+- [ ] **Use multiple sheets for parallel assembly** (auto-threaded, not 0.96-specific)
 - [ ] **Build with `maturin develop --release`** (LTO + optimizations)
 - [ ] **Update to v0.2 when released** (streaming mode + charts)
 

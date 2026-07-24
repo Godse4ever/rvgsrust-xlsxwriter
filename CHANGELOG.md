@@ -44,5 +44,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 - Built on top of the official [`rust_xlsxwriter`](https://github.com/jmcnamara/rust_xlsxwriter) crate
-- Requires Rust 1.70+ and Python 3.8+
+- Requires Rust 1.83+ (see CONTRIBUTING.md -- `rust_xlsxwriter 0.96`'s own `zip` dependency needs this) and Python 3.8+
 - Platform support: Linux (manylinux2014), macOS, Windows (via maturin builds)
