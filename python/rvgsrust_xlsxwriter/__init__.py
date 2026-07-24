@@ -2,8 +2,9 @@
 RVGSRust-XLSXWriter
 ===================
 
-The most feature-complete, Pythonic Rust-powered XLSX library.
-Built on the official rust_xlsxwriter crate.
+A Rust-powered XLSX library for Python, built on the official
+rust_xlsxwriter crate, with a Pythonic API and Polars/Pandas/PyArrow
+support.
 
 Features
 --------
@@ -14,7 +15,13 @@ Features
 - Image insertion
 - Sheet protection and freeze panes
 - Polars and Pandas DataFrame support (zero-copy where possible)
-- Drop-in replacement for Python xlsxwriter
+
+Not a drop-in replacement for Python xlsxwriter: the API is inspired by
+it but differs in real ways (e.g. Workbook() takes no path argument;
+call close(path) instead; Format objects are built via chained setter
+methods rather than a single dict). Charts, conditional formatting,
+data validation, and tables are not yet implemented -- see the
+Roadmap in README.md for what's planned and what's already there.
 
 Installation
 ------------

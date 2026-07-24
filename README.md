@@ -1,8 +1,8 @@
 # RVGSRust-XLSXWriter
 
-> **The most feature-complete, Pythonic Rust-powered XLSX library.**
+> **A Rust-powered XLSX library for Python, with a Pythonic API and Polars/Pandas/PyArrow support.**
 >
-> Built on the official [`rust_xlsxwriter`](https://github.com/jmcnamara/rust_xlsxwriter) crate — the same engine trusted by the Python `XlsxWriter` library.
+> Built on the official [`rust_xlsxwriter`](https://github.com/jmcnamara/rust_xlsxwriter) crate. Not affiliated with the Python [`XlsxWriter`](https://xlsxwriter.readthedocs.io/) package (a separate, pure-Python project it shares a similar name and purpose with) -- this library's Python-facing API is inspired by it but is not a drop-in replacement; see [Quick Start](#quick-start) below for the real differences.
 
 [![PyPI version](https://badge.fury.io/py/rvgsrust-xlsxwriter.svg)](https://pypi.org/project/rvgsrust-xlsxwriter/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
