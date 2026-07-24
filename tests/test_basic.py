@@ -341,3 +341,31 @@ def test_add_worksheet_constant_memory_defaults_false():
     book = _load()
     assert book["Default"]["A1"].value == "x"
     assert book["ExplicitFalse"]["A1"].value == "y"
+
+
+def test_save_to_invalid_path_raises_oserror():
+    # XlsxError::IoError (from a failed file write -- bad path,
+    # permissions, disk full, etc.) should map to Python's OSError, not
+    # the generic ValueError used for parameter/limit errors (bad row,
+    # duplicate sheet name, etc.) -- these are different failure
+    # categories a caller would want to catch separately.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, "test")
+    with pytest.raises(OSError):
+        wb.close("/this_directory_should_not_exist_xyz123/out.xlsx")
+
+
+def test_parameter_errors_still_raise_valueerror():
+    # Distinguishing OSError above must not change the existing
+    # ValueError behavior for genuine parameter/limit errors.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    with pytest.raises(ValueError):
+        ws.write(2_000_000, 0, "too far down")
+
+    wb2 = Workbook()
+    wb2.add_worksheet("Dup")
+    wb2.add_worksheet("Dup")
+    with pytest.raises(ValueError):
+        wb2.close(TEST_FILE)

@@ -140,3 +140,76 @@ def test_write_dataframe_rejects_non_dataframe():
     ws = wb.add_worksheet()
     with pytest.raises(TypeError):
         ws.write_dataframe(0, 0, {"not": "a dataframe"})
+
+
+# --- Regression tests for the unsafe Arrow PyCapsule handling ---
+#
+# write_dataframe() takes ownership of a C-level ArrowArrayStream
+# struct out of a PyCapsule (record_batches_from_arrow() in
+# src/lib.rs), which involves an unsafe ptr::read plus manually
+# nulling the source struct's release field so the capsule's own
+# destructor doesn't double-release the same underlying data (see the
+# detailed comment there for the full Arrow C Data Interface
+# reasoning). That's the highest-risk code in this crate: a mistake
+# there is a potential double-free or use-after-free, not just a wrong
+# answer. These tests exercise it repeatedly and across varied shapes
+# to have some chance of catching a memory-safety regression, though
+# a clean run here is not a substitute for testing with a sanitizer
+# (ASAN/valgrind) on a real build -- pytest can't detect memory
+# corruption that doesn't happen to crash or corrupt something we
+# assert on.
+
+
+@pytest.mark.skipif(not HAS_PYARROW, reason="PyArrow not installed")
+def test_write_dataframe_repeated_calls_no_crash():
+    table = pa.table({
+        "id": pa.array(list(range(500)), type=pa.int64()),
+        "value": pa.array([float(i) * 1.5 for i in range(500)], type=pa.float64()),
+    })
+    # Repeated capsule take-ownership cycles in one process -- a
+    # double-free from the release-field bug would tend to show up as
+    # a crash somewhere in this loop, not necessarily the first call.
+    for _ in range(20):
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        ws.write_dataframe(0, 0, table)
+        wb.close(TEST_FILE)
+    # If we got here without segfaulting, that's the main signal this
+    # test can give. Also check the last write actually has content.
+    sheet = _load().active
+    assert sheet["A2"].value == 0
+    assert sheet["B2"].value == 0.0
+
+
+@pytest.mark.skipif(not HAS_PYARROW, reason="PyArrow not installed")
+def test_write_dataframe_multiple_worksheets_same_workbook():
+    # Exercises taking ownership of two separate capsules (two
+    # separate __arrow_c_stream__() calls) within the same workbook,
+    # writing to different worksheets.
+    table_a = pa.table({"x": pa.array([1, 2], type=pa.int64())})
+    table_b = pa.table({"y": pa.array(["p", "q"], type=pa.string())})
+    wb = Workbook()
+    ws_a = wb.add_worksheet("A")
+    ws_b = wb.add_worksheet("B")
+    ws_a.write_dataframe(0, 0, table_a)
+    ws_b.write_dataframe(0, 0, table_b)
+    wb.close(TEST_FILE)
+    book = _load()
+    assert book["A"]["A2"].value == 1
+    assert book["B"]["A2"].value == "p"
+
+
+@pytest.mark.skipif(not HAS_PYARROW, reason="PyArrow not installed")
+def test_write_dataframe_empty_table():
+    # Zero rows: the capsule/stream is still created and consumed even
+    # though there's no data to iterate -- makes sure the ownership
+    # handling doesn't assume at least one batch exists.
+    table = pa.table({"x": pa.array([], type=pa.int64())})
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_dataframe(0, 0, table)  # should not raise
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    # No rows to write, but this shouldn't crash and shouldn't produce
+    # spurious content either.
+    assert sheet["A1"].value is None

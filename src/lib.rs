@@ -20,6 +20,26 @@ fn to_pyerr<E: std::fmt::Display>(e: E) -> PyErr {
     PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
 }
 
+// rust_xlsxwriter::XlsxError gets a more specific mapping than the
+// generic to_pyerr() above: most of its variants (bad row/col, reused
+// sheet name, merge-range overlap, etc.) really are ValueErrors -- a
+// caller passed something invalid. But XlsxError::IoError wraps a
+// std::io::Error from the underlying `save()`/file write (permissions,
+// disk full, path doesn't exist) -- that's a different failure
+// category a caller would reasonably want to catch separately (e.g.
+// `except OSError` around a save() call vs `except ValueError` around
+// a write() call), so it maps to Python's OSError instead. This is the
+// path most likely to actually hit IoError in practice: see
+// Workbook.close()'s call to save() below.
+fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
+    match e {
+        rust_xlsxwriter::XlsxError::IoError(io_err) => {
+            PyErr::new::<pyo3::exceptions::PyOSError, _>(io_err.to_string())
+        }
+        other => PyErr::new::<pyo3::exceptions::PyValueError, _>(other.to_string()),
+    }
+}
+
 // ============================================
 // COLOR HELPER
 // ============================================
@@ -232,21 +252,45 @@ enum ArrowColumn<'a> {
 }
 
 fn resolve_arrow_column(array: &dyn Array) -> PyResult<ArrowColumn<'_>> {
+    // Each unwrap() below is guarded by having just matched the exact
+    // ArrowDataType that guarantees the downcast succeeds -- arrow-rs's
+    // own invariant is that an array's concrete type always agrees
+    // with array.data_type(). expect() with a specific message instead
+    // of unwrap() means if that invariant is ever violated (an arrow-rs
+    // bug, or a version mismatch between the arrow crate version this
+    // was compiled against and the one that produced the array), the
+    // panic clearly names which type pairing broke rather than just
+    // saying "called unwrap on a None value".
     match array.data_type() {
         ArrowDataType::Int64 => Ok(ArrowColumn::Int64(
-            array.as_any().downcast_ref::<Int64Array>().unwrap(),
+            array
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .expect("arrow array reported DataType::Int64 but isn't an Int64Array"),
         )),
         ArrowDataType::Float64 => Ok(ArrowColumn::Float64(
-            array.as_any().downcast_ref::<Float64Array>().unwrap(),
+            array
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .expect("arrow array reported DataType::Float64 but isn't a Float64Array"),
         )),
         ArrowDataType::Utf8 => Ok(ArrowColumn::Utf8(
-            array.as_any().downcast_ref::<StringArray>().unwrap(),
+            array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .expect("arrow array reported DataType::Utf8 but isn't a StringArray"),
         )),
         ArrowDataType::LargeUtf8 => Ok(ArrowColumn::LargeUtf8(
-            array.as_any().downcast_ref::<LargeStringArray>().unwrap(),
+            array
+                .as_any()
+                .downcast_ref::<LargeStringArray>()
+                .expect("arrow array reported DataType::LargeUtf8 but isn't a LargeStringArray"),
         )),
         ArrowDataType::Boolean => Ok(ArrowColumn::Bool(
-            array.as_any().downcast_ref::<BooleanArray>().unwrap(),
+            array
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .expect("arrow array reported DataType::Boolean but isn't a BooleanArray"),
         )),
         other => Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
             "write_dataframe(): column type {other:?} isn't supported yet \
@@ -518,8 +562,8 @@ impl Worksheet {
     {
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
-        let sheet = wb.worksheet_from_index(self.index).map_err(to_pyerr)?;
-        f(sheet).map_err(to_pyerr)
+        let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
+        f(sheet).map_err(xlsx_err_to_pyerr)
     }
 }
 
@@ -535,8 +579,8 @@ impl Worksheet {
         format: Option<&Format>,
     ) -> PyResult<()> {
         let cv = classify(value)?;
-        let fmt = format.map(|f| f.inner.clone());
-        self.with_sheet(py, |sheet| write_value(sheet, row, col, &cv, fmt.as_ref()))
+        let fmt = format.map(|f| &f.inner);
+        self.with_sheet(py, |sheet| write_value(sheet, row, col, &cv, fmt))
     }
 
     #[pyo3(signature = (row, col, values, format=None))]
@@ -548,14 +592,14 @@ impl Worksheet {
         values: &Bound<'_, PyList>,
         format: Option<&Format>,
     ) -> PyResult<()> {
-        let fmt = format.map(|f| f.inner.clone());
+        let fmt = format.map(|f| &f.inner);
         let mut classified = Vec::with_capacity(values.len());
         for v in values.iter() {
             classified.push(classify(&v)?);
         }
         self.with_sheet(py, |sheet| {
             for (i, cv) in classified.iter().enumerate() {
-                write_value(sheet, row, col + i as u16, cv, fmt.as_ref())?;
+                write_value(sheet, row, col + i as u16, cv, fmt)?;
             }
             Ok(())
         })
@@ -570,14 +614,14 @@ impl Worksheet {
         values: &Bound<'_, PyList>,
         format: Option<&Format>,
     ) -> PyResult<()> {
-        let fmt = format.map(|f| f.inner.clone());
+        let fmt = format.map(|f| &f.inner);
         let mut classified = Vec::with_capacity(values.len());
         for v in values.iter() {
             classified.push(classify(&v)?);
         }
         self.with_sheet(py, |sheet| {
             for (i, cv) in classified.iter().enumerate() {
-                write_value(sheet, row + i as u32, col, cv, fmt.as_ref())?;
+                write_value(sheet, row + i as u32, col, cv, fmt)?;
             }
             Ok(())
         })
@@ -636,12 +680,12 @@ impl Worksheet {
         // full Vec<Vec<CellValue>> copy of the dataset before writing
         // (100k+ extra heap allocations for a 100k-row sheet) -- read
         // and write are interleaved instead.
-        let data_fmt = format.map(|f| f.inner.clone());
-        let head_fmt = header_format.map(|f| f.inner.clone());
+        let data_fmt = format.map(|f| &f.inner);
+        let head_fmt = header_format.map(|f| &f.inner);
 
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
-        let sheet = wb.worksheet_from_index(self.index).map_err(to_pyerr)?;
+        let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
 
         // dict.get_item(key) converts `key` to a Python object on
         // every call (K: ToPyObject) -- passing a &str/&String there
@@ -660,9 +704,9 @@ impl Worksheet {
                     row_cursor,
                     start_col + i as u16,
                     &CellValue::Str(h.clone()),
-                    head_fmt.as_ref(),
+                    head_fmt,
                 )
-                .map_err(to_pyerr)?;
+                .map_err(xlsx_err_to_pyerr)?;
             }
             row_cursor += 1;
         }
@@ -693,8 +737,8 @@ impl Worksheet {
                     Some(v) => classify(&v)?,
                     None => CellValue::Blank,
                 };
-                write_value(sheet, row_cursor, start_col + i as u16, &cv, data_fmt.as_ref())
-                    .map_err(to_pyerr)?;
+                write_value(sheet, row_cursor, start_col + i as u16, &cv, data_fmt)
+                    .map_err(xlsx_err_to_pyerr)?;
             }
             row_cursor += 1;
         }
@@ -747,11 +791,11 @@ impl Worksheet {
             }
         }
 
-        let head_fmt = header_format.map(|f| f.inner.clone());
+        let head_fmt = header_format.map(|f| &f.inner);
 
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
-        let sheet = wb.worksheet_from_index(self.index).map_err(to_pyerr)?;
+        let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
 
         let mut row_cursor = start_row;
         if write_header {
@@ -761,9 +805,9 @@ impl Worksheet {
                     row_cursor,
                     start_col + i as u16,
                     &CellValue::Str(name.clone()),
-                    head_fmt.as_ref(),
+                    head_fmt,
                 )
-                .map_err(to_pyerr)?;
+                .map_err(xlsx_err_to_pyerr)?;
             }
             row_cursor += 1;
         }
@@ -777,7 +821,7 @@ impl Worksheet {
                 for (c, col) in columns.iter().enumerate() {
                     let cv = arrow_cell_value(col, r);
                     write_value(sheet, row_cursor, start_col + c as u16, &cv, None)
-                        .map_err(to_pyerr)?;
+                        .map_err(xlsx_err_to_pyerr)?;
                 }
                 row_cursor += 1;
             }
@@ -798,9 +842,10 @@ impl Worksheet {
         format: Option<&Format>,
     ) -> PyResult<()> {
         let cv = classify(value)?;
-        let fmt = format.map(|f| f.inner.clone()).unwrap_or_else(RustFormat::new);
+        let default_fmt = RustFormat::new();
+        let fmt: &RustFormat = format.map(|f| &f.inner).unwrap_or(&default_fmt);
         self.with_sheet(py, |sheet| {
-            merge_value(sheet, first_row, first_col, last_row, last_col, &cv, &fmt)
+            merge_value(sheet, first_row, first_col, last_row, last_col, &cv, fmt)
         })
     }
 
@@ -855,7 +900,7 @@ impl Worksheet {
         formula: &str,
         format: Option<&Format>,
     ) -> PyResult<()> {
-        let fmt = format.map(|f| f.inner.clone());
+        let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_formula_with_format(row, col, formula, f).map(|_| ()),
             None => sheet.write_formula(row, col, formula).map(|_| ()),
@@ -871,7 +916,7 @@ impl Worksheet {
         url: &str,
         format: Option<&Format>,
     ) -> PyResult<()> {
-        let fmt = format.map(|f| f.inner.clone());
+        let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_url_with_format(row, col, url, f).map(|_| ()),
             None => sheet.write_url(row, col, url).map(|_| ()),
@@ -893,11 +938,11 @@ impl Worksheet {
         sec: f64,
         format: Option<&Format>,
     ) -> PyResult<()> {
-        let fmt = format.map(|f| f.inner.clone());
+        let fmt = format.map(|f| &f.inner);
         let dt = rust_xlsxwriter::ExcelDateTime::from_ymd(year, month, day)
-            .map_err(to_pyerr)?
+            .map_err(xlsx_err_to_pyerr)?
             .and_hms(hour, min, sec)
-            .map_err(to_pyerr)?;
+            .map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
@@ -915,8 +960,8 @@ impl Worksheet {
         day: u8,
         format: Option<&Format>,
     ) -> PyResult<()> {
-        let fmt = format.map(|f| f.inner.clone());
-        let dt = rust_xlsxwriter::ExcelDateTime::from_ymd(year, month, day).map_err(to_pyerr)?;
+        let fmt = format.map(|f| &f.inner);
+        let dt = rust_xlsxwriter::ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
@@ -924,7 +969,7 @@ impl Worksheet {
     }
 
     fn insert_image(&self, py: Python<'_>, row: u32, col: u16, image_path: &str) -> PyResult<()> {
-        let image = rust_xlsxwriter::Image::new(image_path).map_err(to_pyerr)?;
+        let image = rust_xlsxwriter::Image::new(image_path).map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| sheet.insert_image(row, col, &image).map(|_| ()))
     }
 
@@ -1003,7 +1048,7 @@ impl Workbook {
                 wb.add_worksheet()
             };
             if let Some(n) = name {
-                sheet.set_name(n).map_err(to_pyerr)?;
+                sheet.set_name(n).map_err(xlsx_err_to_pyerr)?;
             }
             let mut count = wb_ref.sheet_count.borrow_mut();
             let idx = *count;
@@ -1024,7 +1069,7 @@ impl Workbook {
     }
 
     fn close(&self, path: &str) -> PyResult<()> {
-        self.inner.borrow_mut().save(path).map_err(to_pyerr)?;
+        self.inner.borrow_mut().save(path).map_err(xlsx_err_to_pyerr)?;
         Ok(())
     }
 
