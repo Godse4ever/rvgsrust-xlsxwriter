@@ -219,6 +219,17 @@ ws.hide()                          # Hide sheet
 ws.set_tab_color("red")            # Color the sheet tab
 ws.protect("password")             # Password protect
 ws.autofit()                       # Auto-fit columns
+ws.autofilter(0, 0, 100, 4)        # Add filter dropdowns over A1:E101
+```
+
+### Defined Names
+
+```python
+# Workbook-global name
+wb.define_name("SalesTotal", "Sheet1!$B$2:$B$100")
+
+# Sheet-scoped name (only visible/usable within that sheet)
+wb.define_name("Sheet1!LocalTotal", "Sheet1!$B$2:$B$100")
 ```
 
 ---
@@ -351,7 +362,7 @@ This tests multiple strategies (write_records, write_dataframe with Polars/Panda
 | Version | Features |
 |---------|----------|
 | **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images, Polars/Pandas support |
-| **v0.2** | 🚧 Charts, conditional formatting, extended Arrow types, streaming mode |
+| **v0.2** | ✅ Bulk `write_records()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names. 🚧 Charts, conditional formatting, extended Arrow types |
 | **v0.3** | 🚧 Data validation, tables, sparklines |
 | **v0.4** | 🚧 Full xlsxwriter API compatibility layer |
 

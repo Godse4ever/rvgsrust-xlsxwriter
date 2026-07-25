@@ -1064,6 +1064,26 @@ impl Worksheet {
     fn set_name(&self, py: Python<'_>, name: &str) -> PyResult<()> {
         self.with_sheet(py, |sheet| sheet.set_name(name).map(|_| ()))
     }
+
+    // Adds Excel's autofilter dropdown controls to the header row of a
+    // range (first_row is typically the header row; data rows follow
+    // below it). Does not itself hide/filter any rows -- that's a
+    // display-time Excel feature, not something this writes into the
+    // file -- it just adds the filter UI and the range it applies to.
+    fn autofilter(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet
+                .autofilter(first_row, first_col, last_row, last_col)
+                .map(|_| ())
+        })
+    }
 }
 
 // ============================================
@@ -1153,6 +1173,20 @@ impl Workbook {
 
     fn close(&self, path: &str) -> PyResult<()> {
         self.inner.borrow_mut().save(path).map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    // Defines a named range/formula usable in Excel formulas and the
+    // Name Box. `name` can be a plain name for a workbook-global
+    // definition ("MyRange"), or "SheetName!Name" for a name scoped to
+    // one worksheet (matches rust_xlsxwriter's own convention for
+    // distinguishing the two -- see its define_name() docs). `formula`
+    // is the range/formula the name refers to, e.g. "Sheet1!$A$1:$A$10".
+    fn define_name(&self, name: &str, formula: &str) -> PyResult<()> {
+        self.inner
+            .borrow_mut()
+            .define_name(name, formula)
+            .map_err(xlsx_err_to_pyerr)?;
         Ok(())
     }
 

@@ -456,3 +456,55 @@ def test_constant_memory_write_column_advances_to_last_row_touched():
     ws.write(2, 1, "same row as last of the column -- fine")
     with pytest.raises(ValueError):
         ws.write(1, 1, "row 1 -- already passed by the column write")
+
+
+def test_autofilter():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["Name", "Dept"])
+    ws.write_row(1, 0, ["Alice", "Eng"])
+    ws.autofilter(0, 0, 1, 1)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet.auto_filter.ref == "A1:B2"
+
+
+def test_autofilter_out_of_range_raises():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    with pytest.raises(ValueError):
+        ws.autofilter(0, 0, 2_000_000, 0)
+
+
+def test_define_name_global():
+    wb = Workbook()
+    ws = wb.add_worksheet("Data")
+    ws.write(0, 0, "x")
+    wb.define_name("MyRange", "Data!$A$1")
+    wb.close(TEST_FILE)
+    book = _load()
+    assert "MyRange" in book.defined_names
+
+
+def test_define_name_sheet_scoped():
+    wb = Workbook()
+    ws = wb.add_worksheet("Data")
+    ws.write(0, 0, "x")
+    wb.define_name("Data!LocalName", "Data!$A$1")
+    wb.close(TEST_FILE)
+    book = _load()
+    assert "LocalName" in book["Data"].defined_names
+
+
+def test_define_name_invalid_start_char_raises():
+    wb = Workbook()
+    wb.add_worksheet()
+    with pytest.raises(ValueError):
+        wb.define_name("1BadName", "Sheet1!$A$1")
+
+
+def test_define_name_invalid_char_raises():
+    wb = Workbook()
+    wb.add_worksheet()
+    with pytest.raises(ValueError):
+        wb.define_name("Bad Name", "Sheet1!$A$1")

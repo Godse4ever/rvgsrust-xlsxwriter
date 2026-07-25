@@ -32,6 +32,10 @@ PERFORMANCE.md for what's confirmed vs. still estimated).
   itself (a clear `ValueError` on violation), since `rust_xlsxwriter`
   does not raise an error for this on its own and would otherwise
   silently produce a corrupt or incomplete `.xlsx` file.
+- `Worksheet.autofilter(first_row, first_col, last_row, last_col)`:
+  adds Excel's autofilter dropdown controls over a range.
+- `Workbook.define_name(name, formula)`: defines a workbook-global or
+  sheet-scoped (`"Sheet1!Name"`) named range/formula.
 
 ### Changed
 - Upgraded the pinned `rust_xlsxwriter` version to 0.96 (from 0.75),
@@ -72,6 +76,12 @@ PERFORMANCE.md for what's confirmed vs. still estimated).
   row-order enforcement, including the write-column-then-write-earlier-
   row edge case (validates against the *last* row a multi-row call
   touched, not just the first).
+- Tests for `autofilter()` (correct range, out-of-range rejection) and
+  `define_name()`: global and sheet-scoped names, and the real
+  validation rules `rust_xlsxwriter` enforces (name must start with a
+  letter or underscore, and can't contain certain characters).
+  Duplicate names are NOT rejected -- confirmed that's
+  `rust_xlsxwriter`'s own behavior, not a gap in this binding.
 
 ## [0.1.0] - 2026-07-23
 
