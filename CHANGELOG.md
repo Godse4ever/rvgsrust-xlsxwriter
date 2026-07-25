@@ -7,15 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0-dev] - Unreleased
 
-**Not yet verified on real hardware.** This project's Rust toolchain
-requirement (1.83+, for `rust_xlsxwriter 0.96`'s own `zip` dependency)
-exceeds what's available in the sandbox this was developed in -- every
-change below was verified via a stand-in build against the previously-
-working `rust_xlsxwriter 0.75` pin (identical API surface, confirmed by
-diffing 0.96's source directly) plus the full test suite, not a real
-build of the actual pinned dependency. See Cargo.toml for the full
-explanation. **Build and test this on a machine with a current Rust
-toolchain before relying on it.**
+**Core build confirmed on real hardware** (macOS, 4-core, rustc 1.83+,
+`maturin develop --release`): `rust_xlsxwriter 0.96` compiles cleanly
+with no source changes and no sandbox-specific dependency pins, and a
+basic Workbook/add_worksheet/write/close smoke test passes. This was
+run against an earlier point in this entry's history, before the
+`constant_memory` row-order enforcement below and the version bump
+itself -- worth re-confirming after pulling latest, but the
+fundamental "does this even build" risk this project's development
+sandbox couldn't resolve is now answered: yes.
+
+Not yet confirmed on real hardware: the full test suite (`pytest
+tests/`), the `constant_memory` row-order enforcement specifically, and
+current performance numbers (an early comparison against
+`rustpy-xlsxwriter` on that same machine showed `rustpy` still ahead,
+1.26-1.53x depending on row count and narrowing at scale -- see
+PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
 - `Workbook.add_worksheet(constant_memory=True)`: streams a worksheet's

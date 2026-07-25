@@ -43,7 +43,14 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 # is a problem with this project's code -- every API signature this
 # project calls was diffed directly against 0.96's source and found
 # identical to the previously-working 0.75 pin. Needs rustc 1.83+ to
-# build; verify with `cargo build --release` there.
+# build.
+#
+# CONFIRMED WORKING on real hardware: `maturin develop --release`
+# succeeded on macOS (4-core, conda env, rustc 1.83+) building this
+# exact pin from a clean `cargo clean` state, no source changes, no
+# indexmap/half pins needed (those sandbox-specific workarounds were
+# deliberately not added here -- confirmed that was the right call).
+# Smoke-tested (Workbook/add_worksheet/write/close) successfully.
 rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij", "constant_memory"] }
 
 # Native Arrow zero-copy DataFrame support (write_dataframe()). Reads

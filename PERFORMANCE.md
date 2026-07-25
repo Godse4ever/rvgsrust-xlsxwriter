@@ -222,6 +222,30 @@ Your Machine" below.
 - Treat "rvgsrust competitive on speed" as a goal this project is
   working toward, not a currently-measured result.
 
+### First real-hardware data point (macOS, 4-core, rustc 1.83+)
+
+Someone ran a custom comparison script (`bench_compare.py`, not the
+`examples/benchmark.py` in this repo, so methodology -- warmup runs,
+file cleanup, which rvgsrust write method -- isn't independently
+confirmed here) against an early `0.96`-pinned build (predates the
+`constant_memory` row-order enforcement and the version bump to
+`0.2.0-dev`, and did not use `constant_memory=True` on the rvgsrust
+side):
+
+| Rows | rvgsrust | rustpy-xlsxwriter | rustpy speedup |
+|------|----------|--------------------|-----------------|
+| 1,000 | 0.0222s ± 0.0037 | 0.0145s ± 0.0019 | 1.53x |
+| 10,000 | 0.1780s ± 0.0241 | 0.1197s ± 0.0101 | 1.49x |
+| 100,000 | 1.7487s ± 0.1738 | 1.3871s ± 0.3004 | 1.26x |
+
+Two things worth noting: this gap is narrower than the ~1.7-2x gap
+measured against the pre-0.96 sandbox numbers above (consistent with
+the 0.96/`zmij` upgrade helping, though this isn't a clean A/B -- 
+different hardware, different script), and it wasn't using
+`constant_memory=True`, which is specifically the feature `rustpy`'s
+own advantage traces to. Re-measuring with `constant_memory=True` and
+against current `main` is the natural next step, not yet done.
+
 ## Benchmarking Your Machine
 
 Run the included comprehensive benchmark:
