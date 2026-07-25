@@ -1,9 +1,9 @@
 [package]
 name = "rvgsrust-xlsxwriter"
-version = "0.1.0"
+version = "0.2.0-dev"
 edition = "2021"
 license = "MIT"
-description = "Python bindings for rust_xlsxwriter - feature-complete XLSX writing"
+description = "Python bindings for rust_xlsxwriter -- a Rust-powered XLSX writer"
 repository = "https://github.com/Godse4ever/rvgsrust-xlsxwriter"
 
 [lib]
@@ -20,12 +20,19 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 #   in src/lib.rs, which streams rows to a temp file instead of
 #   buffering the whole sheet. Restriction (confirmed from
 #   rust_xlsxwriter's own src/performance.rs): rows must be written in
-#   non-decreasing order, and violating that does NOT raise a clean
-#   error (confirmed from worksheet.rs's check_dimensions/store_string
-#   -- it silently proceeds rather than returning an XlsxError, so this
-#   is the caller's responsibility, not something this crate protects
-#   against). write_records()/write_dataframe() both already write
-#   row-by-row in increasing order, so they're safe with it.
+#   non-decreasing order. rust_xlsxwriter itself does NOT raise a clean
+#   error if that's violated (confirmed from worksheet.rs's
+#   check_dimensions/store_string -- it silently proceeds rather than
+#   returning an XlsxError, which would produce a corrupt/incomplete
+#   .xlsx with no signal to the caller), so this binding layer enforces
+#   it itself: every Worksheet method that writes cells checks and
+#   tracks a per-worksheet row high-water mark (Worksheet::
+#   check_row_order()/check_row_order_range() in src/lib.rs) and raises
+#   a clear ValueError instead of letting a backward write through.
+#   write_records()/write_dataframe() both already write row-by-row in
+#   increasing order, so they're unaffected by this in normal use; the
+#   check exists for direct write()/write_row()/merge_range()/etc calls
+#   that might not maintain that invariant on their own.
 #
 # Toolchain note: this exact pin could not be compiled in the sandbox
 # this was developed in (rustc 1.75, apt-installed) -- confirmed via

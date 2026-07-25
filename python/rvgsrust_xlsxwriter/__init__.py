@@ -48,7 +48,7 @@ Quick Start
 
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0.dev0"
 __author__ = "RVGS Team"
 __license__ = "MIT"
 

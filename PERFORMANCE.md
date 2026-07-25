@@ -2,7 +2,7 @@
 
 ## Overview
 
-RVGSRust-XLSXWriter v0.1.0 is built for **maximum performance** while maintaining complete feature parity with Python xlsxwriter. This document details optimization strategies and benchmarking results.
+RVGSRust-XLSXWriter is a Rust-powered XLSX writer for Python. This document details optimization strategies and benchmarking results; see the README's Roadmap for what's implemented versus planned (charts, conditional formatting, data validation, and tables are not yet implemented).
 
 ## Build-Time Optimizations
 

@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-dev] - Unreleased
+
+**Not yet verified on real hardware.** This project's Rust toolchain
+requirement (1.83+, for `rust_xlsxwriter 0.96`'s own `zip` dependency)
+exceeds what's available in the sandbox this was developed in -- every
+change below was verified via a stand-in build against the previously-
+working `rust_xlsxwriter 0.75` pin (identical API surface, confirmed by
+diffing 0.96's source directly) plus the full test suite, not a real
+build of the actual pinned dependency. See Cargo.toml for the full
+explanation. **Build and test this on a machine with a current Rust
+toolchain before relying on it.**
+
+### Added
+- `Workbook.add_worksheet(constant_memory=True)`: streams a worksheet's
+  rows to a temp file instead of buffering the whole sheet in memory,
+  via `rust_xlsxwriter`'s `constant_memory` feature. Requires rows to
+  be written in non-decreasing order -- enforced by this binding layer
+  itself (a clear `ValueError` on violation), since `rust_xlsxwriter`
+  does not raise an error for this on its own and would otherwise
+  silently produce a corrupt or incomplete `.xlsx` file.
+
+### Changed
+- Upgraded the pinned `rust_xlsxwriter` version to 0.96 (from 0.75),
+  enabling the `zmij` (faster numeric writes) and `constant_memory`
+  Cargo features.
+- `write_records()`/`write_dataframe()`/`merge_range()`/etc. no longer
+  clone the caller's `Format` on every call -- pass a reference
+  instead, since `rust_xlsxwriter`'s `write_x_with_format()` /
+  `merge_range()` take `&Format`, not an owned value.
+- I/O failures on `Workbook.close()` (bad path, permissions, disk
+  full) now raise `OSError` instead of the generic `ValueError` used
+  for parameter/limit errors, so callers can distinguish the two.
+- `merge_range()` now preserves numeric and boolean cell types
+  (previously stringified every merged value, which broke `SUM()` over
+  a merged numeric range).
+
+### Fixed
+- Removed `panic = "abort"` from the release profile: for a PyO3
+  extension this turns any Rust panic into a hard crash of the whole
+  Python process instead of a catchable exception, which is a
+  reliability regression, not a pure performance win.
+- Several documentation inaccuracies: an unverified "drop-in
+  replacement for Python xlsxwriter" claim (false -- the two projects
+  are unrelated and the APIs differ in real ways), an unverifiable
+  "most feature-complete"/"full feature parity" superlative (charts,
+  conditional formatting, data validation, and tables are all still
+  unimplemented), a factually incorrect implication that Python's
+  `XlsxWriter` package uses this project's `rust_xlsxwriter` crate (it
+  doesn't -- they're separate, unrelated projects), and benchmark
+  figures that were presented as current without noting they predated
+  this release's `rust_xlsxwriter` upgrade.
+
+### Tests
+- Regression tests for the unsafe Arrow PyCapsule ownership-transfer
+  code (`write_dataframe()`): repeated calls, multiple worksheets in
+  one workbook, and the zero-row edge case.
+- Tests locking in the `constant_memory` API contract and its
+  row-order enforcement, including the write-column-then-write-earlier-
+  row edge case (validates against the *last* row a multi-row call
+  touched, not just the first).
+
 ## [0.1.0] - 2026-07-23
 
 ### Added
@@ -29,7 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 - **Performance**: 5-10x faster than pure Python xlsxwriter
-- **Completeness**: Full feature parity with Python xlsxwriter library
 - **Zero-copy**: Native Arrow integration eliminates per-cell Python object extraction
 - **Easy to use**: Pythonic API with optional DataFrame support
 - **Well-tested**: Comprehensive test coverage validating actual cell contents and formatting

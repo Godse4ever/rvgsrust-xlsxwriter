@@ -248,7 +248,7 @@ def run_benchmark(name, func, data, runs=3):
 
 def main():
     print("=" * 80)
-    print("RVGSRust-XLSXWriter v0.1.0 - Comprehensive Benchmark")
+    print("RVGSRust-XLSXWriter - Comprehensive Benchmark")
     print("=" * 80)
     print(f"Using rust_xlsxwriter 0.96 with zmij backend + LTO optimization")
     print()

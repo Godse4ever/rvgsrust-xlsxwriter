@@ -4,8 +4,8 @@ build-backend = "maturin"
 
 [project]
 name = "rvgsrust-xlsxwriter"
-version = "0.1.0"
-description = "The most feature-complete, Pythonic Rust-powered XLSX library. Built on rust_xlsxwriter."
+version = "0.2.0.dev0"
+description = "A Rust-powered XLSX library for Python, with a Pythonic API and Polars/Pandas/PyArrow support. Built on rust_xlsxwriter."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
