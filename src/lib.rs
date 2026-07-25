@@ -8,7 +8,7 @@ use rust_xlsxwriter::{
     Color, FormatAlign, FormatBorder, FormatPattern,
     Workbook as RustWorkbook, Worksheet as RustWorksheet, Format as RustFormat,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 // ============================================
 // ERROR HELPER
@@ -553,6 +553,16 @@ impl Format {
 struct Worksheet {
     workbook: Py<Workbook>,
     index: usize,
+    // Both only meaningful when constant_memory is true. rust_xlsxwriter's
+    // own constant-memory mode requires rows to be written in
+    // non-decreasing order, but -- confirmed directly from its source
+    // (check_dimensions/store_string in worksheet.rs) -- does NOT raise an
+    // error when that's violated. It silently proceeds, which produces a
+    // corrupt or incomplete .xlsx with no signal to the caller. This
+    // binding layer enforces the restriction itself instead of leaving
+    // callers exposed to that.
+    constant_memory: bool,
+    min_allowed_row: Cell<u32>,
 }
 
 impl Worksheet {
@@ -564,6 +574,44 @@ impl Worksheet {
         let mut wb = wb_ref.inner.borrow_mut();
         let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
         f(sheet).map_err(xlsx_err_to_pyerr)
+    }
+
+    // Call before writing to `row`. No-op unless constant_memory is set.
+    // Rejects a write to any row before the highest row already written,
+    // with a clear Python exception, instead of letting it through to
+    // rust_xlsxwriter's silent-corruption path. Advances the tracked
+    // high-water mark to `row` on success.
+    fn check_row_order(&self, row: u32) -> PyResult<()> {
+        if self.constant_memory {
+            let min_row = self.min_allowed_row.get();
+            if row < min_row {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Cannot write to row {row}: this worksheet was created with \
+                     constant_memory=True, which requires rows to be written in \
+                     non-decreasing order, and row {min_row} has already been \
+                     written. (rust_xlsxwriter itself does not raise an error for \
+                     this -- it would silently produce a corrupt or incomplete \
+                     .xlsx file instead -- so this check exists specifically to \
+                     catch it here.)"
+                )));
+            }
+            self.min_allowed_row.set(row);
+        }
+        Ok(())
+    }
+
+    // Same as check_row_order(), but for a call that's already known (by
+    // the caller) to touch rows up through `last_row_touched` in one go
+    // (write_column, merge_range, write_records, write_dataframe) --
+    // validates the starting row, then advances the high-water mark to
+    // the last row actually written instead of just the first, so a
+    // later out-of-order call is still caught correctly.
+    fn check_row_order_range(&self, first_row: u32, last_row_touched: u32) -> PyResult<()> {
+        self.check_row_order(first_row)?;
+        if self.constant_memory {
+            self.min_allowed_row.set(last_row_touched);
+        }
+        Ok(())
     }
 }
 
@@ -579,6 +627,7 @@ impl Worksheet {
         format: Option<&Format>,
     ) -> PyResult<()> {
         let cv = classify(value)?;
+        self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| write_value(sheet, row, col, &cv, fmt))
     }
@@ -592,6 +641,7 @@ impl Worksheet {
         values: &Bound<'_, PyList>,
         format: Option<&Format>,
     ) -> PyResult<()> {
+        self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         let mut classified = Vec::with_capacity(values.len());
         for v in values.iter() {
@@ -618,6 +668,10 @@ impl Worksheet {
         let mut classified = Vec::with_capacity(values.len());
         for v in values.iter() {
             classified.push(classify(&v)?);
+        }
+        if !classified.is_empty() {
+            let last_row = row + (classified.len() as u32 - 1);
+            self.check_row_order_range(row, last_row)?;
         }
         self.with_sheet(py, |sheet| {
             for (i, cv) in classified.iter().enumerate() {
@@ -657,6 +711,16 @@ impl Worksheet {
         if records.is_empty() {
             return Ok(());
         }
+
+        // write_records() always writes rows sequentially starting at
+        // start_row (optionally +1 for the header row) through
+        // start_row + records.len() (+1) - 1, so the whole range can be
+        // validated in one check up front instead of once per row --
+        // consistent with write_records() being the bulk/low-per-call-
+        // overhead path.
+        let header_rows = if write_header { 1 } else { 0 };
+        let last_row = start_row + header_rows + records.len() as u32 - 1;
+        self.check_row_order_range(start_row, last_row)?;
 
         let headers: Vec<String> = match headers {
             Some(h) => h,
@@ -793,6 +857,17 @@ impl Worksheet {
 
         let head_fmt = header_format.map(|f| &f.inner);
 
+        // Same one-check-for-the-whole-call approach as write_records():
+        // total rows this call will touch is known upfront (sum of each
+        // batch's row count, each an O(1) lookup), so there's no need to
+        // check per-row.
+        let total_data_rows: u32 = batches.iter().map(|b| b.num_rows() as u32).sum();
+        let header_rows = if write_header { 1 } else { 0 };
+        if total_data_rows + header_rows > 0 {
+            let last_row = start_row + header_rows + total_data_rows - 1;
+            self.check_row_order_range(start_row, last_row)?;
+        }
+
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
         let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
@@ -842,6 +917,7 @@ impl Worksheet {
         format: Option<&Format>,
     ) -> PyResult<()> {
         let cv = classify(value)?;
+        self.check_row_order_range(first_row, last_row)?;
         let default_fmt = RustFormat::new();
         let fmt: &RustFormat = format.map(|f| &f.inner).unwrap_or(&default_fmt);
         self.with_sheet(py, |sheet| {
@@ -900,6 +976,7 @@ impl Worksheet {
         formula: &str,
         format: Option<&Format>,
     ) -> PyResult<()> {
+        self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_formula_with_format(row, col, formula, f).map(|_| ()),
@@ -916,6 +993,7 @@ impl Worksheet {
         url: &str,
         format: Option<&Format>,
     ) -> PyResult<()> {
+        self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_url_with_format(row, col, url, f).map(|_| ()),
@@ -938,6 +1016,7 @@ impl Worksheet {
         sec: f64,
         format: Option<&Format>,
     ) -> PyResult<()> {
+        self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         let dt = rust_xlsxwriter::ExcelDateTime::from_ymd(year, month, day)
             .map_err(xlsx_err_to_pyerr)?
@@ -960,6 +1039,7 @@ impl Worksheet {
         day: u8,
         format: Option<&Format>,
     ) -> PyResult<()> {
+        self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         let dt = rust_xlsxwriter::ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match &fmt {
@@ -969,6 +1049,7 @@ impl Worksheet {
     }
 
     fn insert_image(&self, py: Python<'_>, row: u32, col: u16, image_path: &str) -> PyResult<()> {
+        self.check_row_order(row)?;
         let image = rust_xlsxwriter::Image::new(image_path).map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| sheet.insert_image(row, col, &image).map(|_| ()))
     }
@@ -1060,6 +1141,8 @@ impl Workbook {
             Worksheet {
                 workbook: slf.clone_ref(py),
                 index,
+                constant_memory,
+                min_allowed_row: Cell::new(0),
             },
         )
     }

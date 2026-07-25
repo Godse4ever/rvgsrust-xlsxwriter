@@ -369,3 +369,90 @@ def test_parameter_errors_still_raise_valueerror():
     wb2.add_worksheet("Dup")
     with pytest.raises(ValueError):
         wb2.close(TEST_FILE)
+
+
+def test_constant_memory_normal_worksheet_unaffected():
+    # constant_memory's row-order enforcement must not apply to regular
+    # worksheets -- out-of-order writes stay fully supported there.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(5, 0, "row 5 first")
+    ws.write(0, 0, "row 0 second")  # backward -- fine on a normal sheet
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A6"].value == "row 5 first"
+    assert sheet["A1"].value == "row 0 second"
+
+
+def test_constant_memory_forward_writes_succeed():
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    ws.write(0, 0, "a")
+    ws.write(1, 0, "b")
+    ws.write_row(2, 0, ["c", "d"])
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].value == "a"
+    assert sheet["A2"].value == "b"
+    assert [c.value for c in sheet[3]] == ["c", "d"]
+
+
+def test_constant_memory_same_row_multiple_columns_allowed():
+    # Writing multiple columns within the same row is not a "backward"
+    # move and must be allowed.
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    ws.write(3, 0, "a")
+    ws.write(3, 1, "b")
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A4"].value == "a"
+    assert sheet["B4"].value == "b"
+
+
+def test_constant_memory_backward_write_raises():
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    ws.write(5, 0, "row 5")
+    with pytest.raises(ValueError, match="non-decreasing order"):
+        ws.write(2, 0, "row 2 -- should be rejected")
+
+
+def test_constant_memory_backward_write_row_raises():
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    ws.write_row(5, 0, ["x"])
+    with pytest.raises(ValueError):
+        ws.write_row(2, 0, ["y"])
+
+
+def test_constant_memory_backward_merge_range_raises():
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    fmt = wb.add_format()
+    ws.write(10, 0, "later")
+    with pytest.raises(ValueError):
+        ws.merge_range(0, 0, 0, 2, "too early", fmt)
+
+
+def test_constant_memory_backward_write_records_raises():
+    # write_records() validates its whole row range up front (before
+    # doing any writing), catching a backward move relative to a prior
+    # call in a single check rather than needing to fail partway
+    # through.
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    ws.write(10, 0, "row 10")
+    with pytest.raises(ValueError):
+        ws.write_records(0, 0, [{"a": 1}, {"a": 2}])
+
+
+def test_constant_memory_write_column_advances_to_last_row_touched():
+    # write_column() touches multiple rows in one call; the next write
+    # must be validated against the LAST row it touched, not the first.
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    ws.write_column(0, 0, ["a", "b", "c"])  # touches rows 0, 1, 2
+    ws.write(2, 1, "same row as last of the column -- fine")
+    with pytest.raises(ValueError):
+        ws.write(1, 1, "row 1 -- already passed by the column write")
