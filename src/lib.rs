@@ -7,6 +7,7 @@ use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use rust_xlsxwriter::{
     Color, FormatAlign, FormatBorder, FormatPattern,
     Workbook as RustWorkbook, Worksheet as RustWorksheet, Format as RustFormat,
+    Table as RustTable, TableColumn as RustTableColumn, TableFunction, TableStyle,
 };
 use std::cell::{Cell, RefCell};
 
@@ -532,6 +533,263 @@ impl Format {
         };
         slf.update(|f| f.set_pattern(pat));
         slf
+    }
+}
+
+// ============================================
+// TABLE / TABLECOLUMN CLASSES
+// ============================================
+// Excel worksheet tables (Insert > Table), via rust_xlsxwriter's Table
+// and TableColumn builders. Usage mirrors the crate's own: write the
+// data with the normal write_*() methods first, build a Table (with
+// TableColumn entries for header/total-row/formula/format options),
+// then call Worksheet.add_table() over the range that data occupies.
+
+fn parse_table_style(s: &str) -> PyResult<TableStyle> {
+    match s.to_lowercase().as_str() {
+        "none" => Ok(TableStyle::None),
+        "light1" => Ok(TableStyle::Light1),
+        "light2" => Ok(TableStyle::Light2),
+        "light3" => Ok(TableStyle::Light3),
+        "light4" => Ok(TableStyle::Light4),
+        "light5" => Ok(TableStyle::Light5),
+        "light6" => Ok(TableStyle::Light6),
+        "light7" => Ok(TableStyle::Light7),
+        "light8" => Ok(TableStyle::Light8),
+        "light9" => Ok(TableStyle::Light9),
+        "light10" => Ok(TableStyle::Light10),
+        "light11" => Ok(TableStyle::Light11),
+        "light12" => Ok(TableStyle::Light12),
+        "light13" => Ok(TableStyle::Light13),
+        "light14" => Ok(TableStyle::Light14),
+        "light15" => Ok(TableStyle::Light15),
+        "light16" => Ok(TableStyle::Light16),
+        "light17" => Ok(TableStyle::Light17),
+        "light18" => Ok(TableStyle::Light18),
+        "light19" => Ok(TableStyle::Light19),
+        "light20" => Ok(TableStyle::Light20),
+        "light21" => Ok(TableStyle::Light21),
+        "medium1" => Ok(TableStyle::Medium1),
+        "medium2" => Ok(TableStyle::Medium2),
+        "medium3" => Ok(TableStyle::Medium3),
+        "medium4" => Ok(TableStyle::Medium4),
+        "medium5" => Ok(TableStyle::Medium5),
+        "medium6" => Ok(TableStyle::Medium6),
+        "medium7" => Ok(TableStyle::Medium7),
+        "medium8" => Ok(TableStyle::Medium8),
+        "medium9" => Ok(TableStyle::Medium9),
+        "medium10" => Ok(TableStyle::Medium10),
+        "medium11" => Ok(TableStyle::Medium11),
+        "medium12" => Ok(TableStyle::Medium12),
+        "medium13" => Ok(TableStyle::Medium13),
+        "medium14" => Ok(TableStyle::Medium14),
+        "medium15" => Ok(TableStyle::Medium15),
+        "medium16" => Ok(TableStyle::Medium16),
+        "medium17" => Ok(TableStyle::Medium17),
+        "medium18" => Ok(TableStyle::Medium18),
+        "medium19" => Ok(TableStyle::Medium19),
+        "medium20" => Ok(TableStyle::Medium20),
+        "medium21" => Ok(TableStyle::Medium21),
+        "medium22" => Ok(TableStyle::Medium22),
+        "medium23" => Ok(TableStyle::Medium23),
+        "medium24" => Ok(TableStyle::Medium24),
+        "medium25" => Ok(TableStyle::Medium25),
+        "medium26" => Ok(TableStyle::Medium26),
+        "medium27" => Ok(TableStyle::Medium27),
+        "medium28" => Ok(TableStyle::Medium28),
+        "dark1" => Ok(TableStyle::Dark1),
+        "dark2" => Ok(TableStyle::Dark2),
+        "dark3" => Ok(TableStyle::Dark3),
+        "dark4" => Ok(TableStyle::Dark4),
+        "dark5" => Ok(TableStyle::Dark5),
+        "dark6" => Ok(TableStyle::Dark6),
+        "dark7" => Ok(TableStyle::Dark7),
+        "dark8" => Ok(TableStyle::Dark8),
+        "dark9" => Ok(TableStyle::Dark9),
+        "dark10" => Ok(TableStyle::Dark10),
+        "dark11" => Ok(TableStyle::Dark11),
+        other => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Unknown table style '{other}'. Expected 'none', 'light1'..'light21', \
+             'medium1'..'medium28', or 'dark1'..'dark11'."
+        ))),
+    }
+}
+
+// Unlike table style (a fixed set with no escape hatch), any total-row
+// function string that isn't one of the built-in names is passed
+// through as a custom formula -- matches TableFunction::Custom(Formula)
+// in the underlying crate, which exists for exactly this case.
+fn parse_table_function(s: &str) -> TableFunction {
+    match s.to_lowercase().replace('_', "").as_str() {
+        "none" => TableFunction::None,
+        "average" => TableFunction::Average,
+        "count" => TableFunction::Count,
+        "countnumbers" => TableFunction::CountNumbers,
+        "max" => TableFunction::Max,
+        "min" => TableFunction::Min,
+        "sum" => TableFunction::Sum,
+        "stddev" => TableFunction::StdDev,
+        "var" => TableFunction::Var,
+        _ => TableFunction::Custom(s.into()),
+    }
+}
+
+#[pyclass]
+struct TableColumn {
+    inner: RustTableColumn,
+}
+
+impl TableColumn {
+    fn new() -> Self {
+        TableColumn {
+            inner: RustTableColumn::new(),
+        }
+    }
+
+    fn update(&mut self, op: impl FnOnce(RustTableColumn) -> RustTableColumn) {
+        let current = std::mem::replace(&mut self.inner, RustTableColumn::new());
+        self.inner = op(current);
+    }
+}
+
+#[pymethods]
+impl TableColumn {
+    #[new]
+    fn py_new() -> Self {
+        TableColumn::new()
+    }
+
+    // All setters return self (chainable), same convention as Format.
+    fn set_header<'a>(mut slf: PyRefMut<'a, Self>, caption: &str) -> PyRefMut<'a, Self> {
+        slf.update(|c| c.set_header(caption));
+        slf
+    }
+
+    fn set_total_function<'a>(mut slf: PyRefMut<'a, Self>, function: &str) -> PyRefMut<'a, Self> {
+        let f = parse_table_function(function);
+        slf.update(|c| c.set_total_function(f));
+        slf
+    }
+
+    fn set_total_label<'a>(mut slf: PyRefMut<'a, Self>, label: &str) -> PyRefMut<'a, Self> {
+        slf.update(|c| c.set_total_label(label));
+        slf
+    }
+
+    fn set_formula<'a>(mut slf: PyRefMut<'a, Self>, formula: &str) -> PyRefMut<'a, Self> {
+        slf.update(|c| c.set_formula(formula));
+        slf
+    }
+
+    fn set_format<'a>(mut slf: PyRefMut<'a, Self>, format: &Format) -> PyRefMut<'a, Self> {
+        let fmt = format.inner.clone();
+        slf.update(|c| c.set_format(fmt));
+        slf
+    }
+
+    fn set_header_format<'a>(mut slf: PyRefMut<'a, Self>, format: &Format) -> PyRefMut<'a, Self> {
+        let fmt = format.inner.clone();
+        slf.update(|c| c.set_header_format(fmt));
+        slf
+    }
+}
+
+#[pyclass]
+struct Table {
+    inner: RustTable,
+}
+
+impl Table {
+    fn new() -> Self {
+        Table {
+            inner: RustTable::new(),
+        }
+    }
+
+    fn update(&mut self, op: impl FnOnce(RustTable) -> RustTable) {
+        let current = std::mem::replace(&mut self.inner, RustTable::new());
+        self.inner = op(current);
+    }
+}
+
+#[pymethods]
+impl Table {
+    #[new]
+    fn py_new() -> Self {
+        Table::new()
+    }
+
+    fn set_header_row<'a>(mut slf: PyRefMut<'a, Self>, enable: bool) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_header_row(enable));
+        slf
+    }
+
+    fn set_total_row<'a>(mut slf: PyRefMut<'a, Self>, enable: bool) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_total_row(enable));
+        slf
+    }
+
+    fn set_banded_rows<'a>(mut slf: PyRefMut<'a, Self>, enable: bool) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_banded_rows(enable));
+        slf
+    }
+
+    fn set_banded_columns<'a>(mut slf: PyRefMut<'a, Self>, enable: bool) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_banded_columns(enable));
+        slf
+    }
+
+    fn set_first_column<'a>(mut slf: PyRefMut<'a, Self>, enable: bool) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_first_column(enable));
+        slf
+    }
+
+    fn set_last_column<'a>(mut slf: PyRefMut<'a, Self>, enable: bool) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_last_column(enable));
+        slf
+    }
+
+    fn set_autofilter<'a>(mut slf: PyRefMut<'a, Self>, enable: bool) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_autofilter(enable));
+        slf
+    }
+
+    fn set_columns<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        columns: Vec<PyRef<'_, TableColumn>>,
+    ) -> PyRefMut<'a, Self> {
+        let cols: Vec<RustTableColumn> = columns.iter().map(|c| c.inner.clone()).collect();
+        slf.update(|t| t.set_columns(&cols));
+        slf
+    }
+
+    fn set_name<'a>(mut slf: PyRefMut<'a, Self>, name: &str) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_name(name));
+        slf
+    }
+
+    fn set_style<'a>(mut slf: PyRefMut<'a, Self>, style: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let s = parse_table_style(style)?;
+        slf.update(|t| t.set_style(s));
+        Ok(slf)
+    }
+
+    fn set_alt_text<'a>(mut slf: PyRefMut<'a, Self>, alt_text: &str) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_alt_text(alt_text));
+        slf
+    }
+
+    fn set_alt_text_title<'a>(mut slf: PyRefMut<'a, Self>, title: &str) -> PyRefMut<'a, Self> {
+        slf.update(|t| t.set_alt_text_title(title));
+        slf
+    }
+
+    fn has_header_row(&self) -> bool {
+        self.inner.has_header_row()
+    }
+
+    fn has_total_row(&self) -> bool {
+        self.inner.has_total_row()
     }
 }
 
@@ -1084,6 +1342,38 @@ impl Worksheet {
                 .map(|_| ())
         })
     }
+
+    // Adds an Excel worksheet table over first_row..=last_row,
+    // first_col..=last_col. Expects the data in that range to already
+    // have been written via write()/write_row()/write_records()/etc --
+    // add_table() itself only adds the table structure (headers, total
+    // row, banding, style), it doesn't write cell values.
+    //
+    // Deliberately NOT going through check_row_order()/
+    // check_row_order_range() (the constant_memory row-order guard):
+    // rust_xlsxwriter's own usage pattern for tables is to write data
+    // first (advancing the row high-water mark past the table's rows),
+    // *then* call add_table() over that already-written range --
+    // meaning first_row here is routinely a row at or before ones
+    // already written, which is correct and expected, not a backward
+    // write. Applying the cell-write guard here would incorrectly
+    // reject that normal usage.
+    fn add_table(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        table: &Table,
+    ) -> PyResult<()> {
+        let t = table.inner.clone();
+        self.with_sheet(py, |sheet| {
+            sheet
+                .add_table(first_row, first_col, last_row, last_col, &t)
+                .map(|_| ())
+        })
+    }
 }
 
 // ============================================
@@ -1228,5 +1518,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Workbook>()?;
     m.add_class::<Worksheet>()?;
     m.add_class::<Format>()?;
+    m.add_class::<Table>()?;
+    m.add_class::<TableColumn>()?;
     Ok(())
 }

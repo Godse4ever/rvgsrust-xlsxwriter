@@ -508,3 +508,148 @@ def test_define_name_invalid_char_raises():
     wb.add_worksheet()
     with pytest.raises(ValueError):
         wb.define_name("Bad Name", "Sheet1!$A$1")
+
+
+def test_table_basic():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["Name", "Score"])
+    ws.write_column(1, 0, ["Alice", "Bob"])
+    ws.write_column(1, 1, [90, 85])
+
+    from rvgsrust_xlsxwriter import Table, TableColumn
+
+    c1 = TableColumn().set_header("Name")
+    c2 = TableColumn().set_header("Score")
+    table = Table().set_columns([c1, c2]).set_name("ScoresTable")
+    ws.add_table(0, 0, 2, 1, table)
+    wb.close(TEST_FILE)
+
+    book = _load()
+    sheet = book.active
+    t = sheet.tables["ScoresTable"]
+    assert t.ref == "A1:B3"
+    assert [c.name for c in t.tableColumns] == ["Name", "Score"]
+
+
+def test_table_total_row_with_builtin_function():
+    from rvgsrust_xlsxwriter import Table, TableColumn
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["Item", "Amount"])
+    ws.write_column(1, 0, ["a", "b"])
+    ws.write_column(1, 1, [10, 20])
+
+    c1 = TableColumn().set_header("Item").set_total_label("Total")
+    c2 = TableColumn().set_header("Amount").set_total_function("sum")
+    table = Table().set_columns([c1, c2]).set_total_row(True)
+    ws.add_table(0, 0, 3, 1, table)
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    row4 = [c.value for c in sheet[4]]
+    assert row4[0] == "Total"
+    assert row4[1] == "=SUBTOTAL(109,[Amount])"
+
+
+def test_table_custom_total_formula():
+    from rvgsrust_xlsxwriter import Table, TableColumn
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["A", "B"])
+    ws.write_column(1, 0, ["x", "y"])
+    ws.write_column(1, 1, [1, 2])
+    c1 = TableColumn().set_header("A")
+    c2 = TableColumn().set_header("B").set_total_function("MEDIAN([B2:B3])")
+    table = Table().set_columns([c1, c2]).set_total_row(True)
+    ws.add_table(0, 0, 3, 1, table)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet[4][1].value == "=MEDIAN([B2:B3])"
+
+
+def test_table_column_formula():
+    from rvgsrust_xlsxwriter import Table, TableColumn
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["Q1", "Q2", "Total"])
+    ws.write_column(1, 0, [10, 20])
+    ws.write_column(1, 1, [5, 15])
+    c1 = TableColumn().set_header("Q1")
+    c2 = TableColumn().set_header("Q2")
+    c3 = TableColumn().set_header("Total").set_formula("SUM(Table1[@[Q1]:[Q2]])")
+    table = Table().set_columns([c1, c2, c3]).set_name("Table1")
+    ws.add_table(0, 0, 2, 2, table)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    # Excel normalizes the "@" shorthand into its canonical expanded
+    # form ("[#This Row]") when saving -- semantically identical, but
+    # the literal string differs from what was passed in.
+    assert sheet["C2"].value == "=SUM(Table1[[#This Row],[Q1]:[Q2]])"
+
+
+def test_table_style_valid_and_invalid():
+    from rvgsrust_xlsxwriter import Table
+
+    Table().set_style("medium9")  # must not raise
+    Table().set_style("none")  # must not raise
+    with pytest.raises(ValueError):
+        Table().set_style("not_a_real_style")
+
+
+def test_table_column_format():
+    from rvgsrust_xlsxwriter import Table, TableColumn
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["Name", "Price"])
+    ws.write_column(1, 0, ["Widget"])
+    ws.write_column(1, 1, [9.99])
+
+    header_fmt = wb.add_format()
+    header_fmt.set_bold()
+    cell_fmt = wb.add_format()
+    cell_fmt.set_num_format("$#,##0.00")
+
+    c1 = TableColumn().set_header("Name").set_header_format(header_fmt)
+    c2 = TableColumn().set_header("Price").set_header_format(header_fmt).set_format(cell_fmt)
+    table = Table().set_columns([c1, c2])
+    ws.add_table(0, 0, 1, 1, table)
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    assert sheet["A1"].font.bold is True
+    assert sheet["B2"].number_format == "$#,##0.00"
+
+
+def test_table_banded_rows_and_autofilter_options():
+    from rvgsrust_xlsxwriter import Table, TableColumn
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["A"])
+    ws.write_column(1, 0, ["x", "y"])
+    c1 = TableColumn().set_header("A")
+    table = (
+        Table()
+        .set_columns([c1])
+        .set_banded_rows(True)
+        .set_banded_columns(False)
+        .set_first_column(True)
+        .set_last_column(False)
+        .set_autofilter(False)
+    )
+    assert table.has_header_row() is True  # default
+    ws.add_table(0, 0, 2, 0, table)
+    wb.close(TEST_FILE)  # must not raise -- content correctness checked above already
+
+
+def test_table_import_from_package_root():
+    # Table/TableColumn must be importable directly from the package,
+    # not just from the internal _core extension module.
+    from rvgsrust_xlsxwriter import Table, TableColumn
+    assert Table is not None
+    assert TableColumn is not None

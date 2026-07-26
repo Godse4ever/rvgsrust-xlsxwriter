@@ -52,6 +52,6 @@ __version__ = "0.2.0.dev0"
 __author__ = "RVGS Team"
 __license__ = "MIT"
 
-from rvgsrust_xlsxwriter._core import Workbook, Worksheet, Format
+from rvgsrust_xlsxwriter._core import Workbook, Worksheet, Format, Table, TableColumn
 
-__all__ = ["Workbook", "Worksheet", "Format"]
+__all__ = ["Workbook", "Worksheet", "Format", "Table", "TableColumn"]
