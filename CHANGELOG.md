@@ -36,6 +36,16 @@ PERFORMANCE.md for what's confirmed vs. still estimated).
   adds Excel's autofilter dropdown controls over a range.
 - `Workbook.define_name(name, formula)`: defines a workbook-global or
   sheet-scoped (`"Sheet1!Name"`) named range/formula.
+- `Table`/`TableColumn` classes and `Worksheet.add_table()`: full
+  worksheet table support -- header row, total row (built-in functions
+  or a custom formula), banded rows/columns, first/last column
+  styling, autofilter toggle, 61 table styles, per-column formats and
+  calculated-column formulas. Two methods on `Table`
+  (`set_alt_text()`/`set_alt_text_title()`) exist only in
+  `rust_xlsxwriter` 0.96+, not the 0.75 version everything else in
+  this project has been stand-in-verified against -- see the note in
+  Cargo.toml, they haven't been compiled at all yet, only confirmed
+  correct by reading 0.96's source.
 
 ### Changed
 - Upgraded the pinned `rust_xlsxwriter` version to 0.96 (from 0.75),
@@ -82,6 +92,15 @@ PERFORMANCE.md for what's confirmed vs. still estimated).
   letter or underscore, and can't contain certain characters).
   Duplicate names are NOT rejected -- confirmed that's
   `rust_xlsxwriter`'s own behavior, not a gap in this binding.
+- Tests for `Table`/`TableColumn`: basic creation, total row with a
+  built-in function (verified the exact generated `SUBTOTAL()`
+  formula, not just that it didn't crash), the custom-formula escape
+  hatch for both total functions and calculated columns, per-column
+  formats, banded rows/columns and other boolean options, style
+  validation, and that `Table`/`TableColumn` are importable from the
+  package root. Does NOT cover `set_alt_text()`/`set_alt_text_title()`
+  -- see the Added section above for why those specifically couldn't
+  be tested (or even compiled) at all in this environment.
 
 ## [0.1.0] - 2026-07-23
 

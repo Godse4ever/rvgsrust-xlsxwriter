@@ -51,6 +51,21 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 # indexmap/half pins needed (those sandbox-specific workarounds were
 # deliberately not added here -- confirmed that was the right call).
 # Smoke-tested (Workbook/add_worksheet/write/close) successfully.
+#
+# One known gap in the stand-in-verification approach this whole
+# project has relied on: Table::set_alt_text()/set_alt_text_title()
+# (src/lib.rs) do NOT exist in 0.75, only 0.96+ -- confirmed by
+# checking both sources directly, the first genuine API difference
+# found between the two versions in this entire project. Every other
+# line of Rust code has been verified by compiling against 0.75 as a
+# stand-in; these two specific methods have NOT been compiled at all,
+# only confirmed correct by reading 0.96's source (they match the
+# exact same simple `pub fn set_x(mut self, x: impl Into<String>) -> T`
+# pattern already used correctly dozens of times elsewhere in this
+# file, so confidence is high, but this is the one place in the
+# codebase where "high confidence from reading the source" is doing
+# more work than "confirmed by an actual compiler" -- worth an extra
+# look when this is finally built for real.
 rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij", "constant_memory"] }
 
 # Native Arrow zero-copy DataFrame support (write_dataframe()). Reads

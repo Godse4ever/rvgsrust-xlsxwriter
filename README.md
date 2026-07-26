@@ -232,6 +232,48 @@ wb.define_name("SalesTotal", "Sheet1!$B$2:$B$100")
 wb.define_name("Sheet1!LocalTotal", "Sheet1!$B$2:$B$100")
 ```
 
+### Tables
+
+Write the data first with the normal `write_*()` methods, then call
+`add_table()` over the range it occupies -- matches `rust_xlsxwriter`'s
+own usage pattern:
+
+```python
+from rvgsrust_xlsxwriter import Table, TableColumn
+
+ws.write_row(0, 0, ["Product", "Q1", "Q2"])
+ws.write_column(1, 0, ["Apples", "Pears"])
+ws.write_column(1, 1, [10, 20])
+ws.write_column(1, 2, [15, 25])
+
+columns = [
+    TableColumn().set_header("Product").set_total_label("Total"),
+    TableColumn().set_header("Q1").set_total_function("sum"),
+    TableColumn().set_header("Q2").set_total_function("sum"),
+]
+
+table = (
+    Table()
+    .set_columns(columns)
+    .set_name("SalesTable")
+    .set_style("medium9")
+    .set_total_row(True)
+    .set_banded_rows(True)
+)
+
+ws.add_table(0, 0, 3, 2, table)
+```
+
+`TableColumn` also supports `set_formula()` (per-row calculated
+column, using Excel's structured-reference syntax like
+`"SUM(SalesTable[@[Q1]:[Q2]])"`), `set_format()`/`set_header_format()`
+(per-column cell/header formatting), and `set_total_function()` accepts
+either a built-in keyword (`"sum"`, `"average"`, `"count"`,
+`"count_numbers"`, `"max"`, `"min"`, `"stddev"`, `"var"`, `"none"`) or,
+for anything else, treats the string as a custom formula.
+`Table.set_style()` accepts `"none"`, `"light1"`-`"light21"`,
+`"medium1"`-`"medium28"`, or `"dark1"`-`"dark11"`.
+
 ---
 
 ## Multithreading
@@ -362,9 +404,19 @@ This tests multiple strategies (write_records, write_dataframe with Polars/Panda
 | Version | Features |
 |---------|----------|
 | **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images, Polars/Pandas support |
-| **v0.2** | ✅ Bulk `write_records()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names. 🚧 Charts, conditional formatting, extended Arrow types |
-| **v0.3** | 🚧 Data validation, tables, sparklines |
+| **v0.2** | ✅ Bulk `write_records()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables. 🚧 Charts (in progress, phased -- see below), conditional formatting, extended Arrow types |
+| **v0.3** | 🚧 Data validation, sparklines |
 | **v0.4** | 🚧 Full xlsxwriter API compatibility layer |
+
+**Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
+types, ~214 public methods across ~39 types) is being implemented in
+phases rather than all at once, so each phase can be properly verified
+rather than shipping a large surface untested:
+1. Core `Chart`/`ChartSeries` + common types (Bar/Column/Line/Pie/
+   Scatter + stacked variants) + basic title/legend/axis
+2. Formatting depth: line/font/fill styling
+3. Advanced: trendlines, error bars, data tables, layout, remaining
+   chart types (Radar, Stock, Doughnut, Surface, etc.)
 
 ---
 
