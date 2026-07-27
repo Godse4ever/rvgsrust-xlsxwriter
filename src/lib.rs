@@ -1243,7 +1243,7 @@ impl Worksheet {
     ) -> PyResult<()> {
         self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
-        self.with_sheet(py, |sheet| match &fmt {
+        self.with_sheet(py, |sheet| match fmt {
             Some(f) => sheet.write_formula_with_format(row, col, formula, f).map(|_| ()),
             None => sheet.write_formula(row, col, formula).map(|_| ()),
         })
@@ -1266,17 +1266,20 @@ impl Worksheet {
         tip: Option<&str>,
     ) -> PyResult<()> {
         self.check_row_order(row)?;
-        let mut link = rust_xlsxwriter::Url::new(url);
-        if let Some(t) = text {
-            link = link.set_text(t);
-        }
-        if let Some(t) = tip {
-            link = link.set_tip(t);
-        }
+        // Build the Url value via the builder chain. Url::set_text/set_tip
+        // consume self and return Url, so we fold the optional fields in.
+        // Pass `link` by value (not &link): write_url/write_url_with_format
+        // take `impl Into<Url>`, which Url satisfies but &Url does not.
+        let link = {
+            let mut u = rust_xlsxwriter::Url::new(url);
+            if let Some(t) = text { u = u.set_text(t); }
+            if let Some(t) = tip  { u = u.set_tip(t);  }
+            u
+        };
         let fmt = format.map(|f| &f.inner);
-        self.with_sheet(py, |sheet| match &fmt {
-            Some(f) => sheet.write_url_with_format(row, col, &link, f).map(|_| ()),
-            None => sheet.write_url(row, col, &link).map(|_| ()),
+        self.with_sheet(py, |sheet| match fmt {
+            Some(f) => sheet.write_url_with_format(row, col, link.clone(), f).map(|_| ()),
+            None => sheet.write_url(row, col, link).map(|_| ()),
         })
     }
 
@@ -1301,7 +1304,7 @@ impl Worksheet {
             .map_err(xlsx_err_to_pyerr)?
             .and_hms(hour, min, sec)
             .map_err(xlsx_err_to_pyerr)?;
-        self.with_sheet(py, |sheet| match &fmt {
+        self.with_sheet(py, |sheet| match fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
         })
@@ -1321,7 +1324,7 @@ impl Worksheet {
         self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         let dt = ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
-        self.with_sheet(py, |sheet| match &fmt {
+        self.with_sheet(py, |sheet| match fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
         })
@@ -1359,7 +1362,7 @@ impl Worksheet {
             .map_err(xlsx_err_to_pyerr)?
             .and_hms(hour, minute, sec_frac)
             .map_err(xlsx_err_to_pyerr)?;
-        self.with_sheet(py, |sheet| match &fmt {
+        self.with_sheet(py, |sheet| match fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &edt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &edt).map(|_| ()),
         })
@@ -1380,7 +1383,7 @@ impl Worksheet {
         let day: u8 = date.getattr("day")?.extract()?;
         let fmt = format.map(|f| &f.inner);
         let edt = ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
-        self.with_sheet(py, |sheet| match &fmt {
+        self.with_sheet(py, |sheet| match fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &edt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &edt).map(|_| ()),
         })
@@ -1444,7 +1447,7 @@ impl Worksheet {
             .collect();
 
         let cell_fmt = format.map(|f| &f.inner);
-        self.with_sheet(py, |sheet| match &cell_fmt {
+        self.with_sheet(py, |sheet| match cell_fmt {
             Some(f) => sheet.write_rich_string_with_format(row, col, &rich_parts, f).map(|_| ()),
             None => sheet.write_rich_string(row, col, &rich_parts).map(|_| ()),
         })
