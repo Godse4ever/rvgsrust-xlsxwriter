@@ -1297,7 +1297,7 @@ impl Worksheet {
     ) -> PyResult<()> {
         self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
-        let dt = rust_xlsxwriter::ExcelDateTime::from_ymd(year, month, day)
+        let dt = ExcelDateTime::from_ymd(year, month, day)
             .map_err(xlsx_err_to_pyerr)?
             .and_hms(hour, min, sec)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1320,7 +1320,7 @@ impl Worksheet {
     ) -> PyResult<()> {
         self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
-        let dt = rust_xlsxwriter::ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
+        let dt = ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
@@ -1425,21 +1425,22 @@ impl Worksheet {
         // Build owned (text, format_clone) pairs. Cloning RustFormat is
         // cheap (it's a pure value type) and lets us avoid the lifetime
         // entanglement of holding PyRef borrows across the with_sheet call.
-        let owned: Vec<(String, RustFormat)> = parts
+        let owned: Vec<(RustFormat, String)> = parts
             .into_iter()
             .map(|(text, fmt_py)| {
                 let fmt_owned = match fmt_py {
                     Some(f) => f.borrow(py).inner.clone(),
                     None => RustFormat::new(),
                 };
-                (text, fmt_owned)
+                (fmt_owned, text)
             })
             .collect();
 
-        // Build the &[(&str, &RustFormat)] slice that rust_xlsxwriter wants.
-        let rich_parts: Vec<(&str, &RustFormat)> = owned
+        // Build the &[(&RustFormat, &str)] slice that rust_xlsxwriter expects.
+        // Note: upstream API is (&Format, &str) -- format first, text second.
+        let rich_parts: Vec<(&RustFormat, &str)> = owned
             .iter()
-            .map(|(text, fmt)| (text.as_str(), fmt))
+            .map(|(fmt, text)| (fmt, text.as_str()))
             .collect();
 
         let cell_fmt = format.map(|f| &f.inner);
