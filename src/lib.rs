@@ -5,7 +5,7 @@ use arrow::array::{Array, BooleanArray, Float64Array, Int64Array, LargeStringArr
 use arrow::datatypes::DataType as ArrowDataType;
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use rust_xlsxwriter::{
-    Color, FormatAlign, FormatBorder, FormatPattern,
+    Color, ExcelDateTime, FormatAlign, FormatBorder, FormatPattern,
     Workbook as RustWorkbook, Worksheet as RustWorksheet, Format as RustFormat,
     Table as RustTable, TableColumn as RustTableColumn, TableFunction, TableStyle,
 };
@@ -1250,6 +1250,11 @@ impl Worksheet {
     }
 
     #[pyo3(signature = (row, col, url, format=None))]
+    // write_url writes a hyperlink cell. Optional `text` overrides the
+    // display label (defaults to the URL itself). Optional `tip` sets the
+    // tooltip that appears on hover. Both map to rust_xlsxwriter's Url
+    // builder, which was introduced in 0.75.
+    #[pyo3(signature = (row, col, url, format=None, text=None, tip=None))]
     fn write_url(
         &self,
         py: Python<'_>,
@@ -1257,12 +1262,21 @@ impl Worksheet {
         col: u16,
         url: &str,
         format: Option<&Format>,
+        text: Option<&str>,
+        tip: Option<&str>,
     ) -> PyResult<()> {
         self.check_row_order(row)?;
+        let mut link = rust_xlsxwriter::Url::new(url);
+        if let Some(t) = text {
+            link = link.set_text(t);
+        }
+        if let Some(t) = tip {
+            link = link.set_tip(t);
+        }
         let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match &fmt {
-            Some(f) => sheet.write_url_with_format(row, col, url, f).map(|_| ()),
-            None => sheet.write_url(row, col, url).map(|_| ()),
+            Some(f) => sheet.write_url_with_format(row, col, &link, f).map(|_| ()),
+            None => sheet.write_url(row, col, &link).map(|_| ()),
         })
     }
 
@@ -1310,6 +1324,128 @@ impl Worksheet {
         self.with_sheet(py, |sheet| match &fmt {
             Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
+        })
+    }
+
+    // write_datetime_py / write_date_py accept Python datetime/date objects
+    // directly, instead of separate year/month/day/hour/min/sec args.
+    // The existing write_datetime()/write_date() with individual components
+    // are kept for backwards compatibility.
+    //
+    // Python's datetime module is accessed via PyO3's bound interface:
+    // we pull year/month/day/hour/minute/second out of the Python object
+    // with attribute lookups rather than using a special datetime extractor,
+    // which avoids a dependency on PyO3's chrono feature.
+    #[pyo3(signature = (row, col, dt, format=None))]
+    fn write_datetime_py(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        dt: &Bound<'_, PyAny>,
+        format: Option<&Format>,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let year: u16 = dt.getattr("year")?.extract()?;
+        let month: u8 = dt.getattr("month")?.extract()?;
+        let day: u8 = dt.getattr("day")?.extract()?;
+        let hour: u16 = dt.getattr("hour")?.extract()?;
+        let minute: u8 = dt.getattr("minute")?.extract()?;
+        let second: u8 = dt.getattr("second")?.extract()?;
+        let microsecond: u32 = dt.getattr("microsecond")?.extract()?;
+        let sec_frac = second as f64 + microsecond as f64 / 1_000_000.0;
+        let fmt = format.map(|f| &f.inner);
+        let edt = ExcelDateTime::from_ymd(year, month, day)
+            .map_err(xlsx_err_to_pyerr)?
+            .and_hms(hour, minute, sec_frac)
+            .map_err(xlsx_err_to_pyerr)?;
+        self.with_sheet(py, |sheet| match &fmt {
+            Some(f) => sheet.write_datetime_with_format(row, col, &edt, f).map(|_| ()),
+            None => sheet.write_datetime(row, col, &edt).map(|_| ()),
+        })
+    }
+
+    #[pyo3(signature = (row, col, date, format=None))]
+    fn write_date_py(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        date: &Bound<'_, PyAny>,
+        format: Option<&Format>,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let year: u16 = date.getattr("year")?.extract()?;
+        let month: u8 = date.getattr("month")?.extract()?;
+        let day: u8 = date.getattr("day")?.extract()?;
+        let fmt = format.map(|f| &f.inner);
+        let edt = ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
+        self.with_sheet(py, |sheet| match &fmt {
+            Some(f) => sheet.write_datetime_with_format(row, col, &edt, f).map(|_| ()),
+            None => sheet.write_datetime(row, col, &edt).map(|_| ()),
+        })
+    }
+
+    // write_rich_string writes a cell containing multiple text fragments
+    // with different formats (bold, italic, colors, etc.). The `parts`
+    // argument is a list of (text, format_or_none) tuples:
+    //
+    //   ws.write_rich_string(0, 0, [
+    //       ("Hello, ", None),
+    //       ("bold part", bold_fmt),
+    //       (" and back to normal", None),
+    //   ])
+    //
+    // At least one fragment must carry a non-None format, or Excel will
+    // store the result as plain text. rust_xlsxwriter raises an XlsxError
+    // if given an empty list or all-None formats, which surfaces here as
+    // ValueError.
+    //
+    // Lifetime strategy: rather than fighting the borrow checker trying to
+    // hold &RustFormat refs from PyRef borrows alongside the workbook
+    // borrow in with_sheet(), we materialise owned (String, RustFormat)
+    // pairs first, then build the &[(&str, &RustFormat)] slice over that
+    // owned Vec inside the closure. The clone cost is negligible -- rich
+    // strings are short by definition (Excel's own cell limit applies).
+    #[pyo3(signature = (row, col, parts, format=None))]
+    fn write_rich_string(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        parts: Vec<(String, Option<Py<Format>>)>,
+        format: Option<&Format>,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        if parts.is_empty() {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "write_rich_string(): parts list must not be empty",
+            ));
+        }
+        // Build owned (text, format_clone) pairs. Cloning RustFormat is
+        // cheap (it's a pure value type) and lets us avoid the lifetime
+        // entanglement of holding PyRef borrows across the with_sheet call.
+        let owned: Vec<(String, RustFormat)> = parts
+            .into_iter()
+            .map(|(text, fmt_py)| {
+                let fmt_owned = match fmt_py {
+                    Some(f) => f.borrow(py).inner.clone(),
+                    None => RustFormat::new(),
+                };
+                (text, fmt_owned)
+            })
+            .collect();
+
+        // Build the &[(&str, &RustFormat)] slice that rust_xlsxwriter wants.
+        let rich_parts: Vec<(&str, &RustFormat)> = owned
+            .iter()
+            .map(|(text, fmt)| (text.as_str(), fmt))
+            .collect();
+
+        let cell_fmt = format.map(|f| &f.inner);
+        self.with_sheet(py, |sheet| match &cell_fmt {
+            Some(f) => sheet.write_rich_string_with_format(row, col, &rich_parts, f).map(|_| ()),
+            None => sheet.write_rich_string(row, col, &rich_parts).map(|_| ()),
         })
     }
 

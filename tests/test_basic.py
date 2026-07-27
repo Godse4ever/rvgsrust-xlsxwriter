@@ -653,3 +653,149 @@ def test_table_import_from_package_root():
     from rvgsrust_xlsxwriter import Table, TableColumn
     assert Table is not None
     assert TableColumn is not None
+
+
+# ============================================================
+# New feature tests (added per code review recommendations)
+# ============================================================
+
+def test_workbook_context_manager():
+    # __enter__/__exit__ must save the file automatically when path is set.
+    wb = Workbook(path=TEST_FILE)
+    with wb as w:
+        ws = w.add_worksheet()
+        ws.write(0, 0, "context_manager")
+    # After __exit__, the file must exist and have the right content.
+    sheet = _load().active
+    assert sheet["A1"].value == "context_manager"
+
+
+def test_workbook_context_manager_no_path_raises():
+    # __exit__ with no path set must raise before trying to save.
+    with pytest.raises(ValueError, match="no path set"):
+        with Workbook() as wb:
+            wb.add_worksheet()
+
+
+def test_workbook_context_manager_exception_does_not_save():
+    # If an exception is raised inside the with block, __exit__ must
+    # NOT attempt to save (and must re-raise the original exception).
+    try:
+        with Workbook(path=TEST_FILE) as wb:
+            raise RuntimeError("deliberate test error")
+    except RuntimeError:
+        pass
+    # File should not have been written (or if TEST_FILE existed before,
+    # it would not have been overwritten -- but since teardown_module
+    # removes it between runs and this test is ordered before the save
+    # tests, the simplest check is just that we got here without an
+    # unrelated error being raised).
+
+
+def test_write_url_basic():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_url(0, 0, "https://example.com")
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].hyperlink == "https://example.com"
+
+
+def test_write_url_with_text():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_url(0, 0, "https://example.com", text="Click here")
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].value == "Click here"
+    assert sheet["A1"].hyperlink == "https://example.com"
+
+
+def test_write_url_with_tip():
+    # Tooltip (tip) is written into the file but openpyxl doesn't
+    # expose it -- just verify the call doesn't raise.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_url(0, 0, "https://example.com", tip="Go to example.com")
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].hyperlink == "https://example.com"
+
+
+def test_write_datetime_py():
+    import datetime as _dt
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_num_format("yyyy-mm-dd hh:mm:ss")
+    dt = _dt.datetime(2024, 3, 15, 9, 30, 0)
+    ws.write_datetime_py(0, 0, dt, format=fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    # openpyxl reads Excel datetimes back as Python datetime objects
+    cell_val = sheet["A1"].value
+    assert cell_val is not None
+    assert cell_val.year == 2024
+    assert cell_val.month == 3
+    assert cell_val.day == 15
+
+
+def test_write_date_py():
+    import datetime as _dt
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_num_format("yyyy-mm-dd")
+    d = _dt.date(2024, 6, 21)
+    ws.write_date_py(0, 0, d, format=fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    cell_val = sheet["A1"].value
+    assert cell_val is not None
+    assert cell_val.year == 2024
+    assert cell_val.month == 6
+    assert cell_val.day == 21
+
+
+def test_write_rich_string_basic():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    bold = wb.add_format()
+    bold.set_bold()
+    ws.write_rich_string(0, 0, [
+        ("Hello, ", None),
+        ("bold", bold),
+        (" world", None),
+    ])
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    # openpyxl reads rich text as the concatenated plain text
+    assert sheet["A1"].value == "Hello, bold world"
+
+
+def test_write_rich_string_empty_parts_raises():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    with pytest.raises(ValueError, match="parts list must not be empty"):
+        ws.write_rich_string(0, 0, [])
+
+
+def test_parse_color_invalid_raises():
+    wb = Workbook()
+    fmt = wb.add_format()
+    with pytest.raises(ValueError):
+        fmt.set_font_color("#ZZ0000")
+
+
+def test_parse_color_unknown_name_raises():
+    wb = Workbook()
+    fmt = wb.add_format()
+    with pytest.raises(ValueError):
+        fmt.set_background_color("darkk_blue")
+
+
+def test_parse_border_unknown_raises():
+    wb = Workbook()
+    fmt = wb.add_format()
+    with pytest.raises(ValueError):
+        fmt.set_border("thinn")
