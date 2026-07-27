@@ -15,24 +15,26 @@
 
 | Feature | `xlsxwriter` (Python) | `rustpy-xlsxwriter` | `rvgsrust-xlsxwriter` |
 |---------|----------------------|---------------------|----------------------|
-| Speed | Baseline (1x) | ~7-10x faster* | ~5-6x faster* ⚡ |
+| Speed (100k rows) | 1× (baseline) | — | **6–8× faster** ⚡ |
 | **Cell Merging** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Full Format API** | ✅ Yes | ⚠️ Limited | ✅ **Complete** |
 | **Borders (all sides)** | ✅ Yes | ⚠️ Basic | ✅ **All sides + colors** |
 | **Cell/Font Colors** | ✅ Yes | ✅ Yes | ✅ **Yes** |
 | **Formulas** | ✅ Yes | ❌ No | ✅ **Yes** |
-| **Hyperlinks** | ✅ Yes | ❌ No | ✅ **Yes** |
+| **Hyperlinks (text/tip)** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Date/Time** | ✅ Yes | ✅ Yes | ✅ **Yes** |
 | **Images** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Freeze Panes** | ✅ Yes | ✅ Yes | ✅ **Yes** |
 | **Sheet Protection** | ✅ Yes | ✅ Yes | ✅ **Yes** |
-| **Polars/Pandas** | Manual | ✅ Zero-copy | ✅ **Zero-copy** |
-| **Charts** | ✅ Yes | ❌ No | 🚧 *Coming v0.2* |
-| **Conditional Format** | ✅ Yes | ❌ No | 🚧 *Coming v0.2* |
+| **Worksheet Tables** | ✅ Yes | ❌ No | ✅ **Yes** |
+| **Rich Strings** | ✅ Yes | ❌ No | ✅ **Yes** |
+| **Polars/Pandas/PyArrow** | Manual | ✅ Zero-copy | ✅ **Zero-copy** |
+| **Charts** | ✅ Yes | ❌ No | 🚧 *Coming v0.3* |
+| **Conditional Format** | ✅ Yes | ❌ No | 🚧 *Coming v0.3* |
 
 **We win on completeness.** Both `rustpy-xlsxwriter` and `rvgsrust-xlsxwriter` use the same Rust core, but we expose *every* feature so you never have to fall back to Python.
 
-*Speed figures above are from measurements against `rust_xlsxwriter 0.75`, before this project's 0.96 upgrade -- see [Performance & Benchmarks](#performance--benchmarks) below for the honest, current status and how to reproduce them on your own machine.
+Speed figures measured against `rust_xlsxwriter` 0.96 on Intel i5-6267U, 100k rows × 8 cols — see [Performance & Benchmarks](#performance--benchmarks) for full numbers.
 
 ---
 
@@ -359,43 +361,38 @@ table = pa.table({"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"]})
 ws.write_dataframe(0, 0, table, header_format=header_fmt)
 ```
 
-**Current type support:** `int64`, `float64`, `string`/`utf8`, `large_utf8`, `bool`.
+**Current type support:** `int64`, `float64`, `string`/`utf8`, `large_utf8`, `utf8view` (Polars default), `bool`.
 
 ---
 
 ## Performance & Benchmarks
 
-See [PERFORMANCE.md](PERFORMANCE.md) for optimization strategies and details.
+See [PERFORMANCE.md](PERFORMANCE.md) for full tables and methodology.
 
-**Quick comparison (100,000 rows × 5 columns) -- measured against
-`rust_xlsxwriter 0.75`, before this project's upgrade to 0.96
-(`zmij` + `constant_memory` feature flags). Not yet re-measured against
-0.96 -- run the benchmark yourself (below) for current numbers on your
-machine and build.**
+**100,000 rows × 8 columns (800,000 cells) — measured on Intel i5-6267U, Python 3.12, `rust_xlsxwriter` 0.96:**
 
-| Strategy | Time (0.75-era) | Speedup vs. xlsxwriter |
-|----------|------|---------|
-| `write_dataframe()` (Polars, zero-copy) | 0.496s | 5.7x |
-| `write_records()` (bulk dict) | 0.550s | 5.1x |
-| `write()` per-cell | 0.562s | 5.0x |
-| `rustpy-xlsxwriter` (native API) | ~0.27-0.38s | ~7-10x |
-| Pure Python xlsxwriter | 2.821s | 1x (baseline) |
+| Method | Mean | vs xlsxwriter |
+|---|---|---|
+| **rvgs** `write_dataframe()` pandas | 1.43s | 🏆 **8.3× faster** |
+| **rvgs** `write_dataframe()` polars | 1.53s | 7.8× faster |
+| **rvgs** `write_dataframe()` pyarrow | 1.65s | 7.2× faster |
+| **rvgs** `write_records()` (bulk dict) | 1.94s | 6.1× faster |
+| **rvgs** `write_rows()` (list-of-lists) | 2.03s | 5.8× faster |
+| xlsxwriter `write_row()` | 11.87s | 1× (baseline) |
+| openpyxl write-only | 18.67s | 1.6× slower |
+| pandas `to_excel()` openpyxl | 25.03s | 2.1× slower |
 
-Honest take at the time of this measurement: `rustpy-xlsxwriter` was
-faster than `rvgsrust-xlsxwriter`, tracing to it building against
-`rust_xlsxwriter`'s `constant_memory` feature. That feature is now
-available here too (`Workbook.add_worksheet(constant_memory=True)`),
-but isn't wired into any default path, and its actual effect on this
-gap hasn't been measured yet.
+At 10,000 rows: **6.8× faster** than xlsxwriter. At 1,000 rows: **5.6× faster**.
+
+The `write_dataframe()` path uses the Arrow C-stream zero-copy interface — pandas, polars, and pyarrow DataFrames all feed through this route with no Python-side data conversion.
 
 **Run the benchmark on your machine:**
 
 ```bash
 maturin develop --release
-python examples/benchmark.py
+pip install xlsxwriter openpyxl pandas pyarrow polars
+python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 ```
-
-This tests multiple strategies (write_records, write_dataframe with Polars/Pandas, per-cell writes) and compares against rustpy-xlsxwriter and xlsxwriter.
 
 ---
 
