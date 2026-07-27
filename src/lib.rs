@@ -1,13 +1,15 @@
+use arrow::array::{
+    Array, BooleanArray, Float64Array, Int64Array, LargeStringArray, RecordBatch, StringArray,
+};
+use arrow::datatypes::DataType as ArrowDataType;
+use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
-use arrow::array::{Array, BooleanArray, Float64Array, Int64Array, LargeStringArray, RecordBatch, StringArray};
-use arrow::datatypes::DataType as ArrowDataType;
-use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use rust_xlsxwriter::{
-    Color, ExcelDateTime, FormatAlign, FormatBorder, FormatPattern,
-    Workbook as RustWorkbook, Worksheet as RustWorksheet, Format as RustFormat,
+    Color, ExcelDateTime, Format as RustFormat, FormatAlign, FormatBorder, FormatPattern,
     Table as RustTable, TableColumn as RustTableColumn, TableFunction, TableStyle,
+    Workbook as RustWorkbook, Worksheet as RustWorksheet,
 };
 use std::cell::{Cell, RefCell};
 
@@ -153,11 +155,15 @@ fn write_value(
     match (cv, fmt) {
         (CellValue::Blank, Some(f)) => sheet.write_blank(row, col, f).map(|_| ()),
         (CellValue::Blank, None) => Ok(()), // nothing meaningful to write without a format
-        (CellValue::Str(s), Some(f)) => sheet.write_string_with_format(row, col, s.as_str(), f).map(|_| ()),
+        (CellValue::Str(s), Some(f)) => sheet
+            .write_string_with_format(row, col, s.as_str(), f)
+            .map(|_| ()),
         (CellValue::Str(s), None) => sheet.write_string(row, col, s.as_str()).map(|_| ()),
         (CellValue::Num(n), Some(f)) => sheet.write_number_with_format(row, col, *n, f).map(|_| ()),
         (CellValue::Num(n), None) => sheet.write_number(row, col, *n).map(|_| ()),
-        (CellValue::Bool(b), Some(f)) => sheet.write_boolean_with_format(row, col, *b, f).map(|_| ()),
+        (CellValue::Bool(b), Some(f)) => {
+            sheet.write_boolean_with_format(row, col, *b, f).map(|_| ())
+        }
         (CellValue::Bool(b), None) => sheet.write_boolean(row, col, *b).map(|_| ()),
     }
 }
@@ -348,7 +354,6 @@ fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
     }
 }
 
-
 #[pyclass]
 struct Format {
     inner: RustFormat,
@@ -408,13 +413,19 @@ impl Format {
         slf
     }
 
-    fn set_font_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyResult<PyRefMut<'a, Self>> {
+    fn set_font_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let c = parse_color(color)?;
         slf.update(|f| f.set_font_color(c));
         Ok(slf)
     }
 
-    fn set_background_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyResult<PyRefMut<'a, Self>> {
+    fn set_background_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let c = parse_color(color)?;
         slf.update(|f| f.set_background_color(c));
         Ok(slf)
@@ -426,7 +437,10 @@ impl Format {
         Ok(slf)
     }
 
-    fn set_border_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyResult<PyRefMut<'a, Self>> {
+    fn set_border_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let c = parse_color(color)?;
         slf.update(|f| {
             f.set_border_color(c)
@@ -438,25 +452,37 @@ impl Format {
         Ok(slf)
     }
 
-    fn set_top_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+    fn set_top_border<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let style = parse_border(border)?;
         slf.update(|f| f.set_border_top(style));
         Ok(slf)
     }
 
-    fn set_bottom_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+    fn set_bottom_border<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let style = parse_border(border)?;
         slf.update(|f| f.set_border_bottom(style));
         Ok(slf)
     }
 
-    fn set_left_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+    fn set_left_border<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let style = parse_border(border)?;
         slf.update(|f| f.set_border_left(style));
         Ok(slf)
     }
 
-    fn set_right_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+    fn set_right_border<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
         let style = parse_border(border)?;
         slf.update(|f| f.set_border_right(style));
         Ok(slf)
@@ -837,7 +863,9 @@ impl Worksheet {
     {
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
-        let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
+        let sheet = wb
+            .worksheet_from_index(self.index)
+            .map_err(xlsx_err_to_pyerr)?;
         f(sheet).map_err(xlsx_err_to_pyerr)
     }
 
@@ -1013,7 +1041,9 @@ impl Worksheet {
 
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
-        let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
+        let sheet = wb
+            .worksheet_from_index(self.index)
+            .map_err(xlsx_err_to_pyerr)?;
 
         // dict.get_item(key) converts `key` to a Python object on
         // every call (K: ToPyObject) -- passing a &str/&String there
@@ -1134,7 +1164,9 @@ impl Worksheet {
 
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
-        let sheet = wb.worksheet_from_index(self.index).map_err(xlsx_err_to_pyerr)?;
+        let sheet = wb
+            .worksheet_from_index(self.index)
+            .map_err(xlsx_err_to_pyerr)?;
 
         let mut row_cursor = start_row;
         if write_header {
@@ -1243,7 +1275,9 @@ impl Worksheet {
         self.check_row_order(row)?;
         let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match fmt {
-            Some(f) => sheet.write_formula_with_format(row, col, formula, f).map(|_| ()),
+            Some(f) => sheet
+                .write_formula_with_format(row, col, formula, f)
+                .map(|_| ()),
             None => sheet.write_formula(row, col, formula).map(|_| ()),
         })
     }
@@ -1270,13 +1304,19 @@ impl Worksheet {
         // take `impl Into<Url>`, which Url satisfies but &Url does not.
         let link = {
             let mut u = rust_xlsxwriter::Url::new(url);
-            if let Some(t) = text { u = u.set_text(t); }
-            if let Some(t) = tip  { u = u.set_tip(t);  }
+            if let Some(t) = text {
+                u = u.set_text(t);
+            }
+            if let Some(t) = tip {
+                u = u.set_tip(t);
+            }
             u
         };
         let fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match fmt {
-            Some(f) => sheet.write_url_with_format(row, col, link.clone(), f).map(|_| ()),
+            Some(f) => sheet
+                .write_url_with_format(row, col, link.clone(), f)
+                .map(|_| ()),
             None => sheet.write_url(row, col, link).map(|_| ()),
         })
     }
@@ -1302,7 +1342,9 @@ impl Worksheet {
             .and_hms(hour, min, sec)
             .map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match fmt {
-            Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
+            Some(f) => sheet
+                .write_datetime_with_format(row, col, &dt, f)
+                .map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
         })
     }
@@ -1322,7 +1364,9 @@ impl Worksheet {
         let fmt = format.map(|f| &f.inner);
         let dt = ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match fmt {
-            Some(f) => sheet.write_datetime_with_format(row, col, &dt, f).map(|_| ()),
+            Some(f) => sheet
+                .write_datetime_with_format(row, col, &dt, f)
+                .map(|_| ()),
             None => sheet.write_datetime(row, col, &dt).map(|_| ()),
         })
     }
@@ -1360,7 +1404,9 @@ impl Worksheet {
             .and_hms(hour, minute, sec_frac)
             .map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match fmt {
-            Some(f) => sheet.write_datetime_with_format(row, col, &edt, f).map(|_| ()),
+            Some(f) => sheet
+                .write_datetime_with_format(row, col, &edt, f)
+                .map(|_| ()),
             None => sheet.write_datetime(row, col, &edt).map(|_| ()),
         })
     }
@@ -1381,7 +1427,9 @@ impl Worksheet {
         let fmt = format.map(|f| &f.inner);
         let edt = ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)?;
         self.with_sheet(py, |sheet| match fmt {
-            Some(f) => sheet.write_datetime_with_format(row, col, &edt, f).map(|_| ()),
+            Some(f) => sheet
+                .write_datetime_with_format(row, col, &edt, f)
+                .map(|_| ()),
             None => sheet.write_datetime(row, col, &edt).map(|_| ()),
         })
     }
@@ -1445,7 +1493,9 @@ impl Worksheet {
 
         let cell_fmt = format.map(|f| &f.inner);
         self.with_sheet(py, |sheet| match cell_fmt {
-            Some(f) => sheet.write_rich_string_with_format(row, col, &rich_parts, f).map(|_| ()),
+            Some(f) => sheet
+                .write_rich_string_with_format(row, col, &rich_parts, f)
+                .map(|_| ()),
             None => sheet.write_rich_string(row, col, &rich_parts).map(|_| ()),
         })
     }
@@ -1606,7 +1656,10 @@ impl Workbook {
     }
 
     fn close(&self, path: &str) -> PyResult<()> {
-        self.inner.borrow_mut().save(path).map_err(xlsx_err_to_pyerr)?;
+        self.inner
+            .borrow_mut()
+            .save(path)
+            .map_err(xlsx_err_to_pyerr)?;
         Ok(())
     }
 
