@@ -95,3 +95,30 @@ strip = true
 # continue. The binary-size/panic-speed benefit isn't worth trading
 # away Python's normal exception-handling model for every caller of
 # this library.
+
+# Clippy lint configuration. These are configured via Cargo's [lints] table
+# rather than via #![allow(...)] in lib.rs because the #[pymethods] and
+# #[pyclass] proc-macros expand into wrapper code that doesn't inherit inner
+# attributes from the source file -- Cargo-level lint config propagates
+# through the entire compilation including macro-expanded items.
+#
+# - useless_conversion: pyo3's #[pymethods] macro generates .into() calls on
+#   PyResult return types as part of its expansion. Clippy sees them as
+#   useless (PyResult -> PyResult) and flags every method returning PyResult<T>.
+#   This is a well-known pyo3+clippy interaction, not a bug in our code.
+#
+# - too_many_arguments: PyO3 method wrappers necessarily mirror the underlying
+#   rust_xlsxwriter signatures, several of which take 8+ params (write_records,
+#   write_datetime, write_url with text/tip, merge_range, etc.). Splitting
+#   these into builder-style intermediate structs just to satisfy the linter
+#   would make the Python-facing API worse. #[pyo3(signature = ...)] already
+#   enforces named-argument use from Python.
+#
+# - new_without_default: All #[pyclass] structs have `fn new() -> Self` for
+#   construction from Rust. Adding Default impls is redundant boilerplate for
+#   types whose only intended construction path is either Python (via #[new])
+#   or the internal fn new().
+[lints.clippy]
+useless_conversion = "allow"
+too_many_arguments = "allow"
+new_without_default = "allow"
