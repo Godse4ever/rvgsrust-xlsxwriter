@@ -1,3 +1,19 @@
+// Crate-level clippy allows:
+//
+// - new_without_default: All #[pyclass] structs (Format, Table, TableColumn,
+//   Workbook) have `fn new() -> Self` for construction from Rust. Adding a
+//   Default impl too is redundant boilerplate for types whose only construction
+//   surface is either Python (via #[new]) or the internal fn new(); we
+//   deliberately don't want a Default::default() call site materialising these.
+//
+// - too_many_arguments: PyO3 method wrappers necessarily mirror the underlying
+//   rust_xlsxwriter signatures, several of which take 8+ params (write_records,
+//   write_datetime, write_url with text/tip, etc.). Splitting them into
+//   builder-style intermediate structs just to appease the linter would make
+//   the Python-facing API worse. The #[pyo3(signature = ...)] attribute already
+//   enforces named-argument use from Python.
+#![allow(clippy::new_without_default, clippy::too_many_arguments)]
+
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
@@ -961,7 +977,6 @@ impl Worksheet {
     // each record; if omitted, it's taken from the first record's
     // keys (insertion order, matching Python dict semantics).
     #[pyo3(signature = (start_row, start_col, records, headers=None, format=None, header_format=None, write_header=true))]
-    #[allow(clippy::too_many_arguments)]
     fn write_records(
         &self,
         py: Python<'_>,
@@ -1283,7 +1298,6 @@ impl Worksheet {
     }
 
     #[pyo3(signature = (row, col, year, month, day, hour, min, sec, format=None))]
-    #[allow(clippy::too_many_arguments)]
     fn write_datetime(
         &self,
         py: Python<'_>,
