@@ -36,16 +36,35 @@ jobs:
   # This crate builds against pyo3's stable ABI (abi3-py38, see
   # Cargo.toml), which means a single wheel per OS/architecture works
   # across Python 3.8-3.12 -- there is no need to rebuild once per
-  # Python version like a non-abi3 extension would. The previous
-  # version of this job matrixed over both `os` and `python-version`
-  # (3 x 5 = 15 redundant builds producing 15 near-identical wheels);
-  # matrixing on `os` alone cuts CI compute roughly 5x for the same
-  # published artifacts.
-  build-wheels:
+  # Python version like a non-abi3 extension would.
+  #
+  # Linux wheels are built inside a manylinux_2_17 container via
+  # maturin-action so the resulting .whl is manylinux-compliant
+  # (avoids GLIBC_2.18+ symbol errors that occur when building
+  # directly on ubuntu-latest).  Windows and macOS build normally.
+  build-wheels-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build manylinux wheel
+      uses: PyO3/maturin-action@v1
+      with:
+        manylinux: manylinux_2_17
+        args: --release --out dist
+        rust-toolchain: stable
+
+    - name: Upload wheels
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheels-ubuntu-latest
+        path: dist/*.whl
+
+  build-wheels-non-linux:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest, macos-latest]
 
     steps:
     - uses: actions/checkout@v4
@@ -71,7 +90,7 @@ jobs:
         path: target/wheels/*.whl
 
   publish:
-    needs: [test, build-wheels]
+    needs: [test, build-wheels-linux, build-wheels-non-linux]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -83,13 +102,18 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Set up Rust
-      uses: dtolnay/rust-toolchain@stable
+    - name: Download all wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        path: dist
+        merge-multiple: true
 
-    - name: Install maturin
-      run: pip install maturin
+    - name: Install twine
+      run: pip install twine
 
     - name: Publish to PyPI
       env:
-        MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-      run: maturin publish --skip-existing
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: twine upload dist/*.whl --skip-existing
