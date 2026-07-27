@@ -1071,14 +1071,12 @@ impl Worksheet {
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
 
-        let mut row_cursor = start_row;
-        for (row_vals, is_header) in &classified_rows {
+        for (row_num, (row_vals, is_header)) in (start_row..).zip(classified_rows.iter()) {
             let fmt = if *is_header { head_fmt } else { data_fmt };
             for (c, cv) in row_vals.iter().enumerate() {
-                write_value(sheet, row_cursor, start_col + c as u16, cv, fmt)
+                write_value(sheet, row_num, start_col + c as u16, cv, fmt)
                     .map_err(xlsx_err_to_pyerr)?;
             }
-            row_cursor += 1;
         }
 
         Ok(())
