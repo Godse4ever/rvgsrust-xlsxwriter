@@ -213,3 +213,37 @@ def test_write_dataframe_empty_table():
     # No rows to write, but this shouldn't crash and shouldn't produce
     # spurious content either.
     assert sheet["A1"].value is None
+
+
+def test_write_dataframe_polars_utf8view():
+    """Polars >= 1.0 uses Utf8View (StringView) as default string dtype.
+    This previously raised TypeError; must now succeed."""
+    try:
+        import polars as pl
+    except ImportError:
+        pytest.skip("Polars not installed")
+
+    import pyarrow as pa
+    # Force Utf8View by using the native polars string type (default since 1.0)
+    df = pl.DataFrame({
+        "name": pl.Series(["Alice", "Bob", "Carol"], dtype=pl.String),
+        "score": pl.Series([1, 2, 3], dtype=pl.Int64),
+    })
+    # Convert to arrow — this will produce Utf8View for string columns
+    arrow_table = df.to_arrow()
+    from rvgsrust_xlsxwriter import Workbook
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        ws.write_dataframe(0, 0, arrow_table)  # must not raise
+        wb.close(path)
+        import openpyxl
+        sheet = openpyxl.load_workbook(path).active
+        assert sheet["A2"].value == "Alice"
+        assert sheet["A3"].value == "Bob"
+    finally:
+        if os.path.exists(path):
+            os.remove(path)

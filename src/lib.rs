@@ -1,5 +1,6 @@
 use arrow::array::{
     Array, BooleanArray, Float64Array, Int64Array, LargeStringArray, RecordBatch, StringArray,
+    StringViewArray,
 };
 use arrow::datatypes::DataType as ArrowDataType;
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
@@ -276,6 +277,8 @@ enum ArrowColumn<'a> {
     Float64(&'a Float64Array),
     Utf8(&'a StringArray),
     LargeUtf8(&'a LargeStringArray),
+    // Utf8View = default string type in Polars >= 1.0 (Arrow StringView)
+    Utf8View(&'a StringViewArray),
     Bool(&'a BooleanArray),
 }
 
@@ -314,6 +317,12 @@ fn resolve_arrow_column(array: &dyn Array) -> PyResult<ArrowColumn<'_>> {
                 .downcast_ref::<LargeStringArray>()
                 .expect("arrow array reported DataType::LargeUtf8 but isn't a LargeStringArray"),
         )),
+        ArrowDataType::Utf8View => Ok(ArrowColumn::Utf8View(
+            array
+                .as_any()
+                .downcast_ref::<StringViewArray>()
+                .expect("arrow array reported DataType::Utf8View but isn't a StringViewArray"),
+        )),
         ArrowDataType::Boolean => Ok(ArrowColumn::Bool(
             array
                 .as_any()
@@ -322,8 +331,7 @@ fn resolve_arrow_column(array: &dyn Array) -> PyResult<ArrowColumn<'_>> {
         )),
         other => Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
             "write_dataframe(): column type {other:?} isn't supported yet \
-             (supported in this initial implementation: int64, float64, \
-             string/utf8, large_utf8, bool)"
+             (supported: int64, float64, string/utf8, large_utf8, utf8view, bool)"
         ))),
     }
 }
@@ -352,6 +360,13 @@ fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
             }
         }
         ArrowColumn::LargeUtf8(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Str(a.value(row).to_string())
+            }
+        }
+        ArrowColumn::Utf8View(a) => {
             if a.is_null(row) {
                 CellValue::Blank
             } else {
@@ -990,17 +1005,18 @@ impl Worksheet {
 
     // write_rows() is a list-of-lists bulk write path. Unlike write_records()
     // which takes list[dict] and does a Python hash lookup per cell, this
-    // takes list[list] (or any list of sequences) and accesses values by
-    // position -- zero hash lookups. This is 10-20% faster for bulk data
-    // from sources that already produce positional rows (CSV readers,
-    // database cursor.fetchall(), numpy/arrow row iterators).
+    // takes list[list] and accesses values by position — zero hash lookups.
+    // For bulk data from CSV readers, DB cursors, or any positional source,
+    // this is faster than write_records().
     //
-    // The caller is responsible for writing a header row separately if
-    // desired (write_row(0, 0, headers)).
+    // Implementation note: we pre-classify ALL cell values (Python→Rust
+    // type conversion) in one pass before acquiring the workbook borrow,
+    // then write the fully-classified data in a tight Rust loop. This keeps
+    // the costly Python API calls separated from the I/O path and lets the
+    // Rust write loop run without any Python interaction.
     //
-    // write_header=True writes the first element of `rows` as a header
-    // row with the optional header_format, matching write_records() API.
-    // Set write_header=False (the default) to write all rows as data.
+    // write_header=True writes the first row with header_format (matching
+    // write_records() API). Default is write_header=False.
     #[pyo3(signature = (start_row, start_col, rows, format=None, header_format=None, write_header=false))]
     fn write_rows(
         &self,
@@ -1023,6 +1039,32 @@ impl Worksheet {
         let data_fmt = format.map(|f| &f.inner);
         let head_fmt = header_format.map(|f| &f.inner);
 
+        // Pre-classify: convert all Python values to CellValue in one pass
+        // before acquiring the workbook borrow. Each row becomes a Vec<CellValue>.
+        // Using rows.get_item(r) + row_list.get_item(c) (direct index, O(1))
+        // avoids the per-row downcast and iterator allocation of the naive
+        // downcast::<PyList>() + .iter() approach.
+        let n_rows = rows.len();
+        let mut classified_rows: Vec<(Vec<CellValue>, bool)> = Vec::with_capacity(n_rows);
+
+        for r in 0..n_rows {
+            let row_obj = rows.get_item(r)?;
+            let row_list = row_obj.downcast::<PyList>().map_err(|_| {
+                PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                    "write_rows(): each row must be a list",
+                )
+            })?;
+            let n_cols = row_list.len();
+            let mut row_vals = Vec::with_capacity(n_cols);
+            for c in 0..n_cols {
+                let val = row_list.get_item(c)?;
+                row_vals.push(classify(&val)?);
+            }
+            let is_header = write_header && r == 0;
+            classified_rows.push((row_vals, is_header));
+        }
+
+        // Write all pre-classified values in a tight Rust loop.
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref.inner.borrow_mut();
         let sheet = wb
@@ -1030,34 +1072,10 @@ impl Worksheet {
             .map_err(xlsx_err_to_pyerr)?;
 
         let mut row_cursor = start_row;
-        let mut iter = rows.iter();
-
-        // Optional header row: first row written with header_format
-        if write_header {
-            if let Some(header_row) = iter.next() {
-                let header_list = header_row.downcast::<PyList>().map_err(|_| {
-                    PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                        "write_rows(): each row must be a list",
-                    )
-                })?;
-                for (c, val) in header_list.iter().enumerate() {
-                    let cv = classify(&val)?;
-                    write_value(sheet, row_cursor, start_col + c as u16, &cv, head_fmt)
-                        .map_err(xlsx_err_to_pyerr)?;
-                }
-                row_cursor += 1;
-            }
-        }
-
-        for row_obj in iter {
-            let row_list = row_obj.downcast::<PyList>().map_err(|_| {
-                PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                    "write_rows(): each row must be a list",
-                )
-            })?;
-            for (c, val) in row_list.iter().enumerate() {
-                let cv = classify(&val)?;
-                write_value(sheet, row_cursor, start_col + c as u16, &cv, data_fmt)
+        for (row_vals, is_header) in &classified_rows {
+            let fmt = if *is_header { head_fmt } else { data_fmt };
+            for (c, cv) in row_vals.iter().enumerate() {
+                write_value(sheet, row_cursor, start_col + c as u16, cv, fmt)
                     .map_err(xlsx_err_to_pyerr)?;
             }
             row_cursor += 1;
@@ -1229,6 +1247,7 @@ impl Worksheet {
                 | ArrowDataType::Float64
                 | ArrowDataType::Utf8
                 | ArrowDataType::LargeUtf8
+                | ArrowDataType::Utf8View
                 | ArrowDataType::Boolean => {}
                 other => {
                     return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
