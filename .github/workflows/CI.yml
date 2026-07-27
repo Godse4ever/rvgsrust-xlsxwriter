@@ -30,8 +30,21 @@ jobs:
         pip install --upgrade pip
         pip install maturin pytest openpyxl pyarrow pandas
 
+    # -D warnings promotes all clippy warnings to errors. The three -A
+    # flags come AFTER -D warnings so they take precedence for those
+    # specific lints (rustc processes lint flags left-to-right, later
+    # wins). The [lints.clippy] table in Cargo.toml already sets these
+    # to allow, but -D warnings is a broader group flag that would
+    # otherwise override the table's specific allows -- passing them
+    # again here as explicit -A flags after -D warnings guarantees the
+    # allows win regardless of flag ordering with Cargo. See Cargo.toml
+    # for the rationale on each suppressed lint.
     - name: Lint (clippy)
-      run: cargo clippy -- -D warnings
+      run: |
+        cargo clippy -- -D warnings \
+          -A clippy::useless_conversion \
+          -A clippy::too_many_arguments \
+          -A clippy::new_without_default
 
     - name: Format check
       run: cargo fmt --check
