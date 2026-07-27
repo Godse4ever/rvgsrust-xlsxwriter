@@ -23,8 +23,11 @@ jobs:
       with:
         components: clippy, rustfmt
 
-    - name: Install dependencies
+    - name: Create virtualenv and install dependencies
       run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        pip install --upgrade pip
         pip install maturin pytest openpyxl pyarrow pandas
 
     - name: Lint (clippy)
@@ -35,10 +38,12 @@ jobs:
 
     - name: Build and install
       run: |
+        source .venv/bin/activate
         maturin develop --release
 
     - name: Run tests
       run: |
+        source .venv/bin/activate
         pytest tests/ -v
 
   # This crate builds against pyo3's stable ABI (abi3-py38, see
