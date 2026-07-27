@@ -44,7 +44,7 @@ fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
 // ============================================
 // COLOR HELPER
 // ============================================
-fn parse_color(color: &str) -> Color {
+fn parse_color(color: &str) -> PyResult<Color> {
     if color.starts_with('#') && color.len() == 7 {
         if let (Ok(r), Ok(g), Ok(b)) = (
             u8::from_str_radix(&color[1..3], 16),
@@ -52,40 +52,47 @@ fn parse_color(color: &str) -> Color {
             u8::from_str_radix(&color[5..7], 16),
         ) {
             let rgb = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
-            return Color::RGB(rgb);
+            return Ok(Color::RGB(rgb));
         }
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Invalid hex color '{color}': expected '#RRGGBB' with valid hex digits"
+        )));
     }
     match color.to_lowercase().as_str() {
-        "black" => Color::Black,
-        "blue" => Color::Blue,
-        "brown" => Color::Brown,
-        "cyan" => Color::Cyan,
-        "gray" | "grey" => Color::Gray,
-        "green" => Color::Green,
-        "lime" => Color::Lime,
-        "magenta" => Color::Magenta,
-        "navy" => Color::Navy,
-        "orange" => Color::Orange,
-        "pink" => Color::Pink,
-        "purple" => Color::Purple,
-        "red" => Color::Red,
-        "silver" => Color::Silver,
-        "white" => Color::White,
-        "yellow" => Color::Yellow,
-        _ => Color::Black,
+        "black" => Ok(Color::Black),
+        "blue" => Ok(Color::Blue),
+        "brown" => Ok(Color::Brown),
+        "cyan" => Ok(Color::Cyan),
+        "gray" | "grey" => Ok(Color::Gray),
+        "green" => Ok(Color::Green),
+        "lime" => Ok(Color::Lime),
+        "magenta" => Ok(Color::Magenta),
+        "navy" => Ok(Color::Navy),
+        "orange" => Ok(Color::Orange),
+        "pink" => Ok(Color::Pink),
+        "purple" => Ok(Color::Purple),
+        "red" => Ok(Color::Red),
+        "silver" => Ok(Color::Silver),
+        "white" => Ok(Color::White),
+        "yellow" => Ok(Color::Yellow),
+        _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Unknown color '{color}'. Expected a '#RRGGBB' hex string or one of:              black, blue, brown, cyan, gray/grey, green, lime, magenta, navy,              orange, pink, purple, red, silver, white, yellow"
+        ))),
     }
 }
 
-fn parse_border(border: &str) -> FormatBorder {
+fn parse_border(border: &str) -> PyResult<FormatBorder> {
     match border.to_lowercase().as_str() {
-        "thin" => FormatBorder::Thin,
-        "medium" => FormatBorder::Medium,
-        "thick" => FormatBorder::Thick,
-        "dashed" => FormatBorder::Dashed,
-        "dotted" => FormatBorder::Dotted,
-        "double" => FormatBorder::Double,
-        "hair" => FormatBorder::Hair,
-        _ => FormatBorder::Thin,
+        "thin" => Ok(FormatBorder::Thin),
+        "medium" => Ok(FormatBorder::Medium),
+        "thick" => Ok(FormatBorder::Thick),
+        "dashed" => Ok(FormatBorder::Dashed),
+        "dotted" => Ok(FormatBorder::Dotted),
+        "double" => Ok(FormatBorder::Double),
+        "hair" => Ok(FormatBorder::Hair),
+        _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Unknown border style '{border}'. Expected one of:              thin, medium, thick, dashed, dotted, double, hair"
+        ))),
     }
 }
 
@@ -401,26 +408,26 @@ impl Format {
         slf
     }
 
-    fn set_font_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyRefMut<'a, Self> {
-        let c = parse_color(color);
+    fn set_font_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
         slf.update(|f| f.set_font_color(c));
-        slf
+        Ok(slf)
     }
 
-    fn set_background_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyRefMut<'a, Self> {
-        let c = parse_color(color);
+    fn set_background_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
         slf.update(|f| f.set_background_color(c));
-        slf
+        Ok(slf)
     }
 
-    fn set_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyRefMut<'a, Self> {
-        let style = parse_border(border);
+    fn set_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
         slf.update(|f| f.set_border(style));
-        slf
+        Ok(slf)
     }
 
-    fn set_border_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyRefMut<'a, Self> {
-        let c = parse_color(color);
+    fn set_border_color<'a>(mut slf: PyRefMut<'a, Self>, color: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
         slf.update(|f| {
             f.set_border_color(c)
                 .set_border_top_color(c)
@@ -428,31 +435,31 @@ impl Format {
                 .set_border_left_color(c)
                 .set_border_right_color(c)
         });
-        slf
+        Ok(slf)
     }
 
-    fn set_top_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyRefMut<'a, Self> {
-        let style = parse_border(border);
+    fn set_top_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
         slf.update(|f| f.set_border_top(style));
-        slf
+        Ok(slf)
     }
 
-    fn set_bottom_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyRefMut<'a, Self> {
-        let style = parse_border(border);
+    fn set_bottom_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
         slf.update(|f| f.set_border_bottom(style));
-        slf
+        Ok(slf)
     }
 
-    fn set_left_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyRefMut<'a, Self> {
-        let style = parse_border(border);
+    fn set_left_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
         slf.update(|f| f.set_border_left(style));
-        slf
+        Ok(slf)
     }
 
-    fn set_right_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyRefMut<'a, Self> {
-        let style = parse_border(border);
+    fn set_right_border<'a>(mut slf: PyRefMut<'a, Self>, border: &str) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
         slf.update(|f| f.set_border_right(style));
-        slf
+        Ok(slf)
     }
 
     fn set_num_format<'a>(mut slf: PyRefMut<'a, Self>, format: &str) -> PyRefMut<'a, Self> {
@@ -1196,7 +1203,7 @@ impl Worksheet {
     }
 
     fn set_tab_color(&self, py: Python<'_>, color: &str) -> PyResult<()> {
-        let c = parse_color(color);
+        let c = parse_color(color)?;
         self.with_sheet(py, |sheet| {
             sheet.set_tab_color(c);
             Ok(())
