@@ -1249,7 +1249,6 @@ impl Worksheet {
         })
     }
 
-    #[pyo3(signature = (row, col, url, format=None))]
     // write_url writes a hyperlink cell. Optional `text` overrides the
     // display label (defaults to the URL itself). Optional `tip` sets the
     // tooltip that appears on hover. Both map to rust_xlsxwriter's Url
