@@ -232,8 +232,8 @@ fn record_batches_from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch
     // object could hand us a pointer to an unrelated struct, causing UB in the
     // unsafe block below. PyCapsule::name() returns None for unnamed capsules.
     let capsule_name = capsule.name().ok().flatten();
-    let expected = std::ffi::CStr::from_bytes_with_nul(b"arrow_array_stream\0").unwrap();
-    if capsule_name.as_deref() != Some(expected) {
+    let expected = c"arrow_array_stream";
+    if capsule_name != Some(expected) {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
             "__arrow_c_stream__() returned a PyCapsule with unexpected name {:?};              expected \"arrow_array_stream\"",
             capsule_name.map(|c| c.to_string_lossy().into_owned())
