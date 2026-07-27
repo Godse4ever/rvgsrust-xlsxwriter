@@ -102,12 +102,21 @@ class Workbook(_CoreWorkbook):
     use the explicit ``close(path)`` form instead.
     """
 
+    def __new__(cls, path=None):
+        # pyo3's #[new] fn new() takes zero args, so the generated __new__
+        # rejects any kwarg. Python calls __new__ BEFORE __init__, so if
+        # we let 'path' fall through to super().__new__ we get:
+        #   TypeError: Workbook.__new__() got an unexpected keyword argument 'path'
+        # and __init__ is never reached. Absorb the kwarg here instead and
+        # call the parent __new__ with no args; __init__ below then stores
+        # path on the instance for __exit__ to find.
+        return super().__new__(cls)
+
     def __init__(self, path: str | None = None) -> None:
         # _CoreWorkbook is a #[pyclass(subclass)] with #[new] fn new().
-        # Python invokes the pyo3-generated __new__ automatically before
-        # calling this __init__; there's no need (and no way) to call
-        # super().__init__() -- the Rust side is already fully constructed.
-        # We just tack on the Python-side attribute for __exit__.
+        # Python invokes the pyo3-generated __new__ (via our __new__ above)
+        # before calling this __init__; the Rust side is already fully
+        # constructed. We just tack on the Python-side attribute for __exit__.
         self.path = path
 
     def __enter__(self) -> "Workbook":

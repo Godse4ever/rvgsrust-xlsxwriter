@@ -698,7 +698,7 @@ def test_write_url_basic():
     ws.write_url(0, 0, "https://example.com")
     wb.close(TEST_FILE)
     sheet = _load().active
-    assert sheet["A1"].hyperlink == "https://example.com"
+    assert sheet["A1"].hyperlink.target == "https://example.com"
 
 
 def test_write_url_with_text():
@@ -708,7 +708,7 @@ def test_write_url_with_text():
     wb.close(TEST_FILE)
     sheet = _load().active
     assert sheet["A1"].value == "Click here"
-    assert sheet["A1"].hyperlink == "https://example.com"
+    assert sheet["A1"].hyperlink.target == "https://example.com"
 
 
 def test_write_url_with_tip():
@@ -719,7 +719,7 @@ def test_write_url_with_tip():
     ws.write_url(0, 0, "https://example.com", tip="Go to example.com")
     wb.close(TEST_FILE)
     sheet = _load().active
-    assert sheet["A1"].hyperlink == "https://example.com"
+    assert sheet["A1"].hyperlink.target == "https://example.com"
 
 
 def test_write_datetime_py():
