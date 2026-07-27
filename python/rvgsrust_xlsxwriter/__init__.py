@@ -43,7 +43,7 @@ Quick Start
     from rvgsrust_xlsxwriter import Workbook
 
     # Context manager form (recommended):
-    with Workbook() as wb:
+    with Workbook("report.xlsx") as wb:
         ws = wb.add_worksheet("Sheet1")
 
         fmt = wb.add_format()
@@ -65,6 +65,14 @@ Quick Start
 
 """
 
+# from __future__ import annotations makes all annotations lazily
+# evaluated strings, letting us use PEP 604 unions (str | None) even
+# under Python 3.8/3.9 which don't support the runtime | operator on
+# types. Without this, importing this module on 3.8/3.9 fails with
+# TypeError at the annotated line -> pytest collection exits with
+# code 2, taking the whole test job with it.
+from __future__ import annotations
+
 __version__ = "0.2.0.dev0"
 __author__ = "RVGS Team"
 __license__ = "MIT"
@@ -84,19 +92,22 @@ class Workbook(_CoreWorkbook):
     Wraps the core Rust-backed Workbook to add ``__enter__`` /
     ``__exit__``, so the workbook can be used as::
 
-        with Workbook() as wb:
+        with Workbook("out.xlsx") as wb:
             ws = wb.add_worksheet()
             ws.write(0, 0, "Hello")
-        # wb.close(path) called automatically
+        # wb.close("out.xlsx") called automatically
 
-    ``__exit__`` requires a ``path`` to save to; set ``wb.path``
-    before the ``with`` block, or use the explicit ``close(path)``
-    form instead.
+    ``__exit__`` requires a ``path`` to save to; pass it to the
+    constructor or set ``wb.path`` before the ``with`` block, or
+    use the explicit ``close(path)`` form instead.
     """
 
     def __init__(self, path: str | None = None) -> None:
-        super().__init__()
-        # Optional: pre-set the output path so __exit__ knows where to save.
+        # _CoreWorkbook is a #[pyclass(subclass)] with #[new] fn new().
+        # Python invokes the pyo3-generated __new__ automatically before
+        # calling this __init__; there's no need (and no way) to call
+        # super().__init__() -- the Rust side is already fully constructed.
+        # We just tack on the Python-side attribute for __exit__.
         self.path = path
 
     def __enter__(self) -> "Workbook":

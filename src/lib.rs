@@ -1573,7 +1573,12 @@ impl Worksheet {
 // ============================================
 // WORKBOOK CLASS
 // ============================================
-#[pyclass]
+// subclass=true so the Python wrapper in python/rvgsrust_xlsxwriter/
+// __init__.py (which extends this to add __enter__/__exit__ context
+// manager support) can inherit from it. Without this flag PyO3
+// generates an unsubclassable native type and the Python `class
+// Workbook(_CoreWorkbook):` line raises TypeError at import time.
+#[pyclass(subclass)]
 struct Workbook {
     inner: RefCell<RustWorkbook>,
     // Tracks how many worksheets have been added so each Worksheet
