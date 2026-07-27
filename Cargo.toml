@@ -85,6 +85,11 @@ lto = true
 codegen-units = 1
 opt-level = 3
 strip = true
+# target-cpu = "native" is intentionally NOT set in the committed Cargo.toml.
+# It would make manylinux wheels fail on machines without the same CPU features
+# as the build machine. For local benchmarks and source installs where you want
+# maximum performance on your own hardware, you can override it:
+#   RUSTFLAGS="-C target-cpu=native" maturin develop --release
 # NOT setting panic = "abort" here: for a PyO3 extension module this is
 # a reliability problem, not a pure perf win. With the default
 # panic = "unwind", a Rust panic (e.g. an unexpected unwrap() failure

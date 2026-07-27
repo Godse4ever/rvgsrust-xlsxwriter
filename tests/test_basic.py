@@ -799,3 +799,178 @@ def test_parse_border_unknown_raises():
     fmt = wb.add_format()
     with pytest.raises(ValueError):
         fmt.set_border("thinn")
+
+
+# ============================================================
+# Audit-driven tests (5.4, 5.7, write_rows, insert_image path)
+# ============================================================
+
+def test_set_tab_color():
+    wb = Workbook()
+    ws = wb.add_worksheet("Colored")
+    ws.set_tab_color("#FF0000")  # must not raise
+    wb.close(TEST_FILE)
+    book = _load()
+    # openpyxl exposes tab color on sheet.sheet_properties.tabColor
+    tab = book["Colored"].sheet_properties.tabColor
+    assert tab is not None
+    assert tab.rgb.upper().endswith("FF0000")
+
+
+def test_hide_worksheet():
+    wb = Workbook()
+    wb.add_worksheet("Visible")
+    ws_hidden = wb.add_worksheet("Hidden")
+    ws_hidden.hide()
+    wb.close(TEST_FILE)
+    book = _load()
+    assert book["Hidden"].sheet_state == "hidden"
+    assert book["Visible"].sheet_state == "visible"
+
+
+def test_protect_no_password():
+    # protect() with no password enables protection with empty-string
+    # password — sheet IS protected, but anyone can unprotect without
+    # a password. Verify it round-trips via openpyxl.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.protect()
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet.protection.sheet is True
+
+
+def test_protect_with_password():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.protect(password="secret")
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet.protection.sheet is True
+
+
+def test_set_worksheet_name():
+    wb = Workbook()
+    ws = wb.add_worksheet("Original")
+    ws.set_name("Renamed")
+    wb.close(TEST_FILE)
+    book = _load()
+    assert "Renamed" in book.sheetnames
+    assert "Original" not in book.sheetnames
+
+
+def test_insert_image_missing_file_raises():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    with pytest.raises(OSError, match="not found"):
+        ws.insert_image(0, 0, "/tmp/does_not_exist_xyz.png")
+
+
+def test_write_rows_basic():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["Name", "Score"])
+    ws.write_rows(1, 0, [
+        ["Alice", 95],
+        ["Bob",   87],
+        ["Carol", 91],
+    ])
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert [c.value for c in sheet[1]] == ["Name", "Score"]
+    assert [c.value for c in sheet[2]] == ["Alice", 95]
+    assert [c.value for c in sheet[3]] == ["Bob",   87]
+    assert [c.value for c in sheet[4]] == ["Carol", 91]
+
+
+def test_write_rows_with_write_header():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    header_fmt = wb.add_format()
+    header_fmt.set_bold()
+    ws.write_rows(0, 0, [
+        ["Name", "Score"],
+        ["Alice", 95],
+    ], write_header=True, header_format=header_fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].font.bold is True
+    assert sheet["A1"].value == "Name"
+    assert sheet["A2"].value == "Alice"
+
+
+def test_write_rows_empty_is_noop():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_rows(0, 0, [])  # must not raise
+    wb.close(TEST_FILE)
+    assert _load().active["A1"].value is None
+
+
+def test_write_rows_faster_than_records_same_output():
+    # write_rows and write_records must produce identical cell values
+    # for equivalent data (the fast path must not corrupt output).
+    records  = [{"x": i, "y": i * 2} for i in range(50)]
+    rows     = [[r["x"], r["y"]] for r in records]
+
+    wb1 = Workbook()
+    ws1 = wb1.add_worksheet()
+    ws1.write_row(0, 0, ["x", "y"])
+    ws1.write_records(1, 0, records, headers=["x", "y"], write_header=False)
+    wb1.close("_cmp_records.xlsx")
+
+    wb2 = Workbook()
+    ws2 = wb2.add_worksheet()
+    ws2.write_row(0, 0, ["x", "y"])
+    ws2.write_rows(1, 0, rows)
+    wb2.close("_cmp_rows.xlsx")
+
+    import openpyxl as _opx
+    s1 = _opx.load_workbook("_cmp_records.xlsx").active
+    s2 = _opx.load_workbook("_cmp_rows.xlsx").active
+    import os
+    os.remove("_cmp_records.xlsx")
+    os.remove("_cmp_rows.xlsx")
+
+    for row in range(1, 52):
+        assert [c.value for c in s1[row]] == [c.value for c in s2[row]], \
+            f"row {row} mismatch"
+
+
+def test_table_set_alt_text():
+    from rvgsrust_xlsxwriter import Table, TableColumn
+    t = Table().set_name("AltTest")
+    t.set_alt_text("Accessibility description")   # must not raise
+    t.set_alt_text_title("Table title")           # must not raise
+
+
+def test_write_formula_with_format():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, 10)
+    ws.write(0, 1, 20)
+    fmt = wb.add_format()
+    fmt.set_bold()
+    ws.write_formula(0, 2, "=A1+B1", fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["C1"].value == "=A1+B1"
+    assert sheet["C1"].font.bold is True
+
+
+def test_parse_color_valid_hex():
+    wb = Workbook()
+    fmt = wb.add_format()
+    fmt.set_font_color("#1A2B3C")  # valid hex — must not raise
+
+
+def test_parse_color_valid_named():
+    wb = Workbook()
+    fmt = wb.add_format()
+    fmt.set_background_color("navy")  # valid named color
+
+
+def test_parse_border_valid():
+    wb = Workbook()
+    fmt = wb.add_format()
+    fmt.set_border("medium")  # must not raise

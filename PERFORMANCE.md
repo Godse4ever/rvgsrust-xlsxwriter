@@ -2,7 +2,7 @@
 
 ## Overview
 
-RVGSRust-XLSXWriter is a Rust-powered XLSX writer for Python. This document details optimization strategies and benchmarking results; see the README's Roadmap for what's implemented versus planned (charts, conditional formatting, data validation, and tables are not yet implemented).
+RVGSRust-XLSXWriter is a Rust-powered XLSX writer for Python. This document details optimization strategies and benchmarking results; see the README's Roadmap for what's implemented versus planned (charts, conditional formatting, and data validation are not yet implemented).
 
 ## Build-Time Optimizations
 
@@ -206,7 +206,7 @@ Your Machine" below.
 | Library | Strategy | Time (0.75-era) | Speedup vs. xlsxwriter |
 |---------|----------|------|---------|
 | **rvgsrust** | `write_records()` | 0.550s | 5.1x |
-| **rvgsrust** | `write_dataframe()` (Polars) | 0.496s | 5.7x |
+| **rvgsrust** | `write_dataframe()` (Polars) | *run `python benchmarks/run_benchmarks.py` for current numbers* | — |
 | rustpy-xlsxwriter | native API | ~0.27-0.38s | ~7-10x |
 | xlsxwriter | per-cell | 2.821s | 1x (baseline) |
 
