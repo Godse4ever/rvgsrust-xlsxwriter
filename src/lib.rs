@@ -4063,18 +4063,24 @@ impl ChartDataLabel {
         self.inner.set_num_format(num_format);
     }
 
-    // Upstream takes a char, so reject anything that isn't exactly one.
+    // Upstream takes a char, so anything that isn't exactly one character
+    // is rejected. Matching on both nexts at once rather than checking
+    // is_none() and then unwrapping, which clippy::unnecessary_unwrap
+    // rejects and CI promotes to an error.
     fn set_separator(&mut self, separator: &str) -> PyResult<()> {
         let mut chars = separator.chars();
-        let first = chars.next();
-        if first.is_none() || chars.next().is_some() {
-            let message = format!(
-                "set_separator() expects exactly one character, got {separator:?}"
-            );
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(message));
+        match (chars.next(), chars.next()) {
+            (Some(first), None) => {
+                self.inner.set_separator(first);
+                Ok(())
+            }
+            _ => {
+                let message = format!(
+                    "set_separator() expects exactly one character, got {separator:?}"
+                );
+                Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(message))
+            }
         }
-        self.inner.set_separator(first.unwrap());
-        Ok(())
     }
 
     // A literal string, or a range reference holding the label text.
