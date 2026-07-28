@@ -25,6 +25,18 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Conditional formatting: 12 rule types, each a `#[pyclass]` wrapping the
+  matching `rust_xlsxwriter` builder -- `ConditionalFormatCell`, `Blank`,
+  `Duplicate`, `Error`, `Formula`, `Average`, `Top`, `Text`, `Date`,
+  `2ColorScale`, `3ColorScale` and `DataBar`. Applied with
+  `Worksheet.add_conditional_format(first_row, first_col, last_row,
+  last_col, rule)`. Icon sets are deferred to the parity audit.
+  Enum-valued options (average/date/text/top rules, scale value types,
+  data bar direction and axis position) are taken as strings and validated
+  with a `ValueError` that lists the accepted values, rather than being
+  exposed as separate enum classes.
+  Note these setters return `None` rather than `self`, so unlike `Format`
+  they do not chain; adding a return value later is backwards compatible.
 - Extended Arrow type support in `Worksheet.write_dataframe()`. Added
   `int8`/`int16`/`int32`, `uint8`/`uint16`/`uint32`/`uint64`, `float32`,
   `date32`/`date64`, and `timestamp` in all four units (second,
