@@ -71,20 +71,21 @@ is the highest-value item in the table.
 
 ## 2. Worksheet — ~120 gaps
 
-### 2a. Cell, row, column and range formats — **High**
+### 2a. Cell, row, column and range formats — **CLOSED**
+
+`set_column_format`, `set_column_range_format`, `set_row_format`,
+`set_cell_format` and `set_range_format` are now exposed. This was ranked
+first because it was the gap hit directly while implementing extended
+Arrow types: date columns needed a number format applied and a caller had
+no way to fix a wrongly formatted column afterwards, which is why
+`write_dataframe` applies the date formats itself.
+
+Still missing in this area:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Column format | `worksheet.rs:8171` | `set_column_format(col, format)` | **High** |
-| Column range format | `worksheet.rs:8418` | `set_column_range_format(first, last, format)` | **High** |
-| Row format | `worksheet.rs:6687` | `set_row_format(row, format)` | **High** |
-| Range / cell format | `worksheet.rs:10549` | `set_range_format(r1, c1, r2, c2, format)`, `set_cell_format(row, col, format)` | **High** |
-
-This is the gap I hit directly while implementing extended Arrow types.
-Date and timestamp columns needed a number format applied, and with no
-`set_column_format` there was no way for a caller to fix a wrongly
-formatted column afterwards — which is why `write_dataframe` had to apply
-the date formats itself. Closing this would also let that become optional.
+| Range format with a border | `worksheet.rs:10549` | `set_range_format_with_border(r1, c1, r2, c2, format, border)` | Medium |
+| Clear a cell's format | `worksheet.rs:10776` | `clear_cell_format(row, col)` | Low |
 
 ### 2b. Page setup and printing — **High as a group**
 
@@ -229,8 +230,8 @@ values that remain missing are the icon-set thresholds specifically.
 
 Ranked by value per unit of effort, not by section order above:
 
-1. **`set_column_format` / `set_row_format` / `set_range_format`** — small,
-   self-contained, and removes a genuine dead end for `write_dataframe`.
+1. ~~**`set_column_format` / `set_row_format` / `set_range_format`**~~ —
+   done, see section 2a.
 2. **Page setup and print settings** — large surface, trivial individually,
    no new pyclasses.
 3. **Per-side borders and cell protection on `Format`** — same shape as

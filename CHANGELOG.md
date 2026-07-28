@@ -25,6 +25,15 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- `Worksheet.set_column_format`, `set_column_range_format`,
+  `set_row_format`, `set_cell_format` and `set_range_format`. Column and
+  row formats apply to cells without a format of their own, so these are
+  the way to reformat data after `write_dataframe` has written it -- the
+  gap `MISSING.md` ranked first, and the reason `write_dataframe` applies
+  its date formats itself rather than leaving them to the caller.
+  `set_row_format` and `set_cell_format` are guarded by the constant-memory
+  row-order check; the column variants target no particular row and so are
+  not.
 - Added `MISSING.md`, a parity audit of the exposed Python API against
   rust_xlsxwriter 0.96, with upstream `file:line` references, a suggested
   Python API shape and a priority for every gap. Listing only; nothing in
