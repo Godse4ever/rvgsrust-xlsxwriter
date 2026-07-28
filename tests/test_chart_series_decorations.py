@@ -326,7 +326,7 @@ def test_data_label_separator_must_be_one_character(bad):
     else:
         with pytest.raises(ValueError) as exc:
             label.set_separator(bad)
-        assert "exactly one character" in str(exc.value)
+        assert "one character" in str(exc.value)
 
 
 def test_data_label_hidden_and_font_and_format():

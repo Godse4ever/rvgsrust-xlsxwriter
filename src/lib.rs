@@ -4075,9 +4075,11 @@ impl ChartDataLabel {
                 Ok(())
             }
             _ => {
-                let message = format!(
-                    "set_separator() expects exactly one character, got {separator:?}"
-                );
+                // Message kept short deliberately: at 16 spaces of indent a
+                // longer one pushes the statement past max_width, and which
+                // way rustfmt then breaks it is not something this container
+                // can verify without cargo fmt.
+                let message = format!("separator must be one character, got {separator:?}");
                 Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(message))
             }
         }
