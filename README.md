@@ -691,6 +691,14 @@ rather than shipping a large surface untested:
 
 ---
 
+## API Parity
+
+[MISSING.md](MISSING.md) audits the exposed Python API against
+rust_xlsxwriter 0.96 and lists what is not yet wrapped, with upstream
+`file:line` references, a suggested Python API shape, and a priority for
+each. Sparklines are at full parity; the largest gaps are per-column and
+per-range formats, page setup and print settings, and per-side borders.
+
 ## Performance TODO
 
 Measured bottlenecks and untried optimisations are logged in
