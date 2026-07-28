@@ -25,6 +25,30 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Extended Arrow type support in `Worksheet.write_dataframe()`. Added
+  `int8`/`int16`/`int32`, `uint8`/`uint16`/`uint32`/`uint64`, `float32`,
+  `date32`/`date64`, and `timestamp` in all four units (second,
+  millisecond, microsecond, nanosecond). `timestamp[ns]` matters most in
+  practice: it is what pandas' default `datetime64[ns]` dtype maps to, so
+  the most common real-world DataFrame previously raised `TypeError` here
+  and silently fell back to the per-cell path in `dataframe.py`, where
+  datetimes were written as strings. They are now real Excel dates.
+- Date and timestamp columns get a number format applied automatically
+  (`yyyy-mm-dd` and `yyyy-mm-dd hh:mm:ss` respectively). Without one Excel
+  renders a date serial as a bare number such as `45123`, and this binding
+  exposes no `set_column_format()` for the caller to fix it afterwards.
+  The two formats are built once per `write_dataframe()` call and resolved
+  per column, not per cell, so the inner loop cost is unchanged for
+  non-temporal data.
+- Timezone-aware `timestamp` columns now emit a `UserWarning` naming the
+  column and its timezone, once per column at schema-validation time.
+  Values are written as UTC wall-clock time, since Excel has no timezone
+  concept. Use `.dt.tz_convert(None)` beforehand to pick the offset
+  explicitly.
+- Out-of-range dates (before 1900 or after 9999, which Excel cannot
+  represent) raise `ValueError` naming the offending column and row,
+  rather than surfacing `rust_xlsxwriter`'s bare
+  `"Serial datetime: '-18288' outside ..."` message.
 - `Workbook.add_worksheet(constant_memory=True)`: streams a worksheet's
   rows to a temp file instead of buffering the whole sheet in memory,
   via `rust_xlsxwriter`'s `constant_memory` feature. Requires rows to

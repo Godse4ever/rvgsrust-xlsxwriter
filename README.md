@@ -361,7 +361,9 @@ table = pa.table({"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"]})
 ws.write_dataframe(0, 0, table, header_format=header_fmt)
 ```
 
-**Current type support:** `int64`, `float64`, `string`/`utf8`, `large_utf8`, `utf8view` (Polars default), `bool`.
+**Current type support:** `int8`/`int16`/`int32`/`int64`, `uint8`/`uint16`/`uint32`/`uint64`, `float32`/`float64`, `string`/`utf8`, `large_utf8`, `utf8view` (Polars default), `bool`, `date32`/`date64`, and `timestamp` in all four units (`s`/`ms`/`us`/`ns` -- `ns` is pandas' default `datetime64[ns]`).
+
+Date and timestamp columns are written as real Excel dates with a `yyyy-mm-dd` / `yyyy-mm-dd hh:mm:ss` number format applied automatically, rather than as raw serial numbers. Timezone-aware timestamps are written as UTC wall-clock time (Excel has no timezone concept) and emit a `UserWarning`; call `.dt.tz_convert(None)` first if you want to choose the offset yourself.
 
 ---
 
