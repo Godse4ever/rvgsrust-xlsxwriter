@@ -1,8 +1,10 @@
 use arrow::array::{
-    Array, BooleanArray, Float64Array, Int64Array, LargeStringArray, RecordBatch, StringArray,
-    StringViewArray,
+    Array, BooleanArray, Date32Array, Date64Array, Float32Array, Float64Array, Int16Array,
+    Int32Array, Int64Array, Int8Array, LargeStringArray, RecordBatch, StringArray, StringViewArray,
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
 };
-use arrow::datatypes::DataType as ArrowDataType;
+use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
@@ -116,7 +118,28 @@ enum CellValue {
     Str(String),
     Num(f64),
     Bool(bool),
+    // Excel serial date/datetime -- days since 1899-12-30, fractional
+    // part being time of day. Deliberately NOT folded into Num: Excel
+    // stores dates as plain f64 and decides how to display them purely
+    // from the cell's number format, so a serial written as a bare
+    // number renders as "45123" rather than "2023-07-14". Keeping these
+    // as distinct variants lets write_value() attach a date format.
+    // Date is whole-day (yyyy-mm-dd); DateTime carries a time component.
+    Date(f64),
+    DateTime(f64),
 }
+
+// Excel's day-zero is 1899-12-30; the Unix epoch (1970-01-01) is serial
+// 25569. Arrow stores all its date/time types as an offset from the Unix
+// epoch, so every conversion below is (value / units_per_day) + 25569.
+const EXCEL_UNIX_EPOCH_DAYS: f64 = 25569.0;
+
+// Single source of truth for the supported-type list, so the two error
+// paths (per-column schema check and resolve_arrow_column's fallback)
+// can't drift apart as coverage grows.
+const SUPPORTED_ARROW_TYPES: &str = "supported: int8/16/32/64, uint8/16/32/64, \
+     float32/64, string/utf8, large_utf8, utf8view, bool, date32, date64, \
+     timestamp[s|ms|us|ns]";
 
 fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue> {
     if value.is_none() {
@@ -166,6 +189,24 @@ fn write_value(
             sheet.write_boolean_with_format(row, col, *b, f).map(|_| ())
         }
         (CellValue::Bool(b), None) => sheet.write_boolean(row, col, *b).map(|_| ()),
+        // from_serial_datetime() range-checks against 0.0..2_958_466.0
+        // (Excel years 1900-9999) and returns Err outside it, so dates
+        // Excel physically cannot represent surface as a Python
+        // exception rather than being silently clamped or wrapped.
+        (CellValue::Date(n) | CellValue::DateTime(n), Some(f)) => {
+            let edt = ExcelDateTime::from_serial_datetime(*n)?;
+            sheet.write_datetime_with_format(row, col, &edt, f)?;
+            Ok(())
+        }
+        // No format supplied: still written as a datetime cell type, but
+        // Excel will render the bare serial. Callers inside this crate
+        // always pass a format for these variants; this arm exists for
+        // exhaustiveness.
+        (CellValue::Date(n) | CellValue::DateTime(n), None) => {
+            let edt = ExcelDateTime::from_serial_datetime(*n)?;
+            sheet.write_datetime(row, col, &edt)?;
+            Ok(())
+        }
     }
 }
 
@@ -198,11 +239,10 @@ fn merge_value(
 // ============================================
 // Reads a Polars/Pandas/PyArrow object into native arrow-rs RecordBatches
 // via the Arrow PyCapsule Interface (__arrow_c_stream__), without
-// extracting individual Python objects per cell. This is Phase 1: it
-// supports the four core types (int64, float64, string, bool) that
-// exercise the full read -> classify -> write path end to end; wider
-// type coverage (unsigned ints, dates/timestamps, decimals) is tracked
-// as follow-up work, not attempted here.
+// extracting individual Python objects per cell. Covers the integer and
+// float widths, the three string encodings, bool, and the date/timestamp
+// types; decimal, list, struct and dictionary-encoded columns are still
+// tracked as follow-up work.
 
 /// Pulls RecordBatches out of any object exposing `__arrow_c_stream__`
 /// (pyarrow.Table, pandas.DataFrame 2.x+) or a `.to_arrow()` method
@@ -273,78 +313,161 @@ fn record_batches_from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch
 /// A typed reference into one column of a RecordBatch, resolved once per
 /// batch rather than re-checked on every cell.
 enum ArrowColumn<'a> {
+    Int8(&'a Int8Array),
+    Int16(&'a Int16Array),
+    Int32(&'a Int32Array),
     Int64(&'a Int64Array),
+    UInt8(&'a UInt8Array),
+    UInt16(&'a UInt16Array),
+    UInt32(&'a UInt32Array),
+    UInt64(&'a UInt64Array),
+    Float32(&'a Float32Array),
     Float64(&'a Float64Array),
     Utf8(&'a StringArray),
     LargeUtf8(&'a LargeStringArray),
     // Utf8View = default string type in Polars >= 1.0 (Arrow StringView)
     Utf8View(&'a StringViewArray),
     Bool(&'a BooleanArray),
+    // Date32 = days since Unix epoch, Date64 = milliseconds since Unix
+    // epoch (Arrow specifies Date64 values should be exact multiples of
+    // a whole day). Both render as date-only.
+    Date32(&'a Date32Array),
+    Date64(&'a Date64Array),
+    // Timestamp[ns] is what pandas' default datetime64[ns] dtype maps to,
+    // so it's the common case rather than an exotic one.
+    TimestampSecond(&'a TimestampSecondArray),
+    TimestampMillisecond(&'a TimestampMillisecondArray),
+    TimestampMicrosecond(&'a TimestampMicrosecondArray),
+    TimestampNanosecond(&'a TimestampNanosecondArray),
+}
+
+// Every downcast below is guarded by having just matched the exact
+// ArrowDataType that guarantees it succeeds. Factored into a macro
+// because doing it longhand across 20 variants is where a copy-paste
+// type mismatch would hide.
+macro_rules! arrow_col {
+    ($array:expr, $variant:ident, $arr_ty:ty) => {{
+        let arr = $array.as_any().downcast_ref::<$arr_ty>();
+        let arr = arr.expect(concat!("arrow array is not a ", stringify!($arr_ty)));
+        Ok(ArrowColumn::$variant(arr))
+    }};
 }
 
 fn resolve_arrow_column(array: &dyn Array) -> PyResult<ArrowColumn<'_>> {
-    // Each unwrap() below is guarded by having just matched the exact
-    // ArrowDataType that guarantees the downcast succeeds -- arrow-rs's
-    // own invariant is that an array's concrete type always agrees
-    // with array.data_type(). expect() with a specific message instead
-    // of unwrap() means if that invariant is ever violated (an arrow-rs
-    // bug, or a version mismatch between the arrow crate version this
-    // was compiled against and the one that produced the array), the
-    // panic clearly names which type pairing broke rather than just
-    // saying "called unwrap on a None value".
+    // arrow-rs's invariant is that an array's concrete type always agrees
+    // with array.data_type(). The expect() inside arrow_col! (rather than
+    // unwrap()) means that if that invariant is ever violated -- an
+    // arrow-rs bug, or a version mismatch between the arrow crate this was
+    // compiled against and the one that produced the array -- the panic
+    // names which type pairing broke instead of just saying "called unwrap
+    // on a None value".
     match array.data_type() {
-        ArrowDataType::Int64 => Ok(ArrowColumn::Int64(
-            array
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .expect("arrow array reported DataType::Int64 but isn't an Int64Array"),
-        )),
-        ArrowDataType::Float64 => Ok(ArrowColumn::Float64(
-            array
-                .as_any()
-                .downcast_ref::<Float64Array>()
-                .expect("arrow array reported DataType::Float64 but isn't a Float64Array"),
-        )),
-        ArrowDataType::Utf8 => Ok(ArrowColumn::Utf8(
-            array
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .expect("arrow array reported DataType::Utf8 but isn't a StringArray"),
-        )),
-        ArrowDataType::LargeUtf8 => Ok(ArrowColumn::LargeUtf8(
-            array
-                .as_any()
-                .downcast_ref::<LargeStringArray>()
-                .expect("arrow array reported DataType::LargeUtf8 but isn't a LargeStringArray"),
-        )),
-        ArrowDataType::Utf8View => Ok(ArrowColumn::Utf8View(
-            array
-                .as_any()
-                .downcast_ref::<StringViewArray>()
-                .expect("arrow array reported DataType::Utf8View but isn't a StringViewArray"),
-        )),
-        ArrowDataType::Boolean => Ok(ArrowColumn::Bool(
-            array
-                .as_any()
-                .downcast_ref::<BooleanArray>()
-                .expect("arrow array reported DataType::Boolean but isn't a BooleanArray"),
-        )),
+        ArrowDataType::Int8 => arrow_col!(array, Int8, Int8Array),
+        ArrowDataType::Int16 => arrow_col!(array, Int16, Int16Array),
+        ArrowDataType::Int32 => arrow_col!(array, Int32, Int32Array),
+        ArrowDataType::Int64 => arrow_col!(array, Int64, Int64Array),
+        ArrowDataType::UInt8 => arrow_col!(array, UInt8, UInt8Array),
+        ArrowDataType::UInt16 => arrow_col!(array, UInt16, UInt16Array),
+        ArrowDataType::UInt32 => arrow_col!(array, UInt32, UInt32Array),
+        ArrowDataType::UInt64 => arrow_col!(array, UInt64, UInt64Array),
+        ArrowDataType::Float32 => arrow_col!(array, Float32, Float32Array),
+        ArrowDataType::Float64 => arrow_col!(array, Float64, Float64Array),
+        ArrowDataType::Utf8 => arrow_col!(array, Utf8, StringArray),
+        ArrowDataType::LargeUtf8 => arrow_col!(array, LargeUtf8, LargeStringArray),
+        ArrowDataType::Utf8View => arrow_col!(array, Utf8View, StringViewArray),
+        ArrowDataType::Boolean => arrow_col!(array, Bool, BooleanArray),
+        ArrowDataType::Date32 => arrow_col!(array, Date32, Date32Array),
+        ArrowDataType::Date64 => arrow_col!(array, Date64, Date64Array),
+        // The timezone half of Timestamp(unit, tz) is deliberately ignored
+        // here: Arrow stores tz-aware timestamps as UTC instants, so the
+        // underlying i64 needs no adjustment. write_dataframe() warns once
+        // per tz-aware column that Excel will show UTC wall-clock time.
+        ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+            arrow_col!(array, TimestampSecond, TimestampSecondArray)
+        }
+        ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+            arrow_col!(array, TimestampMillisecond, TimestampMillisecondArray)
+        }
+        ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+            arrow_col!(array, TimestampMicrosecond, TimestampMicrosecondArray)
+        }
+        ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+            arrow_col!(array, TimestampNanosecond, TimestampNanosecondArray)
+        }
         other => Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
             "write_dataframe(): column type {other:?} isn't supported yet \
-             (supported: int64, float64, string/utf8, large_utf8, utf8view, bool)"
+             ({SUPPORTED_ARROW_TYPES})"
         ))),
+    }
+}
+
+// Numeric widths all collapse to f64 because that is the only numeric
+// type an XLSX cell can hold. int64/uint64 magnitudes above 2^53 lose
+// precision in that conversion -- unavoidable, and equally true of the
+// pre-existing Int64 path and of Excel itself.
+macro_rules! num_cell {
+    ($a:expr, $row:expr) => {
+        if $a.is_null($row) {
+            CellValue::Blank
+        } else {
+            CellValue::Num($a.value($row) as f64)
+        }
+    };
+}
+
+// Arrow temporal value -> Excel serial. $per_day is the number of the
+// column's units in one day; dividing before adding the epoch offset
+// keeps the magnitudes small enough to stay exact.
+macro_rules! datetime_cell {
+    ($a:expr, $row:expr, $per_day:expr) => {
+        if $a.is_null($row) {
+            CellValue::Blank
+        } else {
+            CellValue::DateTime($a.value($row) as f64 / $per_day + EXCEL_UNIX_EPOCH_DAYS)
+        }
+    };
+}
+
+// Adds column/row context to a failed Arrow cell write. Of the cell types
+// write_dataframe() produces, only the temporal ones can fail for a reason
+// the caller can act on -- a serial outside Excel's 1900-9999 range -- and
+// upstream's message for that ("Serial datetime: '-25567' outside ...")
+// doesn't say which column produced it. Everything else keeps the standard
+// mapping, so IoError still surfaces as OSError rather than ValueError.
+fn arrow_write_err(
+    cv: &CellValue,
+    column_name: &str,
+    row: usize,
+    e: rust_xlsxwriter::XlsxError,
+) -> PyErr {
+    match cv {
+        CellValue::Date(_) | CellValue::DateTime(_) => {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "write_dataframe(): column '{column_name}', row {row}: {e}"
+            ))
+        }
+        _ => xlsx_err_to_pyerr(e),
     }
 }
 
 fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
     match col {
-        ArrowColumn::Int64(a) => {
-            if a.is_null(row) {
-                CellValue::Blank
-            } else {
-                CellValue::Num(a.value(row) as f64)
-            }
-        }
+        ArrowColumn::Int8(a) => num_cell!(a, row),
+        ArrowColumn::Int16(a) => num_cell!(a, row),
+        ArrowColumn::Int32(a) => num_cell!(a, row),
+        ArrowColumn::Int64(a) => num_cell!(a, row),
+        ArrowColumn::UInt8(a) => num_cell!(a, row),
+        ArrowColumn::UInt16(a) => num_cell!(a, row),
+        ArrowColumn::UInt32(a) => num_cell!(a, row),
+        ArrowColumn::UInt64(a) => num_cell!(a, row),
+        // f32 -> f64 widens exactly, but the decimal shown in Excel is
+        // the f64 rendering of the f32 value (0.1f32 becomes
+        // 0.10000000149011612), which is the same behaviour pandas and
+        // pyarrow give when casting.
+        ArrowColumn::Float32(a) => num_cell!(a, row),
+        // Deliberately not routed through num_cell!: its `as f64` would be
+        // a no-op here and clippy::unnecessary_cast fires on local macro
+        // expansions, which CI promotes to an error.
         ArrowColumn::Float64(a) => {
             if a.is_null(row) {
                 CellValue::Blank
@@ -380,6 +503,31 @@ fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
                 CellValue::Bool(a.value(row))
             }
         }
+        // Date32 is already in days, so it needs no division -- just the
+        // epoch shift.
+        ArrowColumn::Date32(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Date(a.value(row) as f64 + EXCEL_UNIX_EPOCH_DAYS)
+            }
+        }
+        ArrowColumn::Date64(a) => {
+            if a.is_null(row) {
+                CellValue::Blank
+            } else {
+                CellValue::Date(a.value(row) as f64 / 86_400_000.0 + EXCEL_UNIX_EPOCH_DAYS)
+            }
+        }
+        ArrowColumn::TimestampSecond(a) => datetime_cell!(a, row, 86_400.0),
+        ArrowColumn::TimestampMillisecond(a) => datetime_cell!(a, row, 86_400_000.0),
+        ArrowColumn::TimestampMicrosecond(a) => datetime_cell!(a, row, 86_400_000_000.0),
+        // A nanosecond count for a modern date (~1.7e18) exceeds f64's
+        // 2^53 exact-integer range, so this loses sub-microsecond
+        // precision. Excel serials cannot represent it either (one f64
+        // ulp at ~45000 days is roughly 0.9us), so nothing is lost that
+        // could have been stored.
+        ArrowColumn::TimestampNanosecond(a) => datetime_cell!(a, row, 86_400_000_000_000.0),
     }
 }
 
@@ -1220,9 +1368,10 @@ impl Worksheet {
     // Arrow PyCapsule Interface. Unlike write_records(), which still
     // does a PyO3 extract() per cell, this reads directly from Arrow's
     // native columnar buffers -- no Python object is touched once the
-    // initial __arrow_c_stream__() call hands over the data. Phase 1:
-    // supports int64/float64/string/bool columns; see the README's
-    // Roadmap for wider type coverage.
+    // initial __arrow_c_stream__() call hands over the data. See
+    // SUPPORTED_ARROW_TYPES for the column types accepted; date and
+    // timestamp columns get a date number format applied automatically
+    // so they render as dates rather than as raw serial numbers.
     #[pyo3(signature = (start_row, start_col, data, header_format=None, write_header=true))]
     fn write_dataframe(
         &self,
@@ -1245,17 +1394,51 @@ impl Worksheet {
         // error instead of partway through a partially-written sheet.
         for field in schema.fields() {
             match field.data_type() {
-                ArrowDataType::Int64
+                ArrowDataType::Int8
+                | ArrowDataType::Int16
+                | ArrowDataType::Int32
+                | ArrowDataType::Int64
+                | ArrowDataType::UInt8
+                | ArrowDataType::UInt16
+                | ArrowDataType::UInt32
+                | ArrowDataType::UInt64
+                | ArrowDataType::Float32
                 | ArrowDataType::Float64
                 | ArrowDataType::Utf8
                 | ArrowDataType::LargeUtf8
                 | ArrowDataType::Utf8View
-                | ArrowDataType::Boolean => {}
+                | ArrowDataType::Boolean
+                | ArrowDataType::Date32
+                | ArrowDataType::Date64 => {}
+                // TimeUnit has exactly four variants, all handled by
+                // resolve_arrow_column, so the unit needs no check here.
+                // The timezone does: Excel has no concept of one, and
+                // silently shifting someone's timestamps by their UTC
+                // offset is the kind of error that only shows up much
+                // later. Warned once per column, at schema-validation
+                // time, so it costs nothing on the per-cell hot path.
+                ArrowDataType::Timestamp(_, tz) => {
+                    if let Some(tz) = tz {
+                        let warn_cls = py.get_type_bound::<pyo3::exceptions::PyUserWarning>();
+                        PyErr::warn_bound(
+                            py,
+                            warn_cls.as_any(),
+                            &format!(
+                                "write_dataframe(): column '{}' is timezone-aware \
+                                 ({tz}); Excel has no timezone concept, so values \
+                                 are written as UTC wall-clock time. Convert with \
+                                 .dt.tz_convert(None) first to choose the offset \
+                                 yourself.",
+                                field.name()
+                            ),
+                            1,
+                        )?;
+                    }
+                }
                 other => {
                     return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
                         "write_dataframe(): column '{}' has type {other:?}, \
-                         which isn't supported yet (supported: int64, \
-                         float64, string/utf8, large_utf8, utf8view, bool)",
+                         which isn't supported yet ({SUPPORTED_ARROW_TYPES})",
                         field.name()
                     )));
                 }
@@ -1296,16 +1479,40 @@ impl Worksheet {
             row_cursor += 1;
         }
 
+        // Temporal columns need a number format or Excel renders the raw
+        // serial. Built once for the whole call rather than per cell:
+        // rust_xlsxwriter dedupes identical formats in its xf table, so a
+        // per-cell Format would be correct but would allocate 100k times.
+        let date_fmt = RustFormat::new().set_num_format("yyyy-mm-dd");
+        let datetime_fmt = RustFormat::new().set_num_format("yyyy-mm-dd hh:mm:ss");
+
         for batch in &batches {
             let columns: Vec<ArrowColumn<'_>> = (0..batch.num_columns())
                 .map(|c| resolve_arrow_column(batch.column(c).as_ref()))
                 .collect::<PyResult<Vec<_>>>()?;
 
+            // A column's type is fixed for the whole batch, so pick its
+            // format once here instead of re-matching on every cell --
+            // this keeps the inner loop's cost identical to before for
+            // non-temporal data.
+            let col_fmts: Vec<Option<&RustFormat>> = columns
+                .iter()
+                .map(|col| match col {
+                    ArrowColumn::Date32(_) | ArrowColumn::Date64(_) => Some(&date_fmt),
+                    ArrowColumn::TimestampSecond(_)
+                    | ArrowColumn::TimestampMillisecond(_)
+                    | ArrowColumn::TimestampMicrosecond(_)
+                    | ArrowColumn::TimestampNanosecond(_) => Some(&datetime_fmt),
+                    _ => None,
+                })
+                .collect();
+
             for r in 0..batch.num_rows() {
                 for (c, col) in columns.iter().enumerate() {
                     let cv = arrow_cell_value(col, r);
-                    write_value(sheet, row_cursor, start_col + c as u16, &cv, None)
-                        .map_err(xlsx_err_to_pyerr)?;
+                    let col_num = start_col + c as u16;
+                    write_value(sheet, row_cursor, col_num, &cv, col_fmts[c])
+                        .map_err(|e| arrow_write_err(&cv, &field_names[c], r, e))?;
                 }
                 row_cursor += 1;
             }

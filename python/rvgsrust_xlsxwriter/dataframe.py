@@ -4,9 +4,10 @@ DataFrame support for Polars and Pandas.
 Uses Worksheet.write_dataframe() -- a native Rust path that reads
 directly from the DataFrame's underlying Arrow buffers via the Arrow
 PyCapsule Interface, without extracting individual Python objects per
-cell -- whenever possible. That path currently supports int64, float64,
-string (utf8/large_utf8), and bool columns, and a single format applied
-to the whole header row. When `column_formats` is given (per-column
+cell -- whenever possible. That path supports the signed and unsigned
+integer widths, float32/float64, string (utf8/large_utf8/utf8view), bool,
+date32/date64 and timestamp columns, and a single format applied to the
+whole header row. When `column_formats` is given (per-column
 formatting isn't supported by write_dataframe() yet) or a column has an
 unsupported type, this falls back to the original per-cell write() loop
 so every DataFrame this module has ever accepted still works -- just

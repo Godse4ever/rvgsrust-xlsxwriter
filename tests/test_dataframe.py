@@ -247,3 +247,188 @@ def test_write_dataframe_polars_utf8view():
     finally:
         if os.path.exists(path):
             os.remove(path)
+
+
+# ---------------------------------------------------------------------
+# Extended Arrow type coverage (integer widths, float32, dates,
+# timestamps). See src/lib.rs SUPPORTED_ARROW_TYPES.
+# ---------------------------------------------------------------------
+
+try:
+    import pyarrow as pa
+    HAS_PYARROW = True
+except ImportError:
+    HAS_PYARROW = False
+
+requires_pyarrow = pytest.mark.skipif(not HAS_PYARROW, reason="pyarrow not installed")
+
+
+def _roundtrip(table):
+    """Write an arrow table and hand back the loaded openpyxl sheet."""
+    import openpyxl
+    import tempfile
+    import os
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        ws.write_dataframe(0, 0, table)
+        wb.close(path)
+        return openpyxl.load_workbook(path).active
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+@requires_pyarrow
+def test_arrow_narrow_integer_widths():
+    """int8/16/32 and uint8/16/32/64 all land as numbers, not TypeError."""
+    table = pa.table({
+        "i8": pa.array([-128, 0, 127], type=pa.int8()),
+        "i16": pa.array([-32768, 0, 32767], type=pa.int16()),
+        "i32": pa.array([-2147483648, 0, 2147483647], type=pa.int32()),
+        "u8": pa.array([0, 128, 255], type=pa.uint8()),
+        "u16": pa.array([0, 1000, 65535], type=pa.uint16()),
+        "u32": pa.array([0, 70000, 4294967295], type=pa.uint32()),
+        "u64": pa.array([0, 1, 9007199254740992], type=pa.uint64()),
+    })
+    sheet = _roundtrip(table)
+    assert sheet["A1"].value == "i8"
+    assert sheet["A2"].value == -128
+    assert sheet["A4"].value == 127
+    assert sheet["C2"].value == -2147483648
+    assert sheet["F4"].value == 4294967295
+    # 2^53 is the largest integer f64 represents exactly.
+    assert sheet["G4"].value == 9007199254740992
+
+
+@requires_pyarrow
+def test_arrow_float32():
+    """f32 widens to f64; exactly-representable values survive intact."""
+    table = pa.table({"x": pa.array([1.5, -2.25, 0.0], type=pa.float32())})
+    sheet = _roundtrip(table)
+    assert sheet["A2"].value == 1.5
+    assert sheet["A3"].value == -2.25
+    assert sheet["A4"].value == 0.0
+
+
+@requires_pyarrow
+def test_arrow_date32_renders_as_date_not_serial():
+    """The regression this feature exists for: a date column must come
+    back as a date, not as the integer 45123."""
+    import datetime
+
+    table = pa.table({
+        "d": pa.array(
+            [datetime.date(2023, 7, 14), datetime.date(1970, 1, 1)],
+            type=pa.date32(),
+        )
+    })
+    sheet = _roundtrip(table)
+    got = sheet["A2"].value
+    assert not isinstance(got, (int, float)), f"date wrote as raw serial: {got!r}"
+    assert got == datetime.datetime(2023, 7, 14)
+    # Unix epoch == Excel serial 25569.
+    assert sheet["A3"].value == datetime.datetime(1970, 1, 1)
+    assert sheet["A2"].number_format == "yyyy-mm-dd"
+
+
+@requires_pyarrow
+def test_arrow_date64():
+    import datetime
+
+    table = pa.table({
+        "d": pa.array([datetime.date(2024, 2, 29)], type=pa.date64())
+    })
+    sheet = _roundtrip(table)
+    assert sheet["A2"].value == datetime.datetime(2024, 2, 29)
+
+
+@requires_pyarrow
+@pytest.mark.parametrize("unit", ["s", "ms", "us", "ns"])
+def test_arrow_timestamp_all_units(unit):
+    import datetime
+
+    expected = datetime.datetime(2023, 6, 18, 17, 8, 28)
+    table = pa.table({"t": pa.array([expected], type=pa.timestamp(unit))})
+    sheet = _roundtrip(table)
+    got = sheet["A2"].value
+    assert isinstance(got, datetime.datetime), f"timestamp[{unit}] wrote as {got!r}"
+    # f64 serials carry roughly microsecond resolution at modern dates,
+    # so compare with a tolerance rather than demanding exact equality.
+    assert abs((got - expected).total_seconds()) < 0.001
+
+
+@pytest.mark.skipif(not HAS_PANDAS, reason="Pandas not installed")
+def test_pandas_default_datetime64_ns_column():
+    """pandas' default datetime dtype is datetime64[ns]; this is the
+    single most common real-world case and must not raise."""
+    import datetime
+
+    df = pd.DataFrame({
+        "when": pd.to_datetime(["2023-01-15", "2024-12-31"]),
+        "what": ["a", "b"],
+    })
+    sheet = _roundtrip(df)
+    assert sheet["A2"].value == datetime.datetime(2023, 1, 15)
+    assert sheet["A3"].value == datetime.datetime(2024, 12, 31)
+    assert sheet["B2"].value == "a"
+
+
+@requires_pyarrow
+def test_arrow_temporal_nulls_are_blank():
+    table = pa.table({
+        "d": pa.array([None], type=pa.date32()),
+        "t": pa.array([None], type=pa.timestamp("us")),
+        "i": pa.array([None], type=pa.int32()),
+    })
+    sheet = _roundtrip(table)
+    assert sheet["A2"].value is None
+    assert sheet["B2"].value is None
+    assert sheet["C2"].value is None
+
+
+@requires_pyarrow
+def test_tz_aware_timestamp_warns_and_writes_utc():
+    import datetime
+
+    table = pa.table({
+        "t": pa.array(
+            [datetime.datetime(2023, 6, 18, 17, 8, 28, tzinfo=datetime.timezone.utc)],
+            type=pa.timestamp("us", tz="UTC"),
+        )
+    })
+    with pytest.warns(UserWarning, match="timezone-aware"):
+        sheet = _roundtrip(table)
+    got = sheet["A2"].value
+    assert abs((got - datetime.datetime(2023, 6, 18, 17, 8, 28)).total_seconds()) < 0.001
+
+
+@requires_pyarrow
+def test_pre_1900_date_raises_valueerror_naming_column():
+    """Excel cannot represent dates before 1900; the error should say
+    which column and row rather than surfacing a bare serial number."""
+    import datetime
+
+    table = pa.table({
+        "birth": pa.array([datetime.date(1850, 3, 1)], type=pa.date32())
+    })
+    with pytest.raises(ValueError) as exc:
+        _roundtrip(table)
+    assert "birth" in str(exc.value)
+
+
+@requires_pyarrow
+def test_still_unsupported_type_raises_typeerror():
+    import decimal
+
+    table = pa.table({
+        "amount": pa.array([decimal.Decimal("1.50")], type=pa.decimal128(10, 2))
+    })
+    with pytest.raises(TypeError) as exc:
+        _roundtrip(table)
+    msg = str(exc.value)
+    assert "amount" in msg
+    assert "date32" in msg  # the supported-types list is included
