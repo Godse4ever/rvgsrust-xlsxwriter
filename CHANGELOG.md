@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-dev] - Unreleased
+## [0.2.0] - 2026-07-28
 
 **Core build confirmed on real hardware** (macOS, 4-core, rustc 1.83+,
 `maturin develop --release`): `rust_xlsxwriter 0.96` compiles cleanly
@@ -17,12 +17,18 @@ itself -- worth re-confirming after pulling latest, but the
 fundamental "does this even build" risk this project's development
 sandbox couldn't resolve is now answered: yes.
 
-Not yet confirmed on real hardware: the full test suite (`pytest
-tests/`), the `constant_memory` row-order enforcement specifically, and
-current performance numbers (an early comparison against
-`rustpy-xlsxwriter` on that same machine showed `rustpy` still ahead,
-1.26-1.53x depending on row count and narrowing at scale -- see
-PERFORMANCE.md for what's confirmed vs. still estimated).
+**Correctness is now confirmed on real hardware.** CI runs the full
+`pytest tests/` suite on ubuntu-latest for every commit and builds wheels
+on Linux, macOS and Windows, so the earlier caveat about the test suite
+being unverified no longer applies. The `constant_memory` row-order
+enforcement is covered by tests in that suite.
+
+**Performance numbers remain unconfirmed.** CI verifies correctness, not
+speed. An early comparison against `rustpy-xlsxwriter` on real hardware
+showed `rustpy` still ahead by 1.26-1.53x depending on row count,
+narrowing at scale -- which does not match the figures quoted elsewhere in
+this repo. See PERFORMANCE.md for what is measured versus estimated, and
+treat any comparative claim as unverified until re-run.
 
 ### Added
 - `Format` completions: per-side border colours
