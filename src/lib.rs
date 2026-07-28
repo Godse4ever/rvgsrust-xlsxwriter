@@ -3205,6 +3205,11 @@ fn parse_legend_position(name: &str) -> PyResult<rch::ChartLegendPosition> {
 #[pyclass]
 struct ChartSeries {
     inner: rch::ChartSeries,
+    // Whether the caller set these explicitly. Chart.push_series() needs to
+    // know, so it can re-apply a chart-type default only where the caller
+    // did not make a choice of their own.
+    marker_set: bool,
+    format_set: bool,
 }
 
 #[pymethods]
@@ -3213,6 +3218,8 @@ impl ChartSeries {
     fn new() -> Self {
         ChartSeries {
             inner: rch::ChartSeries::new(),
+            marker_set: false,
+            format_set: false,
         }
     }
 
@@ -3278,10 +3285,12 @@ impl ChartSeries {
     fn set_format(&mut self, format: &ChartFormat) {
         let mut fmt = format.inner.clone();
         self.inner.set_format(&mut fmt);
+        self.format_set = true;
     }
 
     fn set_marker(&mut self, marker: &ChartMarker) {
         self.inner.set_marker(&marker.inner);
+        self.marker_set = true;
     }
 
     fn set_trendline(&mut self, trendline: &ChartTrendline) {
@@ -3304,11 +3313,29 @@ impl ChartSeries {
     }
 }
 
+// Chart types that can show point markers but default to none. This
+// mirrors upstream's condition exactly: ScatterStraight, ScatterSmooth,
+// Radar, and the three types whose chart_group_type is Line. Stock has its
+// own group and is deliberately not included.
+fn markers_off_by_default(chart_type: rch::ChartType) -> bool {
+    use rch::ChartType as T;
+    chart_type == T::ScatterStraight
+        || chart_type == T::ScatterSmooth
+        || chart_type == T::Line
+        || chart_type == T::LineStacked
+        || chart_type == T::LinePercentStacked
+        || chart_type == T::Radar
+}
+
 // -------------------- Chart --------------------
 
 #[pyclass]
 struct Chart {
     inner: rch::Chart,
+    // Needed by push_series to decide which chart-type defaults apply.
+    // ChartType is Copy, so this is a cheap duplicate of what the inner
+    // chart already knows but keeps private.
+    chart_type: rch::ChartType,
 }
 
 #[pymethods]
@@ -3318,13 +3345,43 @@ impl Chart {
         let parsed = parse_chart_type(chart_type)?;
         Ok(Chart {
             inner: rch::Chart::new(parsed),
+            chart_type: parsed,
         })
     }
 
     // Appends a configured ChartSeries. Called once per series; calling it
     // twice with the same series adds it twice.
+    //
+    // Deliberately NOT upstream's push_series(). That applies the
+    // chart-type defaults after copying the caller's series, so on a line,
+    // radar or scatter-straight/smooth chart it overwrites any marker set
+    // beforehand with a "none" marker -- silently discarding it. Upstream's
+    // intended flow is add_series() then configure, where the defaults land
+    // first and the caller's setters win.
+    //
+    // add_series() hands back a mutable slot with those defaults already
+    // applied. Overwriting it with the caller's series restores the right
+    // precedence; the two defaults are then re-applied only where the
+    // caller made no choice, which is what push_series should have done.
     fn push_series(&mut self, series: &ChartSeries) {
-        self.inner.push_series(&series.inner);
+        let chart_type = self.chart_type;
+        let slot = self.inner.add_series();
+        *slot = series.inner.clone();
+
+        if !series.format_set && chart_type == rch::ChartType::Scatter {
+            let mut line = rch::ChartLine::new();
+            line.set_width(2.25);
+            line.set_hidden(true);
+            let mut fmt = rch::ChartFormat::new();
+            fmt.set_line(&line);
+            slot.set_format(&mut fmt);
+        }
+
+        if !series.marker_set && markers_off_by_default(chart_type) {
+            let mut marker = rch::ChartMarker::new();
+            marker.set_none();
+            slot.set_marker(&marker);
+        }
     }
 
     fn set_style(&mut self, style: u8) {

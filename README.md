@@ -613,6 +613,10 @@ chart = Chart("line")
 chart.push_series(series)
 ```
 
+Markers set on a series survive being pushed to a chart, including on
+line, radar and scatter chart types where Excel defaults markers to off.
+Those defaults still apply when no marker is set explicitly.
+
 Marker types are `square`, `diamond`, `triangle`, `x`, `star`,
 `short_dash`, `long_dash`, `circle`, `plus_sign`. Automatic and no-marker
 are **not** types: use `set_automatic()` or `set_none()`.

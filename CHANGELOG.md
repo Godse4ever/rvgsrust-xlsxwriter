@@ -27,7 +27,13 @@ PERFORMANCE.md for what's confirmed vs. still estimated).
 ### Added
 - Charts, part 3: `ChartMarker`, `ChartTrendline` and `ChartDataLabel`,
   attached via `ChartSeries.set_marker`, `set_trendline`, `set_data_label`
-  and `set_custom_data_labels`. Per-point labels are marked with
+  and `set_custom_data_labels`. Note `Chart.push_series()` does not call
+  upstream's `push_series()`: that applies the chart-type defaults after
+  copying the series, so on a line, radar or scatter-straight/smooth chart
+  it silently overwrites a marker set beforehand. It goes through
+  `add_series()` instead, which restores upstream's intended
+  defaults-first, caller-wins precedence.
+  Per-point labels are marked with
   `ChartDataLabel.set_custom()`, named for upstream's `to_custom()` but
   renamed because `clippy::wrong_self_convention` forbids a `to_*` method
   taking `&mut self`. All three accept a `ChartFormat`, and the
