@@ -1598,6 +1598,27 @@ impl Worksheet {
         })
     }
 
+    // Inserts a chart at a cell, optionally offset within it by a number
+    // of pixels. Series are attached to the chart beforehand with
+    // Chart.push_series().
+    #[pyo3(signature = (row, col, chart, x_offset=0, y_offset=0))]
+    fn insert_chart(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        chart: &Chart,
+        x_offset: u32,
+        y_offset: u32,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let inner = &chart.inner;
+        self.with_sheet(py, |sheet| {
+            sheet.insert_chart_with_offset(row, col, inner, x_offset, y_offset)?;
+            Ok(())
+        })
+    }
+
     #[pyo3(signature = (first_row, first_col, last_row, last_col, value, format=None))]
     fn merge_range(
         &self,
@@ -3096,6 +3117,366 @@ impl Sparkline {
     }
 }
 
+// ============================================
+// CHARTS (part 1: Chart, ChartSeries, insert_chart)
+// ============================================
+// Reuses the `rch` alias introduced by the sparkline section above.
+//
+// Two upstream facts shape this API.
+//
+// First, ChartAxis, ChartTitle and ChartLegend have pub(crate)
+// constructors, so they cannot exist as separate Python objects. They are
+// reached through Chart::x_axis(), title() and legend(), which hand back
+// &mut references, so the options are flattened onto Chart itself as
+// set_x_axis_*, set_title_* and set_legend_* methods.
+//
+// Second, Chart does NOT derive Clone (ChartSeries does). That rules out
+// the alternative of collecting series and pushing them at insert time:
+// pushing would mutate the only copy of the chart, so inserting the same
+// Chart twice would silently duplicate its series, and there is no
+// remove_series to undo it. Series are therefore attached explicitly with
+// chart.push_series(series), which maps 1:1 onto upstream and makes any
+// duplication the caller's visible choice.
+//
+// Unlike the conditional formats and sparklines, these upstream setters
+// take &mut self and return &mut Self rather than consuming self, so no
+// clone-and-reassign dance is needed.
+
+fn parse_chart_type(name: &str) -> PyResult<rch::ChartType> {
+    use rch::ChartType as T;
+    match name.to_ascii_lowercase().as_str() {
+        "area" => Ok(T::Area),
+        "area_stacked" => Ok(T::AreaStacked),
+        "area_percent_stacked" => Ok(T::AreaPercentStacked),
+        "bar" => Ok(T::Bar),
+        "bar_stacked" => Ok(T::BarStacked),
+        "bar_percent_stacked" => Ok(T::BarPercentStacked),
+        "column" => Ok(T::Column),
+        "column_stacked" => Ok(T::ColumnStacked),
+        "column_percent_stacked" => Ok(T::ColumnPercentStacked),
+        "doughnut" => Ok(T::Doughnut),
+        "line" => Ok(T::Line),
+        "line_stacked" => Ok(T::LineStacked),
+        "line_percent_stacked" => Ok(T::LinePercentStacked),
+        "pie" => Ok(T::Pie),
+        "radar" => Ok(T::Radar),
+        "radar_with_markers" => Ok(T::RadarWithMarkers),
+        "radar_filled" => Ok(T::RadarFilled),
+        "scatter" => Ok(T::Scatter),
+        "scatter_straight" => Ok(T::ScatterStraight),
+        "scatter_straight_with_markers" => Ok(T::ScatterStraightWithMarkers),
+        "scatter_smooth" => Ok(T::ScatterSmooth),
+        "scatter_smooth_with_markers" => Ok(T::ScatterSmoothWithMarkers),
+        "stock" => Ok(T::Stock),
+        other => Err(cf_type_err(
+            "chart type",
+            other,
+            "area, area_stacked, area_percent_stacked, bar, bar_stacked, \
+             bar_percent_stacked, column, column_stacked, \
+             column_percent_stacked, doughnut, line, line_stacked, \
+             line_percent_stacked, pie, radar, radar_with_markers, \
+             radar_filled, scatter, scatter_straight, \
+             scatter_straight_with_markers, scatter_smooth, \
+             scatter_smooth_with_markers, stock",
+        )),
+    }
+}
+
+// Only five positions exist upstream. There is no OverlayRight or
+// OverlayLeft: overlaying is a separate set_legend_overlay() toggle.
+fn parse_legend_position(name: &str) -> PyResult<rch::ChartLegendPosition> {
+    use rch::ChartLegendPosition as P;
+    match name.to_ascii_lowercase().as_str() {
+        "right" => Ok(P::Right),
+        "left" => Ok(P::Left),
+        "top" => Ok(P::Top),
+        "bottom" => Ok(P::Bottom),
+        "top_right" => Ok(P::TopRight),
+        other => Err(cf_type_err(
+            "legend position",
+            other,
+            "right, left, top, bottom, top_right",
+        )),
+    }
+}
+
+// -------------------- ChartSeries --------------------
+
+#[pyclass]
+struct ChartSeries {
+    inner: rch::ChartSeries,
+}
+
+#[pymethods]
+impl ChartSeries {
+    #[new]
+    fn new() -> Self {
+        ChartSeries {
+            inner: rch::ChartSeries::new(),
+        }
+    }
+
+    // Range holding the series values, e.g. "Sheet1!$B$1:$B$5".
+    fn set_values(&mut self, range: &str) {
+        self.inner.set_values(range);
+    }
+
+    // Range holding the category (x axis) labels.
+    fn set_categories(&mut self, range: &str) {
+        self.inner.set_categories(range);
+    }
+
+    // Either a literal name or a range reference holding one.
+    fn set_name(&mut self, name: &str) {
+        self.inner.set_name(name);
+    }
+
+    fn set_secondary_axis(&mut self, enable: bool) {
+        self.inner.set_secondary_axis(enable);
+    }
+
+    fn set_overlap(&mut self, overlap: i8) {
+        self.inner.set_overlap(overlap);
+    }
+
+    fn set_gap(&mut self, gap: u16) {
+        self.inner.set_gap(gap);
+    }
+
+    fn set_smooth(&mut self, enable: bool) {
+        self.inner.set_smooth(enable);
+    }
+
+    fn set_invert_if_negative(&mut self) {
+        self.inner.set_invert_if_negative();
+    }
+
+    fn set_invert_if_negative_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner.set_invert_if_negative_color(parsed);
+        Ok(())
+    }
+
+    fn delete_from_legend(&mut self, enable: bool) {
+        self.inner.delete_from_legend(enable);
+    }
+
+    // One color per point, mainly useful for pie and doughnut charts.
+    // Vec<String> rather than Vec<&str>: PyO3 0.22 cannot extract the
+    // latter.
+    fn set_point_colors(&mut self, colors: Vec<String>) -> PyResult<()> {
+        let mut parsed = Vec::with_capacity(colors.len());
+        for color in &colors {
+            parsed.push(parse_color(color)?);
+        }
+        self.inner.set_point_colors(&parsed);
+        Ok(())
+    }
+}
+
+// -------------------- Chart --------------------
+
+#[pyclass]
+struct Chart {
+    inner: rch::Chart,
+}
+
+#[pymethods]
+impl Chart {
+    #[new]
+    fn new(chart_type: &str) -> PyResult<Self> {
+        let parsed = parse_chart_type(chart_type)?;
+        Ok(Chart {
+            inner: rch::Chart::new(parsed),
+        })
+    }
+
+    // Appends a configured ChartSeries. Called once per series; calling it
+    // twice with the same series adds it twice.
+    fn push_series(&mut self, series: &ChartSeries) {
+        self.inner.push_series(&series.inner);
+    }
+
+    fn set_style(&mut self, style: u8) {
+        self.inner.set_style(style);
+    }
+
+    fn set_width(&mut self, width: u32) {
+        self.inner.set_width(width);
+    }
+
+    fn set_height(&mut self, height: u32) {
+        self.inner.set_height(height);
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.inner.set_name(name);
+    }
+
+    fn set_alt_text(&mut self, alt_text: &str) {
+        self.inner.set_alt_text(alt_text);
+    }
+
+    // Doughnut hole size as a percentage, and pie/doughnut start angle.
+    fn set_hole_size(&mut self, hole_size: u8) {
+        self.inner.set_hole_size(hole_size);
+    }
+
+    fn set_rotation(&mut self, rotation: u16) {
+        self.inner.set_rotation(rotation);
+    }
+
+    fn show_hidden_data(&mut self) {
+        self.inner.show_hidden_data();
+    }
+
+    fn show_na_as_empty_cell(&mut self) {
+        self.inner.show_na_as_empty_cell();
+    }
+
+    // One of gaps, zero, connected.
+    fn show_empty_cells_as(&mut self, option: &str) -> PyResult<()> {
+        let parsed = parse_empty_cells(option)?;
+        self.inner.show_empty_cells_as(parsed);
+        Ok(())
+    }
+
+    // ---- title ----
+    // ChartTitle::new() is pub(crate), so these route through title().
+
+    fn set_title_name(&mut self, name: &str) {
+        self.inner.title().set_name(name);
+    }
+
+    // Upstream's set_hidden() takes no argument.
+    fn set_title_hidden(&mut self) {
+        self.inner.title().set_hidden();
+    }
+
+    fn set_title_overlay(&mut self, enable: bool) {
+        self.inner.title().set_overlay(enable);
+    }
+
+    // ---- x axis ----
+
+    fn set_x_axis_name(&mut self, name: &str) {
+        self.inner.x_axis().set_name(name);
+    }
+
+    fn set_x_axis_min(&mut self, min: f64) {
+        self.inner.x_axis().set_min(min);
+    }
+
+    fn set_x_axis_max(&mut self, max: f64) {
+        self.inner.x_axis().set_max(max);
+    }
+
+    fn set_x_axis_major_unit(&mut self, value: f64) {
+        self.inner.x_axis().set_major_unit(value);
+    }
+
+    fn set_x_axis_minor_unit(&mut self, value: f64) {
+        self.inner.x_axis().set_minor_unit(value);
+    }
+
+    fn set_x_axis_log_base(&mut self, base: u16) {
+        self.inner.x_axis().set_log_base(base);
+    }
+
+    fn set_x_axis_num_format(&mut self, num_format: &str) {
+        self.inner.x_axis().set_num_format(num_format);
+    }
+
+    fn set_x_axis_hidden(&mut self, enable: bool) {
+        self.inner.x_axis().set_hidden(enable);
+    }
+
+    // Upstream's set_reverse() takes no argument.
+    fn set_x_axis_reverse(&mut self) {
+        self.inner.x_axis().set_reverse();
+    }
+
+    fn set_x_axis_major_gridlines(&mut self, enable: bool) {
+        self.inner.x_axis().set_major_gridlines(enable);
+    }
+
+    fn set_x_axis_minor_gridlines(&mut self, enable: bool) {
+        self.inner.x_axis().set_minor_gridlines(enable);
+    }
+
+    fn set_x_axis_date_axis(&mut self, enable: bool) {
+        self.inner.x_axis().set_date_axis(enable);
+    }
+
+    fn set_x_axis_text_axis(&mut self, enable: bool) {
+        self.inner.x_axis().set_text_axis(enable);
+    }
+
+    // ---- y axis ----
+
+    fn set_y_axis_name(&mut self, name: &str) {
+        self.inner.y_axis().set_name(name);
+    }
+
+    fn set_y_axis_min(&mut self, min: f64) {
+        self.inner.y_axis().set_min(min);
+    }
+
+    fn set_y_axis_max(&mut self, max: f64) {
+        self.inner.y_axis().set_max(max);
+    }
+
+    fn set_y_axis_major_unit(&mut self, value: f64) {
+        self.inner.y_axis().set_major_unit(value);
+    }
+
+    fn set_y_axis_minor_unit(&mut self, value: f64) {
+        self.inner.y_axis().set_minor_unit(value);
+    }
+
+    fn set_y_axis_log_base(&mut self, base: u16) {
+        self.inner.y_axis().set_log_base(base);
+    }
+
+    fn set_y_axis_num_format(&mut self, num_format: &str) {
+        self.inner.y_axis().set_num_format(num_format);
+    }
+
+    fn set_y_axis_hidden(&mut self, enable: bool) {
+        self.inner.y_axis().set_hidden(enable);
+    }
+
+    fn set_y_axis_reverse(&mut self) {
+        self.inner.y_axis().set_reverse();
+    }
+
+    fn set_y_axis_major_gridlines(&mut self, enable: bool) {
+        self.inner.y_axis().set_major_gridlines(enable);
+    }
+
+    fn set_y_axis_minor_gridlines(&mut self, enable: bool) {
+        self.inner.y_axis().set_minor_gridlines(enable);
+    }
+
+    // ---- legend ----
+
+    // One of right, left, top, bottom, top_right.
+    fn set_legend_position(&mut self, position: &str) -> PyResult<()> {
+        let parsed = parse_legend_position(position)?;
+        self.inner.legend().set_position(parsed);
+        Ok(())
+    }
+
+    // Upstream's set_hidden() takes no argument.
+    fn set_legend_hidden(&mut self) {
+        self.inner.legend().set_hidden();
+    }
+
+    fn set_legend_overlay(&mut self, enable: bool) {
+        self.inner.legend().set_overlay(enable);
+    }
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Workbook>()?;
@@ -3116,5 +3497,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ConditionalFormat3ColorScale>()?;
     m.add_class::<ConditionalFormatDataBar>()?;
     m.add_class::<Sparkline>()?;
+    m.add_class::<Chart>()?;
+    m.add_class::<ChartSeries>()?;
     Ok(())
 }
