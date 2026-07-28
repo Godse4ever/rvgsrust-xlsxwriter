@@ -367,6 +367,71 @@ Date and timestamp columns are written as real Excel dates with a `yyyy-mm-dd` /
 
 ---
 
+## Conditional Formatting
+
+Twelve rule types are supported. Build a rule object, then attach it to a
+range with `Worksheet.add_conditional_format(first_row, first_col,
+last_row, last_col, rule)`.
+
+```python
+from rvgsrust_xlsxwriter import (
+    Workbook, Format, ConditionalFormatCell, ConditionalFormat3ColorScale,
+    ConditionalFormatDataBar,
+)
+
+wb = Workbook()
+ws = wb.add_worksheet()
+for i, v in enumerate([10, 20, 30, 40, 50]):
+    ws.write(i, 0, v)
+
+bad = Format()
+bad.set_background_color("#FFC7CE")
+
+high = ConditionalFormatCell()
+high.set_rule_greater_than(35)
+high.set_format(bad)
+ws.add_conditional_format(0, 0, 4, 0, high)
+
+scale = ConditionalFormat3ColorScale()
+scale.set_minimum_color("#F8696B")
+scale.set_midpoint_color("#FFEB84")
+scale.set_maximum_color("#63BE7B")
+ws.add_conditional_format(0, 1, 4, 1, scale)
+
+bar = ConditionalFormatDataBar()
+bar.set_fill_color("#638EC6")
+bar.set_direction("left_to_right")
+ws.add_conditional_format(0, 2, 4, 2, bar)
+
+wb.close("cf.xlsx")
+```
+
+| Class | Rule setters |
+|---|---|
+| `ConditionalFormatCell` | `set_rule_greater_than`, `..._less_than`, `..._equal_to`, `..._not_equal_to`, `..._greater_than_or_equal_to`, `..._less_than_or_equal_to`, `set_rule_between`, `set_rule_not_between` |
+| `ConditionalFormatBlank` | `invert()` for non-blank |
+| `ConditionalFormatDuplicate` | `invert()` for unique |
+| `ConditionalFormatError` | `invert()` for non-error |
+| `ConditionalFormatFormula` | `set_rule("=$A1>50")` |
+| `ConditionalFormatAverage` | `set_rule("above" \| "below" \| "equal_or_above" \| "equal_or_below" \| "{1,2,3}_std_dev_above" \| "..._below")` |
+| `ConditionalFormatTop` | `set_rule("top" \| "bottom" \| "top_percent" \| "bottom_percent", n)` |
+| `ConditionalFormatText` | `set_rule("contains" \| "does_not_contain" \| "begins_with" \| "ends_with", text)` |
+| `ConditionalFormatDate` | `set_rule("yesterday" \| "today" \| "tomorrow" \| "last_7_days" \| "last_week" \| "this_week" \| "next_week" \| "last_month" \| "this_month" \| "next_month")` |
+| `ConditionalFormat2ColorScale` | `set_minimum/set_maximum(type, value)`, `set_minimum_color/set_maximum_color` |
+| `ConditionalFormat3ColorScale` | as above plus `set_midpoint`, `set_midpoint_color` |
+| `ConditionalFormatDataBar` | `set_minimum/set_maximum`, `set_fill_color`, `set_border_color`, `set_negative_fill_color`, `set_negative_border_color`, `set_axis_color`, `set_solid_fill`, `set_border_off`, `set_bar_only`, `set_direction`, `set_axis_position`, `use_classic_style` |
+
+Rule-type strings for `set_minimum`/`set_maximum`/`set_midpoint` are
+`automatic`, `lowest`/`min`, `highest`/`max`, `number`, `percent`,
+`percentile`, `formula`. Values may be numbers, or strings when the type
+is `formula`. Every class also has `set_multi_range(range)` and
+`set_stop_if_true(enable)`.
+
+Color scales and data bars have no `set_format()`: Excel renders those
+from the scale or bar definition itself rather than from a format record.
+
+Icon sets are not exposed yet.
+
 ## Performance & Benchmarks
 
 See [PERFORMANCE.md](PERFORMANCE.md) for full tables and methodology.

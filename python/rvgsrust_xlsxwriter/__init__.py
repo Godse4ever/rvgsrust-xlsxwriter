@@ -83,6 +83,18 @@ from rvgsrust_xlsxwriter._core import (
     Format,
     Table,
     TableColumn,
+    ConditionalFormatCell,
+    ConditionalFormatBlank,
+    ConditionalFormatDuplicate,
+    ConditionalFormatError,
+    ConditionalFormatFormula,
+    ConditionalFormatAverage,
+    ConditionalFormatTop,
+    ConditionalFormatText,
+    ConditionalFormatDate,
+    ConditionalFormat2ColorScale,
+    ConditionalFormat3ColorScale,
+    ConditionalFormatDataBar,
 )
 
 
@@ -134,4 +146,22 @@ class Workbook(_CoreWorkbook):
         return False
 
 
-__all__ = ["Workbook", "Worksheet", "Format", "Table", "TableColumn"]
+__all__ = [
+    "Workbook",
+    "Worksheet",
+    "Format",
+    "Table",
+    "TableColumn",
+    "ConditionalFormatCell",
+    "ConditionalFormatBlank",
+    "ConditionalFormatDuplicate",
+    "ConditionalFormatError",
+    "ConditionalFormatFormula",
+    "ConditionalFormatAverage",
+    "ConditionalFormatTop",
+    "ConditionalFormatText",
+    "ConditionalFormatDate",
+    "ConditionalFormat2ColorScale",
+    "ConditionalFormat3ColorScale",
+    "ConditionalFormatDataBar",
+]

@@ -1521,6 +1521,38 @@ impl Worksheet {
         Ok(())
     }
 
+    // Applies a conditional formatting rule to a cell range. Accepts any
+    // of the ConditionalFormat* objects. Upstream's add_conditional_format
+    // is generic over the ConditionalFormat trait, so the concrete type is
+    // recovered by extract_cf()'s downcast chain first.
+    fn add_conditional_format(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        cf: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        self.check_row_order_range(first_row, last_row)?;
+        let any = extract_cf(cf)?;
+        let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
+        self.with_sheet(py, |sheet| match &any {
+            AnyCf::Cell(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Blank(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Duplicate(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::ErrorCf(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Formula(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Average(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Top(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Text(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Date(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Scale2(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::Scale3(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::DataBar(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+        })
+    }
+
     #[pyo3(signature = (first_row, first_col, last_row, last_col, value, format=None))]
     fn merge_range(
         &self,
@@ -2053,6 +2085,781 @@ impl Workbook {
 // ============================================
 // MODULE INITIALIZATION
 // ============================================
+// ============================================
+// CONDITIONAL FORMATTING
+// ============================================
+// The 12 rule types rust_xlsxwriter exposes, minus IconSet, which the
+// parity audit tracks separately. Every upstream type here is a consuming
+// builder (mut self -> Self) that derives Clone in 0.96, so each setter
+// has the same shape: clone the inner value, run the builder method on
+// the clone, store the result back.
+//
+// The whole upstream module is reached through one alias rather than ~20
+// individual imports. That also sidesteps the pyclass name-shadowing
+// problem: our pyclass is plain `ConditionalFormatCell`, upstream's is
+// always written `rcf::ConditionalFormatCell`, so the two never collide
+// inside the pymethods-generated submodule.
+//
+// Note these setters return None rather than self, so unlike Format they
+// don't chain. Adding a return value later is backwards compatible, so
+// this can be revisited without breaking callers.
+use rust_xlsxwriter::conditional_format as rcf;
+
+fn cf_type_err(kind: &str, got: &str, expected: &str) -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+        "Unknown {kind} '{got}'. Expected one of: {expected}"
+    ))
+}
+
+// Accepts a number or a string. Strings are what the Formula rule type
+// needs; numbers cover every other rule type.
+fn cf_value(value: &Bound<'_, PyAny>) -> PyResult<rcf::ConditionalFormatValue> {
+    if let Ok(f) = value.extract::<f64>() {
+        return Ok(f.into());
+    }
+    if let Ok(s) = value.extract::<String>() {
+        return Ok(s.into());
+    }
+    Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+        "conditional format value must be a number or a string",
+    ))
+}
+
+fn parse_cf_type(name: &str) -> PyResult<rcf::ConditionalFormatType> {
+    use rcf::ConditionalFormatType as T;
+    match name.to_ascii_lowercase().as_str() {
+        "automatic" => Ok(T::Automatic),
+        "lowest" | "min" => Ok(T::Lowest),
+        "highest" | "max" => Ok(T::Highest),
+        "number" => Ok(T::Number),
+        "percent" => Ok(T::Percent),
+        "percentile" => Ok(T::Percentile),
+        "formula" => Ok(T::Formula),
+        other => Err(cf_type_err(
+            "conditional format type",
+            other,
+            "automatic, lowest/min, highest/max, number, percent, percentile, formula",
+        )),
+    }
+}
+
+fn parse_average_rule(name: &str) -> PyResult<rcf::ConditionalFormatAverageRule> {
+    use rcf::ConditionalFormatAverageRule as R;
+    match name.to_ascii_lowercase().as_str() {
+        "above" => Ok(R::AboveAverage),
+        "below" => Ok(R::BelowAverage),
+        "equal_or_above" => Ok(R::EqualOrAboveAverage),
+        "equal_or_below" => Ok(R::EqualOrBelowAverage),
+        "1_std_dev_above" => Ok(R::OneStandardDeviationAbove),
+        "1_std_dev_below" => Ok(R::OneStandardDeviationBelow),
+        "2_std_dev_above" => Ok(R::TwoStandardDeviationsAbove),
+        "2_std_dev_below" => Ok(R::TwoStandardDeviationsBelow),
+        "3_std_dev_above" => Ok(R::ThreeStandardDeviationsAbove),
+        "3_std_dev_below" => Ok(R::ThreeStandardDeviationsBelow),
+        other => Err(cf_type_err(
+            "average rule",
+            other,
+            "above, below, equal_or_above, equal_or_below, \
+             {1,2,3}_std_dev_above, {1,2,3}_std_dev_below",
+        )),
+    }
+}
+
+fn parse_date_rule(name: &str) -> PyResult<rcf::ConditionalFormatDateRule> {
+    use rcf::ConditionalFormatDateRule as R;
+    match name.to_ascii_lowercase().as_str() {
+        "yesterday" => Ok(R::Yesterday),
+        "today" => Ok(R::Today),
+        "tomorrow" => Ok(R::Tomorrow),
+        "last_7_days" => Ok(R::Last7Days),
+        "last_week" => Ok(R::LastWeek),
+        "this_week" => Ok(R::ThisWeek),
+        "next_week" => Ok(R::NextWeek),
+        "last_month" => Ok(R::LastMonth),
+        "this_month" => Ok(R::ThisMonth),
+        "next_month" => Ok(R::NextMonth),
+        other => Err(cf_type_err(
+            "date rule",
+            other,
+            "yesterday, today, tomorrow, last_7_days, last_week, this_week, \
+             next_week, last_month, this_month, next_month",
+        )),
+    }
+}
+
+fn parse_text_rule(kind: &str, text: &str) -> PyResult<rcf::ConditionalFormatTextRule> {
+    use rcf::ConditionalFormatTextRule as R;
+    let owned = text.to_string();
+    match kind.to_ascii_lowercase().as_str() {
+        "contains" => Ok(R::Contains(owned)),
+        "does_not_contain" => Ok(R::DoesNotContain(owned)),
+        "begins_with" => Ok(R::BeginsWith(owned)),
+        "ends_with" => Ok(R::EndsWith(owned)),
+        other => Err(cf_type_err(
+            "text rule",
+            other,
+            "contains, does_not_contain, begins_with, ends_with",
+        )),
+    }
+}
+
+fn parse_top_rule(kind: &str, value: u16) -> PyResult<rcf::ConditionalFormatTopRule> {
+    use rcf::ConditionalFormatTopRule as R;
+    match kind.to_ascii_lowercase().as_str() {
+        "top" => Ok(R::Top(value)),
+        "bottom" => Ok(R::Bottom(value)),
+        "top_percent" => Ok(R::TopPercent(value)),
+        "bottom_percent" => Ok(R::BottomPercent(value)),
+        other => Err(cf_type_err(
+            "top rule",
+            other,
+            "top, bottom, top_percent, bottom_percent",
+        )),
+    }
+}
+
+fn parse_bar_direction(name: &str) -> PyResult<rcf::ConditionalFormatDataBarDirection> {
+    use rcf::ConditionalFormatDataBarDirection as D;
+    match name.to_ascii_lowercase().as_str() {
+        "context" => Ok(D::Context),
+        "left_to_right" => Ok(D::LeftToRight),
+        "right_to_left" => Ok(D::RightToLeft),
+        other => Err(cf_type_err(
+            "data bar direction",
+            other,
+            "context, left_to_right, right_to_left",
+        )),
+    }
+}
+
+fn parse_bar_axis(name: &str) -> PyResult<rcf::ConditionalFormatDataBarAxisPosition> {
+    use rcf::ConditionalFormatDataBarAxisPosition as A;
+    match name.to_ascii_lowercase().as_str() {
+        "automatic" => Ok(A::Automatic),
+        "midpoint" => Ok(A::Midpoint),
+        "none" => Ok(A::None),
+        other => Err(cf_type_err(
+            "data bar axis position",
+            other,
+            "automatic, midpoint, none",
+        )),
+    }
+}
+
+// -------------------- Cell --------------------
+
+#[pyclass]
+struct ConditionalFormatCell {
+    inner: rcf::ConditionalFormatCell,
+}
+
+#[pymethods]
+impl ConditionalFormatCell {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatCell {
+            inner: rcf::ConditionalFormatCell::new(),
+        }
+    }
+
+    fn set_rule_equal_to(&mut self, value: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        self.inner = self.inner.clone().set_rule(R::EqualTo(value));
+    }
+
+    fn set_rule_not_equal_to(&mut self, value: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        self.inner = self.inner.clone().set_rule(R::NotEqualTo(value));
+    }
+
+    fn set_rule_greater_than(&mut self, value: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        self.inner = self.inner.clone().set_rule(R::GreaterThan(value));
+    }
+
+    fn set_rule_greater_than_or_equal_to(&mut self, value: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        self.inner = self.inner.clone().set_rule(R::GreaterThanOrEqualTo(value));
+    }
+
+    fn set_rule_less_than(&mut self, value: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        self.inner = self.inner.clone().set_rule(R::LessThan(value));
+    }
+
+    fn set_rule_less_than_or_equal_to(&mut self, value: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        self.inner = self.inner.clone().set_rule(R::LessThanOrEqualTo(value));
+    }
+
+    fn set_rule_between(&mut self, minimum: f64, maximum: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        let rule = R::Between(minimum, maximum);
+        self.inner = self.inner.clone().set_rule(rule);
+    }
+
+    fn set_rule_not_between(&mut self, minimum: f64, maximum: f64) {
+        use rcf::ConditionalFormatCellRule as R;
+        let rule = R::NotBetween(minimum, maximum);
+        self.inner = self.inner.clone().set_rule(rule);
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Blank --------------------
+
+#[pyclass]
+struct ConditionalFormatBlank {
+    inner: rcf::ConditionalFormatBlank,
+}
+
+#[pymethods]
+impl ConditionalFormatBlank {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatBlank {
+            inner: rcf::ConditionalFormatBlank::new(),
+        }
+    }
+
+    fn invert(&mut self) {
+        self.inner = self.inner.clone().invert();
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Duplicate --------------------
+
+#[pyclass]
+struct ConditionalFormatDuplicate {
+    inner: rcf::ConditionalFormatDuplicate,
+}
+
+#[pymethods]
+impl ConditionalFormatDuplicate {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatDuplicate {
+            inner: rcf::ConditionalFormatDuplicate::new(),
+        }
+    }
+
+    // invert() turns "highlight duplicates" into "highlight uniques".
+    fn invert(&mut self) {
+        self.inner = self.inner.clone().invert();
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Error --------------------
+
+#[pyclass]
+struct ConditionalFormatError {
+    inner: rcf::ConditionalFormatError,
+}
+
+#[pymethods]
+impl ConditionalFormatError {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatError {
+            inner: rcf::ConditionalFormatError::new(),
+        }
+    }
+
+    // invert() turns "highlight errors" into "highlight non-errors".
+    fn invert(&mut self) {
+        self.inner = self.inner.clone().invert();
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Formula --------------------
+
+#[pyclass]
+struct ConditionalFormatFormula {
+    inner: rcf::ConditionalFormatFormula,
+}
+
+#[pymethods]
+impl ConditionalFormatFormula {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatFormula {
+            inner: rcf::ConditionalFormatFormula::new(),
+        }
+    }
+
+    // Takes an Excel formula string such as "=$A1>50", relative to the
+    // top-left cell of the range the format is applied to.
+    fn set_rule(&mut self, formula: &str) {
+        self.inner = self.inner.clone().set_rule(formula);
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Average --------------------
+
+#[pyclass]
+struct ConditionalFormatAverage {
+    inner: rcf::ConditionalFormatAverage,
+}
+
+#[pymethods]
+impl ConditionalFormatAverage {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatAverage {
+            inner: rcf::ConditionalFormatAverage::new(),
+        }
+    }
+
+    fn set_rule(&mut self, rule: &str) -> PyResult<()> {
+        let parsed = parse_average_rule(rule)?;
+        self.inner = self.inner.clone().set_rule(parsed);
+        Ok(())
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Top --------------------
+
+#[pyclass]
+struct ConditionalFormatTop {
+    inner: rcf::ConditionalFormatTop,
+}
+
+#[pymethods]
+impl ConditionalFormatTop {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatTop {
+            inner: rcf::ConditionalFormatTop::new(),
+        }
+    }
+
+    // kind is one of top, bottom, top_percent, bottom_percent; value is
+    // the N in "top N" or "top N percent".
+    fn set_rule(&mut self, kind: &str, value: u16) -> PyResult<()> {
+        let parsed = parse_top_rule(kind, value)?;
+        self.inner = self.inner.clone().set_rule(parsed);
+        Ok(())
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Text --------------------
+
+#[pyclass]
+struct ConditionalFormatText {
+    inner: rcf::ConditionalFormatText,
+}
+
+#[pymethods]
+impl ConditionalFormatText {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatText {
+            inner: rcf::ConditionalFormatText::new(),
+        }
+    }
+
+    // kind is one of contains, does_not_contain, begins_with, ends_with.
+    fn set_rule(&mut self, kind: &str, text: &str) -> PyResult<()> {
+        let parsed = parse_text_rule(kind, text)?;
+        self.inner = self.inner.clone().set_rule(parsed);
+        Ok(())
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Date --------------------
+
+#[pyclass]
+struct ConditionalFormatDate {
+    inner: rcf::ConditionalFormatDate,
+}
+
+#[pymethods]
+impl ConditionalFormatDate {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatDate {
+            inner: rcf::ConditionalFormatDate::new(),
+        }
+    }
+
+    fn set_rule(&mut self, rule: &str) -> PyResult<()> {
+        let parsed = parse_date_rule(rule)?;
+        self.inner = self.inner.clone().set_rule(parsed);
+        Ok(())
+    }
+
+    fn set_format(&mut self, format: &Format) {
+        self.inner = self.inner.clone().set_format(format.inner.clone());
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- 2 Color Scale --------------------
+// Color scales and data bars have no set_format(): Excel renders them
+// from the scale/bar definition itself rather than from a dxf record.
+
+#[pyclass]
+struct ConditionalFormat2ColorScale {
+    inner: rcf::ConditionalFormat2ColorScale,
+}
+
+#[pymethods]
+impl ConditionalFormat2ColorScale {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormat2ColorScale {
+            inner: rcf::ConditionalFormat2ColorScale::new(),
+        }
+    }
+
+    fn set_minimum(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_minimum(parsed, val);
+        Ok(())
+    }
+
+    fn set_maximum(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_maximum(parsed, val);
+        Ok(())
+    }
+
+    fn set_minimum_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_minimum_color(parsed);
+        Ok(())
+    }
+
+    fn set_maximum_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_maximum_color(parsed);
+        Ok(())
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- 3 Color Scale --------------------
+
+#[pyclass]
+struct ConditionalFormat3ColorScale {
+    inner: rcf::ConditionalFormat3ColorScale,
+}
+
+#[pymethods]
+impl ConditionalFormat3ColorScale {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormat3ColorScale {
+            inner: rcf::ConditionalFormat3ColorScale::new(),
+        }
+    }
+
+    fn set_minimum(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_minimum(parsed, val);
+        Ok(())
+    }
+
+    fn set_midpoint(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_midpoint(parsed, val);
+        Ok(())
+    }
+
+    fn set_maximum(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_maximum(parsed, val);
+        Ok(())
+    }
+
+    fn set_minimum_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_minimum_color(parsed);
+        Ok(())
+    }
+
+    fn set_midpoint_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_midpoint_color(parsed);
+        Ok(())
+    }
+
+    fn set_maximum_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_maximum_color(parsed);
+        Ok(())
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- Data Bar --------------------
+
+#[pyclass]
+struct ConditionalFormatDataBar {
+    inner: rcf::ConditionalFormatDataBar,
+}
+
+#[pymethods]
+impl ConditionalFormatDataBar {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatDataBar {
+            inner: rcf::ConditionalFormatDataBar::new(),
+        }
+    }
+
+    fn set_minimum(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_minimum(parsed, val);
+        Ok(())
+    }
+
+    fn set_maximum(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_maximum(parsed, val);
+        Ok(())
+    }
+
+    fn set_fill_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_fill_color(parsed);
+        Ok(())
+    }
+
+    fn set_border_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_border_color(parsed);
+        Ok(())
+    }
+
+    fn set_negative_fill_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_negative_fill_color(parsed);
+        Ok(())
+    }
+
+    fn set_negative_border_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_negative_border_color(parsed);
+        Ok(())
+    }
+
+    fn set_axis_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_axis_color(parsed);
+        Ok(())
+    }
+
+    fn set_solid_fill(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_solid_fill(enable);
+    }
+
+    fn set_border_off(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_border_off(enable);
+    }
+
+    fn set_bar_only(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_bar_only(enable);
+    }
+
+    // One of context, left_to_right, right_to_left.
+    fn set_direction(&mut self, direction: &str) -> PyResult<()> {
+        let parsed = parse_bar_direction(direction)?;
+        self.inner = self.inner.clone().set_direction(parsed);
+        Ok(())
+    }
+
+    // One of automatic, midpoint, none.
+    fn set_axis_position(&mut self, position: &str) -> PyResult<()> {
+        let parsed = parse_bar_axis(position)?;
+        self.inner = self.inner.clone().set_axis_position(parsed);
+        Ok(())
+    }
+
+    fn use_classic_style(&mut self) {
+        self.inner = self.inner.clone().use_classic_style();
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
+// -------------------- dispatch --------------------
+// Worksheet::add_conditional_format is generic over the ConditionalFormat
+// trait, and a #[pyclass] can't be generic, so the concrete type has to be
+// recovered by trying each downcast in turn. Pulling the matched value out
+// into this enum first keeps the downcast chain in a plain function (no
+// `self`, so a local macro_rules is safe) and leaves the call site as one
+// short match.
+enum AnyCf {
+    Cell(rcf::ConditionalFormatCell),
+    Blank(rcf::ConditionalFormatBlank),
+    Duplicate(rcf::ConditionalFormatDuplicate),
+    ErrorCf(rcf::ConditionalFormatError),
+    Formula(rcf::ConditionalFormatFormula),
+    Average(rcf::ConditionalFormatAverage),
+    Top(rcf::ConditionalFormatTop),
+    Text(rcf::ConditionalFormatText),
+    Date(rcf::ConditionalFormatDate),
+    Scale2(rcf::ConditionalFormat2ColorScale),
+    Scale3(rcf::ConditionalFormat3ColorScale),
+    DataBar(rcf::ConditionalFormatDataBar),
+}
+
+macro_rules! try_downcast_cf {
+    ($obj:expr, $py_ty:ty, $variant:ident) => {
+        if let Ok(found) = $obj.downcast::<$py_ty>() {
+            return Ok(AnyCf::$variant(found.borrow().inner.clone()));
+        }
+    };
+}
+
+fn extract_cf(cf: &Bound<'_, PyAny>) -> PyResult<AnyCf> {
+    try_downcast_cf!(cf, ConditionalFormatCell, Cell);
+    try_downcast_cf!(cf, ConditionalFormatBlank, Blank);
+    try_downcast_cf!(cf, ConditionalFormatDuplicate, Duplicate);
+    try_downcast_cf!(cf, ConditionalFormatError, ErrorCf);
+    try_downcast_cf!(cf, ConditionalFormatFormula, Formula);
+    try_downcast_cf!(cf, ConditionalFormatAverage, Average);
+    try_downcast_cf!(cf, ConditionalFormatTop, Top);
+    try_downcast_cf!(cf, ConditionalFormatText, Text);
+    try_downcast_cf!(cf, ConditionalFormatDate, Date);
+    try_downcast_cf!(cf, ConditionalFormat2ColorScale, Scale2);
+    try_downcast_cf!(cf, ConditionalFormat3ColorScale, Scale3);
+    try_downcast_cf!(cf, ConditionalFormatDataBar, DataBar);
+    Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+        "add_conditional_format() expects a ConditionalFormat* object",
+    ))
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Workbook>()?;
@@ -2060,5 +2867,17 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Format>()?;
     m.add_class::<Table>()?;
     m.add_class::<TableColumn>()?;
+    m.add_class::<ConditionalFormatCell>()?;
+    m.add_class::<ConditionalFormatBlank>()?;
+    m.add_class::<ConditionalFormatDuplicate>()?;
+    m.add_class::<ConditionalFormatError>()?;
+    m.add_class::<ConditionalFormatFormula>()?;
+    m.add_class::<ConditionalFormatAverage>()?;
+    m.add_class::<ConditionalFormatTop>()?;
+    m.add_class::<ConditionalFormatText>()?;
+    m.add_class::<ConditionalFormatDate>()?;
+    m.add_class::<ConditionalFormat2ColorScale>()?;
+    m.add_class::<ConditionalFormat3ColorScale>()?;
+    m.add_class::<ConditionalFormatDataBar>()?;
     Ok(())
 }
