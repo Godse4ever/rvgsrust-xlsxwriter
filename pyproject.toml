@@ -45,7 +45,7 @@ Issues = "https://github.com/Godse4ever/rvgsrust-xlsxwriter/issues"
 python-source = "python"
 module-name = "rvgsrust_xlsxwriter._core"
 manifest-path = "Cargo.toml"
-compatibility = "manylinux2014"
+compatibility = "manylinux_2_17"
 
 [tool.black]
 line-length = 100

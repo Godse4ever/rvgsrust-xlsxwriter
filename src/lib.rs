@@ -1032,8 +1032,12 @@ impl Worksheet {
             return Ok(());
         }
 
-        let header_rows = if write_header { 1 } else { 0 };
-        let last_row = start_row + header_rows + rows.len() as u32 - 1;
+        // rows.len() is the total number of rows being written -- when
+        // write_header=True, the first element IS the header row (not an
+        // extra one). Adding header_rows here would double-count and push
+        // min_allowed_row one row past the actual last write, incorrectly
+        // rejecting valid subsequent writes in constant_memory mode.
+        let last_row = start_row + rows.len() as u32 - 1;
         self.check_row_order_range(start_row, last_row)?;
 
         let data_fmt = format.map(|f| &f.inner);
@@ -1251,7 +1255,7 @@ impl Worksheet {
                     return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
                         "write_dataframe(): column '{}' has type {other:?}, \
                          which isn't supported yet (supported: int64, \
-                         float64, string/utf8, large_utf8, bool)",
+                         float64, string/utf8, large_utf8, utf8view, bool)",
                         field.name()
                     )));
                 }

@@ -974,3 +974,37 @@ def test_parse_border_valid():
     wb = Workbook()
     fmt = wb.add_format()
     fmt.set_border("medium")  # must not raise
+
+
+def test_write_rows_constant_memory_with_write_header():
+    """Regression test for the last_row double-count bug.
+
+    Before the fix, write_rows() with write_header=True was setting
+    min_allowed_row one row past the actual last write, incorrectly
+    rejecting valid subsequent writes in constant_memory mode.
+    """
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    header_fmt = wb.add_format()
+    header_fmt.set_bold()
+
+    # Write header + 3 data rows starting at row 0
+    ws.write_rows(0, 0, [
+        ["Name", "Score"],  # header
+        ["Alice", 95],
+        ["Bob",   87],
+        ["Carol", 91],
+    ], write_header=True, header_format=header_fmt)
+
+    # rows.len() == 4, so last row written was row 3.
+    # A subsequent write to row 4 must be accepted (not rejected as if
+    # min_allowed_row had been set to 5).
+    ws.write(4, 0, "Dave")
+    ws.write(4, 1, 88)
+
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].value == "Name"
+    assert sheet["A4"].value == "Carol"
+    assert sheet["A5"].value == "Dave"
+    assert sheet["B5"].value == 88
