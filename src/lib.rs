@@ -3272,6 +3272,13 @@ impl ChartSeries {
         self.inner.set_point_colors(&parsed);
         Ok(())
     }
+
+    // Generic over IntoChartFormat upstream, which is implemented for
+    // &mut ChartFormat, so this needs an owned mutable clone.
+    fn set_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_format(&mut fmt);
+    }
 }
 
 // -------------------- Chart --------------------
@@ -3475,6 +3482,307 @@ impl Chart {
     fn set_legend_overlay(&mut self, enable: bool) {
         self.inner.legend().set_overlay(enable);
     }
+
+    // ---- fonts and formats ----
+    // set_font takes a plain &ChartFont, but set_format is generic over
+    // IntoChartFormat, which upstream implements for &mut ChartFormat.
+    // Hence the owned mutable clone rather than passing &format.inner.
+
+    fn set_title_font(&mut self, font: &ChartFont) {
+        self.inner.title().set_font(&font.inner);
+    }
+
+    fn set_title_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.title().set_format(&mut fmt);
+    }
+
+    fn set_x_axis_font(&mut self, font: &ChartFont) {
+        self.inner.x_axis().set_font(&font.inner);
+    }
+
+    fn set_x_axis_name_font(&mut self, font: &ChartFont) {
+        self.inner.x_axis().set_name_font(&font.inner);
+    }
+
+    fn set_x_axis_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.x_axis().set_format(&mut fmt);
+    }
+
+    fn set_x_axis_name_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.x_axis().set_name_format(&mut fmt);
+    }
+
+    fn set_y_axis_font(&mut self, font: &ChartFont) {
+        self.inner.y_axis().set_font(&font.inner);
+    }
+
+    fn set_y_axis_name_font(&mut self, font: &ChartFont) {
+        self.inner.y_axis().set_name_font(&font.inner);
+    }
+
+    fn set_y_axis_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.y_axis().set_format(&mut fmt);
+    }
+
+    fn set_y_axis_name_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.y_axis().set_name_format(&mut fmt);
+    }
+
+    fn set_legend_font(&mut self, font: &ChartFont) {
+        self.inner.legend().set_font(&font.inner);
+    }
+
+    fn set_legend_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.legend().set_format(&mut fmt);
+    }
+}
+
+
+// ============================================
+// CHARTS (part 2: ChartFormat, ChartFont)
+// ============================================
+// ChartLine and ChartSolidFill are deliberately NOT exposed as separate
+// pyclasses. Upstream they exist only to be handed to
+// ChartFormat::set_line/set_border/set_solid_fill, so they are flattened
+// into ChartFormat as set_line_*, set_border_* and set_fill_* methods,
+// the same way axes were flattened onto Chart. Their state is kept in the
+// pyclass and re-applied on every setter, so calls compose.
+//
+// Pattern and gradient fills are not exposed yet; they are logged for the
+// parity audit.
+//
+// Note IntoChartFormat never needs importing here even though it isn't
+// re-exported from the crate root: it appears only as a bound on a
+// generic parameter, and Rust requires a trait in scope only to call its
+// methods. What matters is that upstream implements it for
+// `&mut ChartFormat`, hence the owned mutable clone at each call site.
+
+fn parse_dash_type(name: &str) -> PyResult<rch::ChartLineDashType> {
+    use rch::ChartLineDashType as D;
+    match name.to_ascii_lowercase().as_str() {
+        "solid" => Ok(D::Solid),
+        "round_dot" => Ok(D::RoundDot),
+        "square_dot" => Ok(D::SquareDot),
+        "dash" => Ok(D::Dash),
+        "dash_dot" => Ok(D::DashDot),
+        "long_dash" => Ok(D::LongDash),
+        "long_dash_dot" => Ok(D::LongDashDot),
+        "long_dash_dot_dot" => Ok(D::LongDashDotDot),
+        other => Err(cf_type_err(
+            "line dash type",
+            other,
+            "solid, round_dot, square_dot, dash, dash_dot, long_dash, \
+             long_dash_dot, long_dash_dot_dot",
+        )),
+    }
+}
+
+// -------------------- ChartFont --------------------
+
+#[pyclass]
+struct ChartFont {
+    inner: rch::ChartFont,
+}
+
+#[pymethods]
+impl ChartFont {
+    #[new]
+    fn new() -> Self {
+        ChartFont {
+            inner: rch::ChartFont::new(),
+        }
+    }
+
+    // set_bold/italic/underline/strikethrough take no argument upstream.
+    // unset_bold() is the way back, and set_default_bold(false) suppresses
+    // the bold that some chart elements apply by default.
+    fn set_bold(&mut self) {
+        self.inner.set_bold();
+    }
+
+    fn unset_bold(&mut self) {
+        self.inner.unset_bold();
+    }
+
+    fn set_default_bold(&mut self, enable: bool) {
+        self.inner.set_default_bold(enable);
+    }
+
+    fn set_italic(&mut self) {
+        self.inner.set_italic();
+    }
+
+    fn set_underline(&mut self) {
+        self.inner.set_underline();
+    }
+
+    fn set_strikethrough(&mut self) {
+        self.inner.set_strikethrough();
+    }
+
+    fn set_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner.set_color(parsed);
+        Ok(())
+    }
+
+    fn set_name(&mut self, font_name: &str) {
+        self.inner.set_name(font_name);
+    }
+
+    fn set_size(&mut self, font_size: f64) {
+        self.inner.set_size(font_size);
+    }
+
+    // Degrees, -90 to 90, or 270 to 360 for stacked text.
+    fn set_rotation(&mut self, rotation: i16) {
+        self.inner.set_rotation(rotation);
+    }
+
+    fn set_right_to_left(&mut self, enable: bool) {
+        self.inner.set_right_to_left(enable);
+    }
+
+    fn set_pitch_family(&mut self, family: u8) {
+        self.inner.set_pitch_family(family);
+    }
+
+    fn set_character_set(&mut self, character_set: u8) {
+        self.inner.set_character_set(character_set);
+    }
+}
+
+// -------------------- ChartFormat --------------------
+
+#[pyclass]
+struct ChartFormat {
+    inner: rch::ChartFormat,
+    line: rch::ChartLine,
+    border: rch::ChartLine,
+    fill: rch::ChartSolidFill,
+}
+
+#[pymethods]
+impl ChartFormat {
+    // ChartLine and ChartSolidFill must be built with ::new(), not
+    // ::default().
+    #[new]
+    fn new() -> Self {
+        ChartFormat {
+            inner: rch::ChartFormat::new(),
+            line: rch::ChartLine::new(),
+            border: rch::ChartLine::new(),
+            fill: rch::ChartSolidFill::new(),
+        }
+    }
+
+    // ---- line ----
+
+    fn set_line_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.line.set_color(parsed);
+        let line = self.line.clone();
+        self.inner.set_line(&line);
+        Ok(())
+    }
+
+    fn set_line_width(&mut self, width: f64) {
+        self.line.set_width(width);
+        let line = self.line.clone();
+        self.inner.set_line(&line);
+    }
+
+    fn set_line_dash_type(&mut self, dash_type: &str) -> PyResult<()> {
+        let parsed = parse_dash_type(dash_type)?;
+        self.line.set_dash_type(parsed);
+        let line = self.line.clone();
+        self.inner.set_line(&line);
+        Ok(())
+    }
+
+    fn set_line_transparency(&mut self, transparency: u8) {
+        self.line.set_transparency(transparency);
+        let line = self.line.clone();
+        self.inner.set_line(&line);
+    }
+
+    fn set_line_hidden(&mut self, enable: bool) {
+        self.line.set_hidden(enable);
+        let line = self.line.clone();
+        self.inner.set_line(&line);
+    }
+
+    fn set_no_line(&mut self) {
+        self.inner.set_no_line();
+    }
+
+    // ---- border ----
+    // Same underlying ChartLine type as set_line_*, but border is the name
+    // Excel uses for the outline of a filled shape.
+
+    fn set_border_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.border.set_color(parsed);
+        let border = self.border.clone();
+        self.inner.set_border(&border);
+        Ok(())
+    }
+
+    fn set_border_width(&mut self, width: f64) {
+        self.border.set_width(width);
+        let border = self.border.clone();
+        self.inner.set_border(&border);
+    }
+
+    fn set_border_dash_type(&mut self, dash_type: &str) -> PyResult<()> {
+        let parsed = parse_dash_type(dash_type)?;
+        self.border.set_dash_type(parsed);
+        let border = self.border.clone();
+        self.inner.set_border(&border);
+        Ok(())
+    }
+
+    fn set_border_transparency(&mut self, transparency: u8) {
+        self.border.set_transparency(transparency);
+        let border = self.border.clone();
+        self.inner.set_border(&border);
+    }
+
+    fn set_border_hidden(&mut self, enable: bool) {
+        self.border.set_hidden(enable);
+        let border = self.border.clone();
+        self.inner.set_border(&border);
+    }
+
+    fn set_no_border(&mut self) {
+        self.inner.set_no_border();
+    }
+
+    // ---- fill ----
+
+    fn set_fill_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.fill.set_color(parsed);
+        let fill = self.fill.clone();
+        self.inner.set_solid_fill(&fill);
+        Ok(())
+    }
+
+    fn set_fill_transparency(&mut self, transparency: u8) {
+        self.fill.set_transparency(transparency);
+        let fill = self.fill.clone();
+        self.inner.set_solid_fill(&fill);
+    }
+
+    fn set_no_fill(&mut self) {
+        self.inner.set_no_fill();
+    }
 }
 
 #[pymodule]
@@ -3499,5 +3807,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Sparkline>()?;
     m.add_class::<Chart>()?;
     m.add_class::<ChartSeries>()?;
+    m.add_class::<ChartFont>()?;
+    m.add_class::<ChartFormat>()?;
     Ok(())
 }

@@ -25,6 +25,19 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Charts, part 2: `ChartFormat` and `ChartFont`, attachable to a series,
+  a chart title, either axis (both the axis labels and the axis name), and
+  the legend.
+  `ChartLine` and `ChartSolidFill` are not exposed as separate classes.
+  Upstream they exist only to be passed to `ChartFormat`, so they are
+  flattened into it as `set_line_*`, `set_border_*` and `set_fill_*`, with
+  the line and fill state kept per format object so successive calls
+  compose. Pattern and gradient fills are logged for the parity audit.
+  `set_format` is generic over `IntoChartFormat`, which upstream implements
+  for `&mut ChartFormat`, so each call site passes an owned mutable clone.
+  The trait itself never needs importing despite not being re-exported
+  from the crate root, since it only ever appears as a bound on a generic
+  parameter.
 - Charts, part 1: `Chart` and `ChartSeries` classes plus
   `Worksheet.insert_chart(row, col, chart, x_offset=0, y_offset=0)`.
   Covers all 23 chart types, series ranges and options, and the title,
