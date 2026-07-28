@@ -1581,7 +1581,14 @@ impl Worksheet {
         self.check_row_order_range(first_row, last_row)?;
         let inner = sparkline.inner.clone();
         let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
-        self.with_sheet(py, |sheet| sheet.add_sparkline_group(r1, c1, r2, c2, &inner).map(|_| ()))
+        // Split across two statements rather than chaining .map(|_| ()):
+        // the chained form is 61 chars wide and rustfmt's chain_width
+        // default is 60, so it would get reflowed. A two-statement closure
+        // body also can't be collapsed back to a single expression.
+        self.with_sheet(py, |sheet| {
+            sheet.add_sparkline_group(r1, c1, r2, c2, &inner)?;
+            Ok(())
+        })
     }
 
     #[pyo3(signature = (first_row, first_col, last_row, last_col, value, format=None))]
