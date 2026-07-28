@@ -25,6 +25,14 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Added `MISSING.md`, a parity audit of the exposed Python API against
+  rust_xlsxwriter 0.96, with upstream `file:line` references, a suggested
+  Python API shape and a priority for every gap. Listing only; nothing in
+  it is implemented.
+  Two items the project brief listed as gaps turned out to be false: a
+  sparkline `custom_ranges` parameter does not exist in 0.96 at all, and
+  workbook document properties and defined names are already exposed.
+  Sparklines are at full parity, 28 of 28 methods.
 - Charts, part 3: `ChartMarker`, `ChartTrendline` and `ChartDataLabel`,
   attached via `ChartSeries.set_marker`, `set_trendline`, `set_data_label`
   and `set_custom_data_labels`. Note `Chart.push_series()` does not call
