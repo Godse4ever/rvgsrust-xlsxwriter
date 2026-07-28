@@ -1553,6 +1553,37 @@ impl Worksheet {
         })
     }
 
+    // Adds a single sparkline to one cell.
+    fn add_sparkline(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        sparkline: &Sparkline,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let inner = sparkline.inner.clone();
+        self.with_sheet(py, |sheet| sheet.add_sparkline(row, col, &inner).map(|_| ()))
+    }
+
+    // Adds a grouped sparkline spanning a range of cells. Grouped
+    // sparklines share one set of options and, with set_group_max/min, one
+    // scale.
+    fn add_sparkline_group(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        sparkline: &Sparkline,
+    ) -> PyResult<()> {
+        self.check_row_order_range(first_row, last_row)?;
+        let inner = sparkline.inner.clone();
+        let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
+        self.with_sheet(py, |sheet| sheet.add_sparkline_group(r1, c1, r2, c2, &inner).map(|_| ()))
+    }
+
     #[pyo3(signature = (first_row, first_col, last_row, last_col, value, format=None))]
     fn merge_range(
         &self,
@@ -2860,6 +2891,197 @@ fn extract_cf(cf: &Bound<'_, PyAny>) -> PyResult<AnyCf> {
     ))
 }
 
+// ============================================
+// SPARKLINES
+// ============================================
+// One pyclass, unlike conditional formatting: upstream's add_sparkline and
+// add_sparkline_group both take a concrete &Sparkline rather than being
+// generic over a trait, so no downcast chain is needed.
+//
+// Same aliasing approach as the conditional formats above -- our pyclass is
+// plain `Sparkline`, upstream's is always `rsl::Sparkline`, so the two
+// cannot collide inside the pymethods-generated submodule. ChartEmptyCells
+// lives in the chart module rather than the sparkline one.
+use rust_xlsxwriter::chart as rch;
+use rust_xlsxwriter::sparkline as rsl;
+
+fn parse_sparkline_type(name: &str) -> PyResult<rsl::SparklineType> {
+    use rsl::SparklineType as T;
+    match name.to_ascii_lowercase().as_str() {
+        "line" => Ok(T::Line),
+        "column" => Ok(T::Column),
+        // Upstream spells this WinLose, not WinLoss.
+        "win_lose" | "win_loss" => Ok(T::WinLose),
+        other => Err(cf_type_err(
+            "sparkline type",
+            other,
+            "line, column, win_lose",
+        )),
+    }
+}
+
+fn parse_empty_cells(name: &str) -> PyResult<rch::ChartEmptyCells> {
+    use rch::ChartEmptyCells as E;
+    match name.to_ascii_lowercase().as_str() {
+        // The variant is Gaps, not Gap.
+        "gaps" => Ok(E::Gaps),
+        "zero" => Ok(E::Zero),
+        "connected" => Ok(E::Connected),
+        other => Err(cf_type_err(
+            "empty cells option",
+            other,
+            "gaps, zero, connected",
+        )),
+    }
+}
+
+#[pyclass]
+struct Sparkline {
+    inner: rsl::Sparkline,
+}
+
+#[pymethods]
+impl Sparkline {
+    #[new]
+    fn new() -> Self {
+        Sparkline {
+            inner: rsl::Sparkline::new(),
+        }
+    }
+
+    // Range of the data the sparkline plots, e.g. "Sheet1!A1:E1".
+    fn set_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_range(range);
+    }
+
+    // Optional range of dates giving the sparkline a date axis.
+    fn set_date_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_date_range(range);
+    }
+
+    // One of line, column, win_lose.
+    fn set_type(&mut self, sparkline_type: &str) -> PyResult<()> {
+        let parsed = parse_sparkline_type(sparkline_type)?;
+        self.inner = self.inner.clone().set_type(parsed);
+        Ok(())
+    }
+
+    fn show_high_point(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_high_point(enable);
+    }
+
+    fn show_low_point(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_low_point(enable);
+    }
+
+    fn show_first_point(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_first_point(enable);
+    }
+
+    fn show_last_point(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_last_point(enable);
+    }
+
+    fn show_negative_points(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_negative_points(enable);
+    }
+
+    fn show_markers(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_markers(enable);
+    }
+
+    fn show_axis(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_axis(enable);
+    }
+
+    fn show_hidden_data(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_hidden_data(enable);
+    }
+
+    // One of gaps, zero, connected.
+    fn show_empty_cells_as(&mut self, option: &str) -> PyResult<()> {
+        let parsed = parse_empty_cells(option)?;
+        self.inner = self.inner.clone().show_empty_cells_as(parsed);
+        Ok(())
+    }
+
+    fn set_right_to_left(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_right_to_left(enable);
+    }
+
+    fn set_column_order(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_column_order(enable);
+    }
+
+    fn set_sparkline_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_sparkline_color(parsed);
+        Ok(())
+    }
+
+    fn set_high_point_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_high_point_color(parsed);
+        Ok(())
+    }
+
+    fn set_low_point_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_low_point_color(parsed);
+        Ok(())
+    }
+
+    fn set_first_point_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_first_point_color(parsed);
+        Ok(())
+    }
+
+    fn set_last_point_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_last_point_color(parsed);
+        Ok(())
+    }
+
+    fn set_negative_points_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_negative_points_color(parsed);
+        Ok(())
+    }
+
+    fn set_markers_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_markers_color(parsed);
+        Ok(())
+    }
+
+    fn set_line_weight(&mut self, weight: f64) {
+        self.inner = self.inner.clone().set_line_weight(weight);
+    }
+
+    fn set_custom_max(&mut self, max: f64) {
+        self.inner = self.inner.clone().set_custom_max(max);
+    }
+
+    fn set_custom_min(&mut self, min: f64) {
+        self.inner = self.inner.clone().set_custom_min(min);
+    }
+
+    // Scale the group's maximum to the largest value across the whole
+    // group rather than per sparkline.
+    fn set_group_max(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_group_max(enable);
+    }
+
+    fn set_group_min(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_group_min(enable);
+    }
+
+    fn set_style(&mut self, style: u8) {
+        self.inner = self.inner.clone().set_style(style);
+    }
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Workbook>()?;
@@ -2879,5 +3101,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ConditionalFormat2ColorScale>()?;
     m.add_class::<ConditionalFormat3ColorScale>()?;
     m.add_class::<ConditionalFormatDataBar>()?;
+    m.add_class::<Sparkline>()?;
     Ok(())
 }
