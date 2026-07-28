@@ -100,6 +100,9 @@ from rvgsrust_xlsxwriter._core import (
     ChartSeries,
     ChartFont,
     ChartFormat,
+    ChartMarker,
+    ChartTrendline,
+    ChartDataLabel,
 )
 
 
@@ -174,4 +177,7 @@ __all__ = [
     "ChartSeries",
     "ChartFont",
     "ChartFormat",
+    "ChartMarker",
+    "ChartTrendline",
+    "ChartDataLabel",
 ]

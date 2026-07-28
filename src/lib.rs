@@ -3279,6 +3279,29 @@ impl ChartSeries {
         let mut fmt = format.inner.clone();
         self.inner.set_format(&mut fmt);
     }
+
+    fn set_marker(&mut self, marker: &ChartMarker) {
+        self.inner.set_marker(&marker.inner);
+    }
+
+    fn set_trendline(&mut self, trendline: &ChartTrendline) {
+        self.inner.set_trendline(&trendline.inner);
+    }
+
+    fn set_data_label(&mut self, data_label: &ChartDataLabel) {
+        self.inner.set_data_label(&data_label.inner);
+    }
+
+    // One label per point. Labels meant to differ from the series default
+    // should have had to_custom() called on them.
+    fn set_custom_data_labels(&mut self, py: Python<'_>, labels: Vec<Py<ChartDataLabel>>) {
+        let mut owned = Vec::with_capacity(labels.len());
+        for label in &labels {
+            let borrowed = label.borrow(py);
+            owned.push(borrowed.inner.clone());
+        }
+        self.inner.set_custom_data_labels(&owned);
+    }
 }
 
 // -------------------- Chart --------------------
@@ -3784,6 +3807,296 @@ impl ChartFormat {
     }
 }
 
+// ============================================
+// CHARTS (part 3: ChartMarker, ChartTrendline, ChartDataLabel)
+// ============================================
+// These three consume part 2: each takes a ChartFormat and/or ChartFont,
+// and all three attach to a ChartSeries.
+//
+// Upstream naming is irregular here and the differences are load-bearing:
+//   - ChartMarkerType has no Automatic or None variant. Those are the
+//     separate set_automatic() and set_none() methods.
+//   - ChartTrendlineType::Logarithmic, not Logarithm. Polynomial and
+//     MovingAverage carry a u8 period, so set_type takes one.
+//   - ChartTrendline spells its toggles display_equation() and
+//     display_r_squared(), with no set_ prefix. They are exposed here as
+//     set_display_equation / set_display_r_squared so the Python surface
+//     stays internally consistent, but they call the unprefixed names.
+
+fn parse_marker_type(name: &str) -> PyResult<rch::ChartMarkerType> {
+    use rch::ChartMarkerType as M;
+    match name.to_ascii_lowercase().as_str() {
+        "square" => Ok(M::Square),
+        "diamond" => Ok(M::Diamond),
+        "triangle" => Ok(M::Triangle),
+        "x" => Ok(M::X),
+        "star" => Ok(M::Star),
+        "short_dash" => Ok(M::ShortDash),
+        "long_dash" => Ok(M::LongDash),
+        "circle" => Ok(M::Circle),
+        "plus_sign" => Ok(M::PlusSign),
+        other => Err(cf_type_err(
+            "marker type",
+            other,
+            "square, diamond, triangle, x, star, short_dash, long_dash, \
+             circle, plus_sign (for automatic or no marker use \
+             set_automatic() or set_none())",
+        )),
+    }
+}
+
+// period applies only to polynomial and moving_average; the other kinds
+// ignore it.
+fn parse_trendline_type(kind: &str, period: u8) -> PyResult<rch::ChartTrendlineType> {
+    use rch::ChartTrendlineType as T;
+    match kind.to_ascii_lowercase().as_str() {
+        "none" => Ok(T::None),
+        "linear" => Ok(T::Linear),
+        "exponential" => Ok(T::Exponential),
+        // Logarithmic, not Logarithm.
+        "logarithmic" => Ok(T::Logarithmic),
+        "power" => Ok(T::Power),
+        "polynomial" => Ok(T::Polynomial(period)),
+        "moving_average" => Ok(T::MovingAverage(period)),
+        other => Err(cf_type_err(
+            "trendline type",
+            other,
+            "none, linear, exponential, logarithmic, power, polynomial, \
+             moving_average",
+        )),
+    }
+}
+
+fn parse_label_position(name: &str) -> PyResult<rch::ChartDataLabelPosition> {
+    use rch::ChartDataLabelPosition as P;
+    match name.to_ascii_lowercase().as_str() {
+        "default" => Ok(P::Default),
+        "center" => Ok(P::Center),
+        "right" => Ok(P::Right),
+        "left" => Ok(P::Left),
+        "above" => Ok(P::Above),
+        "below" => Ok(P::Below),
+        "inside_base" => Ok(P::InsideBase),
+        "inside_end" => Ok(P::InsideEnd),
+        "outside_end" => Ok(P::OutsideEnd),
+        "best_fit" => Ok(P::BestFit),
+        other => Err(cf_type_err(
+            "data label position",
+            other,
+            "default, center, right, left, above, below, inside_base, \
+             inside_end, outside_end, best_fit",
+        )),
+    }
+}
+
+// -------------------- ChartMarker --------------------
+
+#[pyclass]
+struct ChartMarker {
+    inner: rch::ChartMarker,
+}
+
+#[pymethods]
+impl ChartMarker {
+    #[new]
+    fn new() -> Self {
+        ChartMarker {
+            inner: rch::ChartMarker::new(),
+        }
+    }
+
+    // Let Excel pick the marker shape.
+    fn set_automatic(&mut self) {
+        self.inner.set_automatic();
+    }
+
+    // Suppress the marker entirely.
+    fn set_none(&mut self) {
+        self.inner.set_none();
+    }
+
+    fn set_type(&mut self, marker_type: &str) -> PyResult<()> {
+        let parsed = parse_marker_type(marker_type)?;
+        self.inner.set_type(parsed);
+        Ok(())
+    }
+
+    fn set_size(&mut self, size: u8) {
+        self.inner.set_size(size);
+    }
+
+    fn set_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_format(&mut fmt);
+    }
+}
+
+// -------------------- ChartTrendline --------------------
+
+#[pyclass]
+struct ChartTrendline {
+    inner: rch::ChartTrendline,
+}
+
+#[pymethods]
+impl ChartTrendline {
+    #[new]
+    fn new() -> Self {
+        ChartTrendline {
+            inner: rch::ChartTrendline::new(),
+        }
+    }
+
+    // period is the order for polynomial and the window for
+    // moving_average; other kinds ignore it.
+    #[pyo3(signature = (trend_type, period=2))]
+    fn set_type(&mut self, trend_type: &str, period: u8) -> PyResult<()> {
+        let parsed = parse_trendline_type(trend_type, period)?;
+        self.inner.set_type(parsed);
+        Ok(())
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.inner.set_name(name);
+    }
+
+    fn set_forward_period(&mut self, period: f64) {
+        self.inner.set_forward_period(period);
+    }
+
+    fn set_backward_period(&mut self, period: f64) {
+        self.inner.set_backward_period(period);
+    }
+
+    // Upstream spells these without a set_ prefix.
+    fn set_display_equation(&mut self, enable: bool) {
+        self.inner.display_equation(enable);
+    }
+
+    fn set_display_r_squared(&mut self, enable: bool) {
+        self.inner.display_r_squared(enable);
+    }
+
+    fn set_intercept(&mut self, intercept: f64) {
+        self.inner.set_intercept(intercept);
+    }
+
+    fn delete_from_legend(&mut self, enable: bool) {
+        self.inner.delete_from_legend(enable);
+    }
+
+    fn set_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_format(&mut fmt);
+    }
+
+    fn set_label_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_label_format(&mut fmt);
+    }
+
+    fn set_label_font(&mut self, font: &ChartFont) {
+        self.inner.set_label_font(&font.inner);
+    }
+}
+
+// -------------------- ChartDataLabel --------------------
+
+#[pyclass]
+struct ChartDataLabel {
+    inner: rch::ChartDataLabel,
+}
+
+#[pymethods]
+impl ChartDataLabel {
+    #[new]
+    fn new() -> Self {
+        ChartDataLabel {
+            inner: rch::ChartDataLabel::new(),
+        }
+    }
+
+    // The show_* toggles take no argument upstream.
+    fn show_value(&mut self) {
+        self.inner.show_value();
+    }
+
+    fn show_category_name(&mut self) {
+        self.inner.show_category_name();
+    }
+
+    fn show_series_name(&mut self) {
+        self.inner.show_series_name();
+    }
+
+    fn show_leader_lines(&mut self) {
+        self.inner.show_leader_lines();
+    }
+
+    fn show_legend_key(&mut self) {
+        self.inner.show_legend_key();
+    }
+
+    fn show_percentage(&mut self) {
+        self.inner.show_percentage();
+    }
+
+    fn show_x_value(&mut self) {
+        self.inner.show_x_value();
+    }
+
+    fn show_y_value(&mut self) {
+        self.inner.show_y_value();
+    }
+
+    fn set_hidden(&mut self) {
+        self.inner.set_hidden();
+    }
+
+    fn set_position(&mut self, position: &str) -> PyResult<()> {
+        let parsed = parse_label_position(position)?;
+        self.inner.set_position(parsed);
+        Ok(())
+    }
+
+    fn set_num_format(&mut self, num_format: &str) {
+        self.inner.set_num_format(num_format);
+    }
+
+    // Upstream takes a char, so reject anything that isn't exactly one.
+    fn set_separator(&mut self, separator: &str) -> PyResult<()> {
+        let mut chars = separator.chars();
+        let first = chars.next();
+        if first.is_none() || chars.next().is_some() {
+            let message = format!(
+                "set_separator() expects exactly one character, got {separator:?}"
+            );
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(message));
+        }
+        self.inner.set_separator(first.unwrap());
+        Ok(())
+    }
+
+    // A literal string, or a range reference holding the label text.
+    fn set_value(&mut self, value: &str) {
+        self.inner.set_value(value);
+    }
+
+    // Marks this label as a custom one, for set_custom_data_labels().
+    fn to_custom(&mut self) {
+        self.inner = self.inner.to_custom();
+    }
+
+    fn set_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_format(&mut fmt);
+    }
+
+    fn set_font(&mut self, font: &ChartFont) {
+        self.inner.set_font(&font.inner);
+    }
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Workbook>()?;
@@ -3808,5 +4121,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ChartSeries>()?;
     m.add_class::<ChartFont>()?;
     m.add_class::<ChartFormat>()?;
+    m.add_class::<ChartMarker>()?;
+    m.add_class::<ChartTrendline>()?;
+    m.add_class::<ChartDataLabel>()?;
     Ok(())
 }
