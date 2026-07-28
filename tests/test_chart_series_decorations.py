@@ -253,6 +253,8 @@ def test_data_label_all_show_toggles():
 
 def test_data_label_x_and_y_value_for_scatter():
     def configure(series):
+        # Upstream rejects a scatter chart with no categories range.
+        series.set_categories("Sheet1!$A$1:$A$5")
         label = ChartDataLabel()
         label.show_x_value()
         label.show_y_value()
@@ -265,7 +267,6 @@ def test_data_label_x_and_y_value_for_scatter():
     "name,val",
     [
         ("center", "ctr"),
-        ("right", "r"),
         ("left", "l"),
         ("above", "t"),
         ("below", "b"),
@@ -283,6 +284,21 @@ def test_data_label_positions(name, val):
         series.set_data_label(label)
 
     assert f'<c:dLblPos val="{val}"/>' in _chart_xml(configure)
+
+
+def test_data_label_right_is_the_line_chart_default_and_omitted():
+    """Line charts set default_label_position to Right, and upstream only
+    writes dLblPos when the position differs from that default."""
+
+    def configure(series):
+        label = ChartDataLabel()
+        label.show_value()
+        label.set_position("right")
+        series.set_data_label(label)
+
+    xml = _chart_xml(configure)
+    assert "<c:dLbls>" in xml
+    assert "<c:dLblPos" not in xml
 
 
 def test_data_label_default_position_is_accepted():
@@ -419,3 +435,67 @@ def test_marker_trendline_and_labels_together():
     assert '<c:symbol val="circle"/>' in xml
     assert '<c:trendlineType val="movingAvg"/>' in xml
     assert '<c:dLblPos val="t"/>' in xml
+
+
+# ------------------- push_series default ordering -------------------
+# Upstream's push_series applies chart-type defaults after copying the
+# caller's series, clobbering a marker set beforehand. Chart.push_series
+# goes through add_series to restore the right precedence. These pin both
+# halves of that: the caller wins, but the default still applies when the
+# caller made no choice.
+
+
+def test_marker_survives_push_series_on_a_line_chart():
+    """The regression this ordering fix exists for."""
+
+    def configure(series):
+        marker = ChartMarker()
+        marker.set_type("diamond")
+        marker.set_size(8)
+        series.set_marker(marker)
+
+    xml = _chart_xml(configure)
+    assert '<c:symbol val="diamond"/>' in xml
+    assert '<c:size val="8"/>' in xml
+
+
+def test_line_chart_without_a_marker_still_defaults_to_none():
+    """The default must still apply when the caller sets no marker."""
+
+    def configure(series):
+        pass
+
+    assert '<c:symbol val="none"/>' in _chart_xml(configure)
+
+
+@pytest.mark.parametrize(
+    "chart_type", ["line", "line_stacked", "line_percent_stacked", "radar"]
+)
+def test_marker_survives_on_every_markers_off_chart_type(chart_type):
+    def configure(series):
+        marker = ChartMarker()
+        marker.set_type("square")
+        series.set_marker(marker)
+
+    assert '<c:symbol val="square"/>' in _chart_xml(configure, chart_type)
+
+
+def test_scatter_default_hidden_line_still_applied():
+    """Plain scatter gets a hidden 2.25pt line unless a format is set."""
+
+    def configure(series):
+        series.set_categories("Sheet1!$A$1:$A$5")
+
+    # 2.25pt in EMU.
+    assert 'w="28575"' in _chart_xml(configure, chart_type="scatter")
+
+
+def test_scatter_caller_format_wins_over_the_default_line():
+    def configure(series):
+        series.set_categories("Sheet1!$A$1:$A$5")
+        fmt = ChartFormat()
+        fmt.set_line_color("#FF0000")
+        fmt.set_line_width(1.0)
+        series.set_format(fmt)
+
+    assert "FF0000" in _chart_xml(configure, chart_type="scatter")
