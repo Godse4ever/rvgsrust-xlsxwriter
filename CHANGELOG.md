@@ -25,6 +25,21 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Charts, part 1: `Chart` and `ChartSeries` classes plus
+  `Worksheet.insert_chart(row, col, chart, x_offset=0, y_offset=0)`.
+  Covers all 23 chart types, series ranges and options, and the title,
+  x/y axis and legend settings.
+  Axes, titles and legends are flattened onto `Chart` as `set_x_axis_*`,
+  `set_title_*` and `set_legend_*` rather than being separate classes,
+  because `ChartAxis::new`, `ChartTitle::new` and `ChartLegend::new` are
+  `pub(crate)` upstream and cannot be constructed from a binding.
+  Series are attached with `Chart.push_series(series)` rather than being
+  passed to `insert_chart`. `Chart` does not derive `Clone` upstream, so
+  pushing at insert time would mutate the only copy and silently duplicate
+  series if the same chart were inserted twice, with no `remove_series` to
+  undo it.
+  `ChartFormat`, `ChartFont`, `ChartMarker`, `ChartTrendline` and
+  `ChartDataLabel` follow in parts 2 and 3.
 - Sparklines: a single `Sparkline` class plus
   `Worksheet.add_sparkline(row, col, sparkline)` and
   `Worksheet.add_sparkline_group(first_row, first_col, last_row, last_col,

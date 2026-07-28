@@ -471,6 +471,67 @@ Scaling: `set_line_weight`, `set_custom_max`, `set_custom_min`,
 `set_right_to_left`, `set_column_order`, and `show_empty_cells_as` with
 `gaps`, `zero` or `connected`.
 
+## Charts
+
+```python
+from rvgsrust_xlsxwriter import Workbook, Chart, ChartSeries
+
+wb = Workbook()
+ws = wb.add_worksheet()
+for i, (label, value) in enumerate([("Jan", 10), ("Feb", 40), ("Mar", 20)]):
+    ws.write(i, 0, label)
+    ws.write(i, 1, value)
+
+series = ChartSeries()
+series.set_categories("Sheet1!$A$1:$A$3")
+series.set_values("Sheet1!$B$1:$B$3")
+series.set_name("Revenue")
+
+chart = Chart("column")
+chart.push_series(series)
+chart.set_title_name("Revenue by month")
+chart.set_x_axis_name("Month")
+chart.set_y_axis_name("USD")
+chart.set_y_axis_min(0.0)
+chart.set_legend_position("bottom")
+ws.insert_chart(0, 3, chart, 10, 10)   # last two args are pixel offsets
+
+wb.close("chart.xlsx")
+```
+
+The 23 chart types are `area`, `area_stacked`, `area_percent_stacked`,
+`bar`, `bar_stacked`, `bar_percent_stacked`, `column`, `column_stacked`,
+`column_percent_stacked`, `doughnut`, `line`, `line_stacked`,
+`line_percent_stacked`, `pie`, `radar`, `radar_with_markers`,
+`radar_filled`, `scatter`, `scatter_straight`,
+`scatter_straight_with_markers`, `scatter_smooth`,
+`scatter_smooth_with_markers`, `stock`.
+
+Series are built separately and attached with `Chart.push_series()`.
+`ChartSeries` supports `set_values`, `set_categories`, `set_name`,
+`set_secondary_axis`, `set_overlap`, `set_gap`, `set_smooth`,
+`set_invert_if_negative`, `set_invert_if_negative_color`,
+`delete_from_legend` and `set_point_colors`.
+
+Axes, titles and legends are **not** separate objects, because their
+constructors are `pub(crate)` upstream. They are flattened onto `Chart` as
+`set_title_name` / `set_title_hidden` / `set_title_overlay`,
+`set_x_axis_*` and `set_y_axis_*` (`name`, `min`, `max`, `major_unit`,
+`minor_unit`, `log_base`, `num_format`, `hidden`, `reverse`,
+`major_gridlines`, `minor_gridlines`, plus `date_axis` / `text_axis` on x),
+and `set_legend_position` / `set_legend_hidden` / `set_legend_overlay`.
+
+Legend positions are `right`, `left`, `top`, `bottom`, `top_right`. There
+is no overlay position; use `set_legend_overlay(True)` alongside one of
+those.
+
+Note that `set_title_hidden()`, `set_legend_hidden()`,
+`set_x_axis_reverse()`, `set_y_axis_reverse()`, `show_hidden_data()` and
+`show_na_as_empty_cell()` take no arguments, matching upstream.
+
+Chart formatting (`ChartFormat`, `ChartFont`) and series decorations
+(`ChartMarker`, `ChartTrendline`, `ChartDataLabel`) are not exposed yet.
+
 ## Performance & Benchmarks
 
 See [PERFORMANCE.md](PERFORMANCE.md) for full tables and methodology.
