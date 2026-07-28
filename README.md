@@ -432,6 +432,45 @@ from the scale or bar definition itself rather than from a format record.
 
 Icon sets are not exposed yet.
 
+## Sparklines
+
+```python
+from rvgsrust_xlsxwriter import Workbook, Sparkline
+
+wb = Workbook()
+ws = wb.add_worksheet()
+for r in range(5):
+    for c in range(5):
+        ws.write(r, c, (r + 1) * (c + 1))
+
+sp = Sparkline()
+sp.set_range("Sheet1!A1:E1")
+sp.set_type("column")
+sp.show_high_point(True)
+sp.set_sparkline_color("#638EC6")
+ws.add_sparkline(0, 5, sp)
+
+# A grouped sparkline shares one set of options across a range. Its data
+# range must be 2D, one row per sparkline in the group.
+group = Sparkline()
+group.set_range("Sheet1!A1:E5")
+group.set_group_max(True)
+ws.add_sparkline_group(0, 6, 4, 6, group)
+
+wb.close("sparklines.xlsx")
+```
+
+Types are `line` (default), `column`, and `win_lose`. Point markers:
+`show_high_point`, `show_low_point`, `show_first_point`,
+`show_last_point`, `show_negative_points`, `show_markers`, `show_axis`,
+`show_hidden_data`. Colors: `set_sparkline_color`, plus
+`set_high_point_color`, `set_low_point_color`, `set_first_point_color`,
+`set_last_point_color`, `set_negative_points_color`, `set_markers_color`.
+Scaling: `set_line_weight`, `set_custom_max`, `set_custom_min`,
+`set_group_max`, `set_group_min`, `set_style`. Also `set_date_range`,
+`set_right_to_left`, `set_column_order`, and `show_empty_cells_as` with
+`gaps`, `zero` or `connected`.
+
 ## Performance & Benchmarks
 
 See [PERFORMANCE.md](PERFORMANCE.md) for full tables and methodology.

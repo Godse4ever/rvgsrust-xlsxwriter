@@ -95,6 +95,7 @@ from rvgsrust_xlsxwriter._core import (
     ConditionalFormat2ColorScale,
     ConditionalFormat3ColorScale,
     ConditionalFormatDataBar,
+    Sparkline,
 )
 
 
@@ -164,4 +165,5 @@ __all__ = [
     "ConditionalFormat2ColorScale",
     "ConditionalFormat3ColorScale",
     "ConditionalFormatDataBar",
+    "Sparkline",
 ]

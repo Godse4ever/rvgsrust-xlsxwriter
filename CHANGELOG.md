@@ -25,6 +25,20 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Sparklines: a single `Sparkline` class plus
+  `Worksheet.add_sparkline(row, col, sparkline)` and
+  `Worksheet.add_sparkline_group(first_row, first_col, last_row, last_col,
+  sparkline)`. Covers the three types, all seven point-marker toggles, all
+  seven colors, line weight, custom and group min/max, style presets, date
+  ranges, right-to-left, column order, and empty-cell handling.
+  As with the conditional formats, enum-valued options are strings
+  validated with a `ValueError` listing the accepted values. The type
+  accepts `win_lose` (upstream spells the variant `WinLose`) and also
+  `win_loss`, since that is the spelling most people reach for first; both
+  serialize to Excel's `type="stacked"`.
+  Grouped sparklines require a 2D data range, one row per sparkline;
+  passing a 1D range raises `ValueError`, as does adding a sparkline with
+  no range set.
 - Conditional formatting: 12 rule types, each a `#[pyclass]` wrapping the
   matching `rust_xlsxwriter` builder -- `ConditionalFormatCell`, `Blank`,
   `Duplicate`, `Error`, `Formula`, `Average`, `Top`, `Text`, `Date`,
