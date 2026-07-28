@@ -389,6 +389,29 @@ Column and row formats apply to cells that don't carry a format of their
 own, which makes them the way to reformat data written by
 `write_dataframe`.
 
+## Page setup and printing
+
+```python
+ws.set_landscape()
+ws.set_paper_size(9)                                  # 9 = A4, 1 = Letter
+ws.set_margins(0.5, 0.5, 0.75, 0.75, 0.3, 0.3)        # inches
+ws.set_print_area(0, 0, 49, 7)
+ws.set_repeat_rows(0, 0)                              # header row on every page
+ws.set_print_fit_to_pages(1, 0)                       # 1 page wide, any height
+ws.set_print_gridlines(True)
+ws.set_print_center_horizontally(True)
+ws.set_page_breaks([25, 50])
+```
+
+Also `set_portrait`, `set_page_order`, `set_repeat_columns`,
+`set_print_scale`, `set_vertical_page_breaks`, `set_print_headings`,
+`set_print_center_vertically`, `set_print_black_and_white`,
+`set_print_draft` and `set_print_first_page_number`.
+
+These set worksheet metadata rather than writing cells, so they are
+unaffected by `constant_memory` row ordering even where they take row
+numbers.
+
 ## Conditional Formatting
 
 Twelve rule types are supported. Build a rule object, then attach it to a

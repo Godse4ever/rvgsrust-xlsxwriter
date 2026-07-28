@@ -25,6 +25,14 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Page setup and print settings: all 19 `Worksheet` methods, mirroring
+  upstream names 1:1 -- orientation, paper size, margins, print area,
+  repeat rows and columns, fit-to-pages, print scale, horizontal and
+  vertical page breaks, gridlines, headings, centring, black and white,
+  draft and first page number. No new classes needed.
+  These set worksheet metadata rather than writing cells, so none are
+  guarded by the constant-memory row-order check even where they take row
+  numbers. Closes `MISSING.md` section 2b.
 - `Worksheet.set_column_format`, `set_column_range_format`,
   `set_row_format`, `set_cell_format` and `set_range_format`. Column and
   row formats apply to cells without a format of their own, so these are
