@@ -128,7 +128,9 @@ def test_write_dataframe_pandas_large_utf8():
 
 @pytest.mark.skipif(not HAS_PYARROW, reason="PyArrow not installed")
 def test_write_dataframe_unsupported_type_raises():
-    table = pa.table({"d": pa.array([1, 2], type=pa.int32())})
+    # int32 used to stand in for "unsupported" here; it is supported as of
+    # the extended Arrow types work, so this uses binary, which is not.
+    table = pa.table({"d": pa.array([b"x", b"y"], type=pa.binary())})
     wb = Workbook()
     ws = wb.add_worksheet()
     with pytest.raises(TypeError):
@@ -254,12 +256,7 @@ def test_write_dataframe_polars_utf8view():
 # timestamps). See src/lib.rs SUPPORTED_ARROW_TYPES.
 # ---------------------------------------------------------------------
 
-try:
-    import pyarrow as pa
-    HAS_PYARROW = True
-except ImportError:
-    HAS_PYARROW = False
-
+# pa / HAS_PYARROW are already defined near the top of this module.
 requires_pyarrow = pytest.mark.skipif(not HAS_PYARROW, reason="pyarrow not installed")
 
 
