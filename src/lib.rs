@@ -1563,7 +1563,14 @@ impl Worksheet {
     ) -> PyResult<()> {
         self.check_row_order(row)?;
         let inner = sparkline.inner.clone();
-        self.with_sheet(py, |sheet| sheet.add_sparkline(row, col, &inner).map(|_| ()))
+        // rustfmt's fn_call_width (default 60) applies to the argument
+        // list of with_sheet: "py, |sheet| sheet.add_sparkline(row, col,
+        // &inner).map(|_| ())" is 61 chars, so the closure body has to go
+        // in a block. This is why the pre-existing insert_image call next
+        // door fits on one line at exactly 60 and this one doesn't.
+        self.with_sheet(py, |sheet| {
+            sheet.add_sparkline(row, col, &inner).map(|_| ())
+        })
     }
 
     // Adds a grouped sparkline spanning a range of cells. Grouped
