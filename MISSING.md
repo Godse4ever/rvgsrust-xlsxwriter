@@ -219,6 +219,29 @@ values that remain missing are the icon-set thresholds specifically.
 
 ---
 
+## Suspected upstream bug
+
+`Worksheet::set_print_first_page_number` (`worksheet.rs:18697`) writes the
+page number into the `useFirstPageNumber` attribute and never emits a
+`firstPageNumber` attribute:
+
+```rust
+if self.first_page_number > 0 {
+    attributes.push(("useFirstPageNumber", self.first_page_number.to_string()));
+}
+```
+
+Per ECMA-376, `pageSetup@useFirstPageNumber` is a boolean and
+`pageSetup@firstPageNumber` is the uint carrying the value. Excel treats a
+nonzero boolean as true, so the feature is enabled but the first page
+number probably defaults to 1 rather than the requested value.
+
+Our binding passes the call straight through, so it inherits the
+behaviour. `tests/test_page_setup.py::test_print_first_page_number` pins
+what is currently written rather than what ought to be, and will fail if
+upstream changes it. Not worked around locally: doing so would mean
+writing worksheet XML ourselves. Worth reporting upstream.
+
 ## Suggested order
 
 Ranked by value per unit of effort, not by section order above:
