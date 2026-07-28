@@ -636,6 +636,14 @@ rather than shipping a large surface untested:
 
 ---
 
+## Performance TODO
+
+Measured bottlenecks and untried optimisations are logged in
+[PERFORMANCE_TODO.md](PERFORMANCE_TODO.md), separately from the benchmark
+results in [PERFORMANCE.md](PERFORMANCE.md). Nothing there is implemented
+yet, by design: they change hot paths and each needs its own before/after
+benchmark run.
+
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
