@@ -25,6 +25,19 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- Charts, part 3: `ChartMarker`, `ChartTrendline` and `ChartDataLabel`,
+  attached via `ChartSeries.set_marker`, `set_trendline`, `set_data_label`
+  and `set_custom_data_labels`. All three accept a `ChartFormat`, and the
+  trendline and data label also accept a `ChartFont`.
+  Automatic and no-marker are methods (`set_automatic()`, `set_none()`)
+  rather than marker types, matching upstream. Trendline `polynomial` and
+  `moving_average` take a period, defaulting to 2. `display_equation` and
+  `display_r_squared` are exposed with a `set_` prefix for consistency
+  with the rest of the binding, though upstream omits it.
+  This completes the chart work begun in parts 1 and 2. Still outstanding
+  for the parity audit: icon sets, pattern and gradient fills, error bars,
+  drop lines, high-low lines, up-down bars, data tables, combined charts,
+  and chart/plot area formatting.
 - Charts, part 2: `ChartFormat` and `ChartFont`, attachable to a series,
   a chart title, either axis (both the axis labels and the axis name), and
   the legend.

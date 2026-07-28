@@ -584,6 +584,57 @@ the same four for `y_axis`, and `set_legend_font` / `set_legend_format`.
 
 Pattern and gradient fills are not exposed yet.
 
+### Series markers, trendlines and data labels
+
+```python
+from rvgsrust_xlsxwriter import (
+    Chart, ChartSeries, ChartMarker, ChartTrendline, ChartDataLabel,
+)
+
+series = ChartSeries()
+series.set_values("Sheet1!$B$1:$B$5")
+
+marker = ChartMarker()
+marker.set_type("circle")
+marker.set_size(7)
+series.set_marker(marker)
+
+trend = ChartTrendline()
+trend.set_type("moving_average", 3)
+trend.set_display_r_squared(True)
+series.set_trendline(trend)
+
+label = ChartDataLabel()
+label.show_value()
+label.set_position("above")
+series.set_data_label(label)
+
+chart = Chart("line")
+chart.push_series(series)
+```
+
+Marker types are `square`, `diamond`, `triangle`, `x`, `star`,
+`short_dash`, `long_dash`, `circle`, `plus_sign`. Automatic and no-marker
+are **not** types: use `set_automatic()` or `set_none()`.
+
+Trendline types are `none`, `linear`, `exponential`, `logarithmic`
+(not `logarithm`), `power`, `polynomial`, `moving_average`. The last two
+take a period as the second argument to `set_type`, defaulting to 2.
+`set_display_equation` and `set_display_r_squared` are named with a `set_`
+prefix here for consistency, though upstream omits it.
+
+Data labels support `show_value`, `show_category_name`,
+`show_series_name`, `show_leader_lines`, `show_legend_key`,
+`show_percentage`, `show_x_value`, `show_y_value`, `set_hidden`,
+`set_position`, `set_num_format`, `set_separator`, `set_value`,
+`set_font`, `set_format` and `to_custom`. Positions are `default`,
+`center`, `right`, `left`, `above`, `below`, `inside_base`, `inside_end`,
+`outside_end`, `best_fit`.
+
+For per-point labels, build one `ChartDataLabel` per point, call
+`to_custom()` on the ones that should differ, and pass the list to
+`ChartSeries.set_custom_data_labels()`.
+
 ## Performance & Benchmarks
 
 See [PERFORMANCE.md](PERFORMANCE.md) for full tables and methodology.
