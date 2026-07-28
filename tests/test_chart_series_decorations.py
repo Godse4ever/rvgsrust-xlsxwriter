@@ -360,7 +360,7 @@ def test_custom_data_labels():
             label = ChartDataLabel()
             label.show_value()
             label.set_value(text)
-            label.to_custom()
+            label.set_custom()
             labels.append(label)
         series.set_custom_data_labels(labels)
 

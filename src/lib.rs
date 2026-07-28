@@ -4089,7 +4089,12 @@ impl ChartDataLabel {
     }
 
     // Marks this label as a custom one, for set_custom_data_labels().
-    fn to_custom(&mut self) {
+    // Named set_custom rather than to_custom, which is upstream's name:
+    // clippy::wrong_self_convention requires a to_* method to take &self
+    // or self, never &mut self, and it is a default-on style lint that CI
+    // promotes to an error. set_custom also matches the rest of this
+    // binding's naming.
+    fn set_custom(&mut self) {
         self.inner = self.inner.to_custom();
     }
 
