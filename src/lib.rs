@@ -86,6 +86,21 @@ fn parse_color(color: &str) -> PyResult<Color> {
     }
 }
 
+fn parse_diagonal_border(name: &str) -> PyResult<rust_xlsxwriter::FormatDiagonalBorder> {
+    use rust_xlsxwriter::FormatDiagonalBorder as D;
+    match name.to_ascii_lowercase().as_str() {
+        "none" => Ok(D::None),
+        "up" => Ok(D::BorderUp),
+        "down" => Ok(D::BorderDown),
+        "up_down" => Ok(D::BorderUpDown),
+        other => Err(cf_type_err(
+            "diagonal border type",
+            other,
+            "none, up, down, up_down",
+        )),
+    }
+}
+
 fn parse_border(border: &str) -> PyResult<FormatBorder> {
     match border.to_lowercase().as_str() {
         "thin" => Ok(FormatBorder::Thin),
@@ -626,6 +641,112 @@ impl Format {
                 .set_border_left_color(c)
                 .set_border_right_color(c)
         });
+        Ok(slf)
+    }
+
+    // Per-side border colours. set_border_color above sets all four at
+    // once; these target one side each. Note the per-side border *styles*
+    // are already exposed as set_top_border / set_bottom_border /
+    // set_left_border / set_right_border, which reverse upstream's word
+    // order.
+    fn set_border_top_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
+        slf.update(|f| f.set_border_top_color(c));
+        Ok(slf)
+    }
+
+    fn set_border_bottom_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
+        slf.update(|f| f.set_border_bottom_color(c));
+        Ok(slf)
+    }
+
+    fn set_border_left_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
+        slf.update(|f| f.set_border_left_color(c));
+        Ok(slf)
+    }
+
+    fn set_border_right_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
+        slf.update(|f| f.set_border_right_color(c));
+        Ok(slf)
+    }
+
+    // Diagonal borders. The style and colour work like any other side; the
+    // type chooses which diagonal(s) the border is drawn on.
+    fn set_border_diagonal<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
+        slf.update(|f| f.set_border_diagonal(style));
+        Ok(slf)
+    }
+
+    fn set_border_diagonal_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
+        slf.update(|f| f.set_border_diagonal_color(c));
+        Ok(slf)
+    }
+
+    // One of none, up, down, up_down.
+    fn set_border_diagonal_type<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border_type: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let parsed = parse_diagonal_border(border_type)?;
+        slf.update(|f| f.set_border_diagonal_type(parsed));
+        Ok(slf)
+    }
+
+    // Cell protection. These only take effect once the worksheet itself is
+    // protected: everything is locked by default, so set_unlocked is what
+    // makes a cell editable on a protected sheet.
+    fn set_locked(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_locked());
+        slf
+    }
+
+    fn set_unlocked(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_unlocked());
+        slf
+    }
+
+    // Hides the cell's formula in the formula bar on a protected sheet.
+    fn set_hidden(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_hidden());
+        slf
+    }
+
+    fn set_font_strikethrough(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_font_strikethrough());
+        slf
+    }
+
+    // The pattern foreground colour, which pairs with set_pattern and
+    // set_background_color.
+    fn set_foreground_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let c = parse_color(color)?;
+        slf.update(|f| f.set_foreground_color(c));
         Ok(slf)
     }
 

@@ -49,13 +49,11 @@ Worth recording so this is not re-audited:
 
 The single biggest cluster, and the one users hit first.
 
+**Border sides, diagonal borders, cell protection, strikethrough and
+pattern foreground colour are now all exposed.** What remains:
+
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Individual border sides | `format.rs:2030` | `set_border_bottom(style)`, `..._top`, `..._left`, `..._right`, plus `set_border_*_color(color)` | **High** |
-| Diagonal borders | `format.rs:2175` | `set_border_diagonal(style)`, `set_border_diagonal_color`, `set_border_diagonal_type` | Medium |
-| Cell protection | `format.rs:2409`, `2284`, `2299` | `set_locked()`, `set_unlocked()`, `set_hidden()` | **High** |
-| Strikethrough | `format.rs:1329` | `set_font_strikethrough()` | Medium |
-| Pattern foreground colour | `format.rs:1855` | `set_foreground_color(color)` — pairs with the existing background colour | Medium |
 | Quote prefix | `format.rs:2343` | `set_quote_prefix()` | Low |
 | Hyperlink style | `format.rs:2217` | `set_hyperlink()` | Low |
 | Checkbox format | `format.rs:2355` | `set_checkbox()` | Low |
@@ -63,9 +61,24 @@ The single biggest cluster, and the one users hit first.
 | Reading direction | `format.rs:1647` | `set_reading_direction(n)` | Low |
 | `unset_*` inverses | `format.rs:2364` | `unset_bold()`, `unset_italic()`, `unset_text_wrap()`, `unset_shrink()`, `unset_hidden()`, `unset_quote_prefix()` | Low |
 
-**Note on borders:** we expose only `set_border(style)`, which sets all
-four sides. Per-side borders are extremely common in report layout — this
-is the highest-value item in the table.
+### Audit correction
+
+The first version of this file listed **per-side border styles as missing
+and ranked them highest-value. That was wrong** — they were already
+exposed, as `set_top_border` / `set_bottom_border` / `set_left_border` /
+`set_right_border`, which reverse upstream's `set_border_top` word order.
+The diff that produced this file matched on prefix variants but not on
+reordered words, so it reported four methods as absent that were present.
+
+`Worksheet::set_freeze_panes` was the same mistake: we expose it as
+`freeze_panes`, without the `set_` prefix.
+
+Both are corrected above. The lesson for anyone re-running this audit: a
+name-based diff will over-report whenever the binding renames a method,
+and this binding renames deliberately in several places
+(`set_display_equation` for upstream's `display_equation`, `set_custom`
+for `to_custom`, the reversed border names). Treat any single entry as a
+hypothesis to check against `src/lib.rs`, not as fact.
 
 ---
 
@@ -249,8 +262,9 @@ Ranked by value per unit of effort, not by section order above:
 1. ~~**`set_column_format` / `set_row_format` / `set_range_format`**~~ —
    done, see section 2a.
 2. ~~**Page setup and print settings**~~ — done, see section 2b.
-3. **Per-side borders and cell protection on `Format`** — same shape as
-   existing `Format` setters.
+3. ~~**Per-side borders and cell protection on `Format`**~~ — done. The
+   border styles already existed; the colours, diagonals, protection,
+   strikethrough and foreground colour have been added.
 4. **Headers and footers** (text only; images need an `Image` pyclass).
 5. **`save_to_buffer()`** — one method, unlocks web-service use.
 6. **Data validation** — needs a new pyclass, but high demand.

@@ -25,6 +25,17 @@ current performance numbers (an early comparison against
 PERFORMANCE.md for what's confirmed vs. still estimated).
 
 ### Added
+- `Format` completions: per-side border colours
+  (`set_border_top_color` and the other three sides), diagonal borders
+  (`set_border_diagonal`, `set_border_diagonal_color`,
+  `set_border_diagonal_type`), cell protection (`set_locked`,
+  `set_unlocked`, `set_hidden`), `set_font_strikethrough` and
+  `set_foreground_color`.
+  Note the per-side border *styles* were already exposed all along, as
+  `set_top_border` and friends, which reverse upstream's `set_border_top`
+  word order. `MISSING.md` had wrongly listed them as missing and ranked
+  them highest-value; that is corrected, along with the same mistake for
+  `freeze_panes`.
 - Page setup and print settings: all 19 `Worksheet` methods, mirroring
   upstream names 1:1 -- orientation, paper size, margins, print area,
   repeat rows and columns, fit-to-pages, print scale, horizontal and
