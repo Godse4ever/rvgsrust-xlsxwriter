@@ -98,6 +98,8 @@ from rvgsrust_xlsxwriter._core import (
     Sparkline,
     Chart,
     ChartSeries,
+    ChartFont,
+    ChartFormat,
 )
 
 
@@ -170,4 +172,6 @@ __all__ = [
     "Sparkline",
     "Chart",
     "ChartSeries",
+    "ChartFont",
+    "ChartFormat",
 ]

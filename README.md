@@ -532,6 +532,58 @@ Note that `set_title_hidden()`, `set_legend_hidden()`,
 Chart formatting (`ChartFormat`, `ChartFont`) and series decorations
 (`ChartMarker`, `ChartTrendline`, `ChartDataLabel`) are not exposed yet.
 
+### Chart formatting
+
+`ChartFormat` handles fills, lines and borders; `ChartFont` handles text.
+
+```python
+from rvgsrust_xlsxwriter import Chart, ChartSeries, ChartFormat, ChartFont
+
+bar_style = ChartFormat()
+bar_style.set_fill_color("#4472C4")
+bar_style.set_border_color("#000000")
+bar_style.set_border_width(1.0)
+
+title_font = ChartFont()
+title_font.set_bold()
+title_font.set_size(16.0)
+title_font.set_color("#333333")
+
+series = ChartSeries()
+series.set_values("Sheet1!$B$1:$B$5")
+series.set_format(bar_style)
+
+chart = Chart("column")
+chart.push_series(series)
+chart.set_title_name("Styled")
+chart.set_title_font(title_font)
+```
+
+`ChartLine` and `ChartSolidFill` are not separate classes. Upstream they
+exist only to be handed to `ChartFormat`, so they are flattened into it:
+`set_line_color`, `set_line_width`, `set_line_dash_type`,
+`set_line_transparency`, `set_line_hidden`, `set_no_line`, the same six
+under `set_border_*` / `set_no_border`, and `set_fill_color`,
+`set_fill_transparency`, `set_no_fill`. Line state is kept per format
+object, so successive calls compose.
+
+Dash types are `solid`, `round_dot`, `square_dot`, `dash`, `dash_dot`,
+`long_dash`, `long_dash_dot`, `long_dash_dot_dot`.
+
+`ChartFont` supports `set_bold`, `unset_bold`, `set_default_bold`,
+`set_italic`, `set_underline`, `set_strikethrough`, `set_color`,
+`set_name`, `set_size`, `set_rotation`, `set_right_to_left`,
+`set_pitch_family` and `set_character_set`. Note `set_bold`, `set_italic`,
+`set_underline` and `set_strikethrough` take no arguments, matching
+upstream.
+
+Attachment points: `ChartSeries.set_format`, and on `Chart`
+`set_title_font` / `set_title_format`, `set_x_axis_font` /
+`set_x_axis_name_font` / `set_x_axis_format` / `set_x_axis_name_format`,
+the same four for `y_axis`, and `set_legend_font` / `set_legend_format`.
+
+Pattern and gradient fills are not exposed yet.
+
 ## Performance & Benchmarks
 
 See [PERFORMANCE.md](PERFORMANCE.md) for full tables and methodology.
