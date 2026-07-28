@@ -367,6 +367,28 @@ Date and timestamp columns are written as real Excel dates with a `yyyy-mm-dd` /
 
 ---
 
+## Column, row and range formats
+
+```python
+from rvgsrust_xlsxwriter import Workbook, Format
+
+wb = Workbook()
+ws = wb.add_worksheet()
+
+money = Format()
+money.set_num_format("#,##0.00")
+
+ws.set_column_format(2, money)              # whole column
+ws.set_column_range_format(3, 5, money)     # columns D-F
+ws.set_row_format(0, money)                 # whole row
+ws.set_cell_format(0, 0, money)             # single cell
+ws.set_range_format(1, 0, 10, 4, money)     # a rectangular range
+```
+
+Column and row formats apply to cells that don't carry a format of their
+own, which makes them the way to reformat data written by
+`write_dataframe`.
+
 ## Conditional Formatting
 
 Twelve rule types are supported. Build a rule object, then attach it to a

@@ -1619,6 +1619,68 @@ impl Worksheet {
         })
     }
 
+    // Applies a format to a whole column. Cells written afterwards inherit
+    // it unless they carry a format of their own. This is the escape hatch
+    // that was missing when write_dataframe gained date support: without
+    // it a caller had no way to reformat a column after the fact.
+    fn set_column_format(&self, py: Python<'_>, col: u16, format: &Format) -> PyResult<()> {
+        let fmt = &format.inner;
+        self.with_sheet(py, |sheet| {
+            sheet.set_column_format(col, fmt)?;
+            Ok(())
+        })
+    }
+
+    fn set_column_range_format(
+        &self,
+        py: Python<'_>,
+        first_col: u16,
+        last_col: u16,
+        format: &Format,
+    ) -> PyResult<()> {
+        let fmt = &format.inner;
+        self.with_sheet(py, |sheet| {
+            sheet.set_column_range_format(first_col, last_col, fmt)?;
+            Ok(())
+        })
+    }
+
+    fn set_row_format(&self, py: Python<'_>, row: u32, format: &Format) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let fmt = &format.inner;
+        self.with_sheet(py, |sheet| {
+            sheet.set_row_format(row, fmt)?;
+            Ok(())
+        })
+    }
+
+    fn set_cell_format(&self, py: Python<'_>, row: u32, col: u16, format: &Format) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let fmt = &format.inner;
+        self.with_sheet(py, |sheet| {
+            sheet.set_cell_format(row, col, fmt)?;
+            Ok(())
+        })
+    }
+
+    fn set_range_format(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        format: &Format,
+    ) -> PyResult<()> {
+        self.check_row_order_range(first_row, last_row)?;
+        let fmt = &format.inner;
+        let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
+        self.with_sheet(py, |sheet| {
+            sheet.set_range_format(r1, c1, r2, c2, fmt)?;
+            Ok(())
+        })
+    }
+
     #[pyo3(signature = (first_row, first_col, last_row, last_col, value, format=None))]
     fn merge_range(
         &self,
