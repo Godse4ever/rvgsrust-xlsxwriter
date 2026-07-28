@@ -1681,6 +1681,173 @@ impl Worksheet {
         })
     }
 
+    // ---- page setup and printing ----
+    // Sheet-level page properties. None of these are guarded by the
+    // constant-memory row-order check: they set worksheet metadata rather
+    // than writing cells, so they are order-independent even though some
+    // take row numbers.
+
+    fn set_landscape(&self, py: Python<'_>) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_landscape();
+            Ok(())
+        })
+    }
+
+    fn set_portrait(&self, py: Python<'_>) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_portrait();
+            Ok(())
+        })
+    }
+
+    // Excel's numeric paper size codes: 1 = Letter, 9 = A4, 8 = A3.
+    fn set_paper_size(&self, py: Python<'_>, paper_size: u8) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_paper_size(paper_size);
+            Ok(())
+        })
+    }
+
+    // true prints down then across, false across then down.
+    fn set_page_order(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_page_order(enable);
+            Ok(())
+        })
+    }
+
+    // Margins in inches.
+    fn set_margins(
+        &self,
+        py: Python<'_>,
+        left: f64,
+        right: f64,
+        top: f64,
+        bottom: f64,
+        header: f64,
+        footer: f64,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_margins(left, right, top, bottom, header, footer);
+            Ok(())
+        })
+    }
+
+    fn set_print_area(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+    ) -> PyResult<()> {
+        let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_area(r1, c1, r2, c2)?;
+            Ok(())
+        })
+    }
+
+    // Rows repeated at the top of every printed page.
+    fn set_repeat_rows(&self, py: Python<'_>, first_row: u32, last_row: u32) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_repeat_rows(first_row, last_row)?;
+            Ok(())
+        })
+    }
+
+    // Columns repeated at the left of every printed page.
+    fn set_repeat_columns(&self, py: Python<'_>, first_col: u16, last_col: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_repeat_columns(first_col, last_col)?;
+            Ok(())
+        })
+    }
+
+    // Scale the sheet to fit a given number of pages. 0 means automatic.
+    fn set_print_fit_to_pages(&self, py: Python<'_>, width: u16, height: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_fit_to_pages(width, height);
+            Ok(())
+        })
+    }
+
+    // Percentage, 10 to 400. Mutually exclusive with fit-to-pages in Excel.
+    fn set_print_scale(&self, py: Python<'_>, scale: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_scale(scale);
+            Ok(())
+        })
+    }
+
+    // Horizontal page breaks, given as the row numbers to break above.
+    fn set_page_breaks(&self, py: Python<'_>, breaks: Vec<u32>) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_page_breaks(&breaks)?;
+            Ok(())
+        })
+    }
+
+    // Vertical page breaks. Note upstream takes u32 column numbers here,
+    // not the u16 used elsewhere.
+    fn set_vertical_page_breaks(&self, py: Python<'_>, breaks: Vec<u32>) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_vertical_page_breaks(&breaks)?;
+            Ok(())
+        })
+    }
+
+    fn set_print_gridlines(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_gridlines(enable);
+            Ok(())
+        })
+    }
+
+    // Print the row numbers and column letters.
+    fn set_print_headings(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_headings(enable);
+            Ok(())
+        })
+    }
+
+    fn set_print_center_horizontally(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_center_horizontally(enable);
+            Ok(())
+        })
+    }
+
+    fn set_print_center_vertically(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_center_vertically(enable);
+            Ok(())
+        })
+    }
+
+    fn set_print_black_and_white(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_black_and_white(enable);
+            Ok(())
+        })
+    }
+
+    fn set_print_draft(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_draft(enable);
+            Ok(())
+        })
+    }
+
+    fn set_print_first_page_number(&self, py: Python<'_>, page_number: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_print_first_page_number(page_number);
+            Ok(())
+        })
+    }
+
     #[pyo3(signature = (first_row, first_col, last_row, last_col, value, format=None))]
     fn merge_range(
         &self,

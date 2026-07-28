@@ -87,25 +87,18 @@ Still missing in this area:
 | Range format with a border | `worksheet.rs:10549` | `set_range_format_with_border(r1, c1, r2, c2, format, border)` | Medium |
 | Clear a cell's format | `worksheet.rs:10776` | `clear_cell_format(row, col)` | Low |
 
-### 2b. Page setup and printing — **High as a group**
+### 2b. Page setup and printing — **CLOSED**
 
-Anchor: `worksheet.rs:12853` onward.
+All 19 methods are now exposed, mirroring upstream names 1:1:
+`set_landscape`, `set_portrait`, `set_paper_size`, `set_page_order`,
+`set_margins`, `set_print_area`, `set_repeat_rows`, `set_repeat_columns`,
+`set_print_fit_to_pages`, `set_print_scale`, `set_page_breaks`,
+`set_vertical_page_breaks`, `set_print_gridlines`, `set_print_headings`,
+`set_print_center_horizontally`, `set_print_center_vertically`,
+`set_print_black_and_white`, `set_print_draft`,
+`set_print_first_page_number`.
 
-`set_landscape()` / `set_portrait()` (`12940`), `set_paper_size(n)`
-(`12853`), `set_margins(...)` (`13811`), `set_print_area(...)`
-(`14278`), `set_print_fit_to_pages(w, h)` (`14017`),
-`set_repeat_rows(first, last)` / `set_repeat_columns(...)` (`14367`),
-`set_page_breaks(rows)` / `set_vertical_page_breaks(cols)` (`13040`),
-plus `set_print_scale`, `set_print_gridlines`, `set_print_headings`,
-`set_print_center_horizontally` / `_vertically`, `set_print_black_and_white`,
-`set_print_draft`, `set_print_first_page_number`, `set_page_order`.
-
-Suggested shape: mirror upstream names 1:1 on `Worksheet`. Nearly all take
-a bool or a small integer, so none need a new class.
-
-Anyone generating a printable report needs most of this. It is also the
-cheapest large win in the whole audit: no new pyclasses, no enum wrappers
-beyond paper size.
+None needed a new pyclass. Paper size stays a numeric Excel code.
 
 ### 2c. Headers and footers — **High**
 
@@ -232,8 +225,7 @@ Ranked by value per unit of effort, not by section order above:
 
 1. ~~**`set_column_format` / `set_row_format` / `set_range_format`**~~ —
    done, see section 2a.
-2. **Page setup and print settings** — large surface, trivial individually,
-   no new pyclasses.
+2. ~~**Page setup and print settings**~~ — done, see section 2b.
 3. **Per-side borders and cell protection on `Format`** — same shape as
    existing `Format` setters.
 4. **Headers and footers** (text only; images need an `Image` pyclass).
