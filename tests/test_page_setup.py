@@ -168,8 +168,21 @@ def test_print_draft():
 
 
 def test_print_first_page_number():
+    """Pins upstream's actual output, which looks wrong.
+
+    rust_xlsxwriter writes the page number into the useFirstPageNumber
+    attribute (worksheet.rs:18697) and never emits a firstPageNumber
+    attribute. In ECMA-376 those are distinct: useFirstPageNumber is a
+    boolean and firstPageNumber is the uint holding the value. Excel reads
+    a nonzero boolean as true, so the feature switches on, but the number
+    itself most likely falls back to 1.
+
+    This test asserts what is written, not what ought to be, so it will
+    fail loudly if upstream fixes it -- which is the point.
+    """
     sheet, _ = _xml(lambda ws: ws.set_print_first_page_number(5))
-    assert 'useFirstPageNumber="1"' in sheet
+    assert 'useFirstPageNumber="5"' in sheet
+    assert "firstPageNumber=" not in sheet.replace("useFirstPageNumber=", "")
 
 
 # ---------------------------- combination ----------------------------
