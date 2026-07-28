@@ -627,12 +627,12 @@ Data labels support `show_value`, `show_category_name`,
 `show_series_name`, `show_leader_lines`, `show_legend_key`,
 `show_percentage`, `show_x_value`, `show_y_value`, `set_hidden`,
 `set_position`, `set_num_format`, `set_separator`, `set_value`,
-`set_font`, `set_format` and `to_custom`. Positions are `default`,
+`set_font`, `set_format` and `set_custom`. Positions are `default`,
 `center`, `right`, `left`, `above`, `below`, `inside_base`, `inside_end`,
 `outside_end`, `best_fit`.
 
 For per-point labels, build one `ChartDataLabel` per point, call
-`to_custom()` on the ones that should differ, and pass the list to
+`set_custom()` on the ones that should differ, and pass the list to
 `ChartSeries.set_custom_data_labels()`.
 
 ## Performance & Benchmarks

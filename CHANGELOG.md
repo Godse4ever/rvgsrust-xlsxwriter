@@ -27,7 +27,10 @@ PERFORMANCE.md for what's confirmed vs. still estimated).
 ### Added
 - Charts, part 3: `ChartMarker`, `ChartTrendline` and `ChartDataLabel`,
   attached via `ChartSeries.set_marker`, `set_trendline`, `set_data_label`
-  and `set_custom_data_labels`. All three accept a `ChartFormat`, and the
+  and `set_custom_data_labels`. Per-point labels are marked with
+  `ChartDataLabel.set_custom()`, named for upstream's `to_custom()` but
+  renamed because `clippy::wrong_self_convention` forbids a `to_*` method
+  taking `&mut self`. All three accept a `ChartFormat`, and the
   trendline and data label also accept a `ChartFont`.
   Automatic and no-marker are methods (`set_automatic()`, `set_none()`)
   rather than marker types, matching upstream. Trendline `polynomial` and
