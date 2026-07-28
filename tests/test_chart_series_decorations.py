@@ -72,8 +72,8 @@ def test_marker_types(name, val):
     assert f'<c:symbol val="{val}"/>' in _chart_xml(configure)
 
 
-def test_marker_none_and_automatic():
-    """Neither is a ChartMarkerType variant; both are separate methods."""
+def test_marker_none():
+    """None is not a ChartMarkerType variant; it is a separate method."""
 
     def none(series):
         marker = ChartMarker()
@@ -82,12 +82,24 @@ def test_marker_none_and_automatic():
 
     assert '<c:symbol val="none"/>' in _chart_xml(none)
 
+
+def test_marker_automatic_emits_no_marker_element():
+    """Automatic is not a ChartMarkerType variant either, and it means
+    "let Excel choose": upstream guards write_marker with
+    `if !marker.automatic`, so no series-level c:marker is written at all.
+
+    The <c:marker val="1"/> that appears at the lineChart level is a
+    different element and is not matched by "<c:marker>".
+    """
+
     def automatic(series):
         marker = ChartMarker()
         marker.set_automatic()
         series.set_marker(marker)
 
-    assert "<c:marker>" in _chart_xml(automatic)
+    xml = _chart_xml(automatic)
+    assert "<c:marker>" not in xml
+    assert "<c:chartSpace" in xml
 
 
 def test_marker_size_and_format():
