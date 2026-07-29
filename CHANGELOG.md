@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-07-29
+
+Audit release. No public API changes; every item below is a fix or an
+internal improvement, so upgrading from 0.2.0 requires no code changes.
+
+### Fixed
+
+- **`add_worksheet()` wrote to the wrong worksheet after a rejected name.**
+  The worksheet was appended, then `set_name()` was called, then an index
+  counter advanced. A rejected name (blank, >31 chars, or containing
+  `* ? : [ ] \ /`) returned early between those steps, leaving an orphan
+  worksheet while the counter stood still. The next `add_worksheet()`
+  handed back that stale index, so writes landed on the orphan and the
+  intended sheet saved empty -- with no exception raised. The name is now
+  validated before the workbook is touched, and the index comes from the
+  workbook's own worksheet vector rather than a parallel counter.
+- **`add_table()` bypassed the `constant_memory` row-order guard.** It
+  writes header cells at call time, so a table anchored above the current
+  high-water mark silently produced a corrupt file.
+- **Re-entrant workbook access panicked.** A `__str__` that touched the
+  same `Workbook` during a bulk write hit `BorrowMutError`. It is now a
+  `RuntimeError` that names the cause.
+- **A partially-written `write_dataframe()` could be silently retried and
+  duplicated.** A mid-stream schema disagreement now raises `RuntimeError`
+  rather than `TypeError`, so `dataframe.py`'s per-cell fallback cannot
+  rewrite rows already on the sheet.
+- **`__version__` disagreed with the build files** (`0.2.0.dev0` vs
+  `0.2.0`), and the module docstring claimed charts and conditional
+  formatting were unimplemented while exporting them.
+- **`rust-version` was wrong.** It declared 1.83; the real floor is 1.85,
+  because `indexmap 2.14` requires `edition2024`, which Cargo 1.83 cannot
+  parse. Now declared and enforced by a CI job.
+
+### Performance
+
+- **The GIL is released during `save()`.** Serialisation and deflation
+  touch no Python objects but previously blocked every other thread for
+  their full duration -- seconds on a large workbook.
+- **Arrow string columns no longer allocate per cell.** `CellValue::Str`
+  is now `Cow<str>`, so the Arrow path borrows the columnar buffer
+  directly instead of allocating and dropping a `String` for every cell
+  (one million allocations for a one-million-row string column).
+- **`write_dataframe()` streams record batches** instead of collecting
+  them. Peak memory is now bounded by one batch rather than the whole
+  dataset, which makes `constant_memory=True` genuinely O(1) for
+  streaming producers such as a `pyarrow.RecordBatchReader` over Parquet.
+  Schema validation still happens fully up front.
+
+### CI / packaging
+
+- Tests run on Linux (3.9, 3.12, 3.13), macOS and Windows. Previously
+  Linux/3.11 only, despite shipping wheels for three platforms -- this
+  immediately surfaced a Windows-only test-teardown bug.
+- `polars` is now installed in CI; its `.to_arrow()` path was never
+  exercised before.
+- Added an MSRV job, an sdist to the release, and a separate `lint` job.
+- Removed `MANIFEST.in`, which has no effect under the maturin backend.
+- 17 regression tests added; the suite is 448 passing on all platforms.
+
 ## [0.2.0] - 2026-07-28
 
 **Core build confirmed on real hardware** (macOS, 4-core, rustc 1.83+,
