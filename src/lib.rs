@@ -2367,9 +2367,6 @@ impl Worksheet {
 #[pyclass(subclass)]
 struct Workbook {
     inner: RefCell<RustWorkbook>,
-    // Tracks how many worksheets have been added so each Worksheet
-    // handle knows its own stable index into the workbook's storage.
-    sheet_count: RefCell<usize>,
 }
 
 #[pymethods]
@@ -2378,7 +2375,6 @@ impl Workbook {
     fn new() -> Self {
         Workbook {
             inner: RefCell::new(RustWorkbook::new()),
-            sheet_count: RefCell::new(0),
         }
     }
 
@@ -2418,17 +2414,40 @@ impl Workbook {
         let index = {
             let wb_ref = slf.borrow(py);
             let mut wb = wb_ref.inner.borrow_mut();
+
+            // Validate the name BEFORE touching the workbook.
+            //
+            // set_name() runs exactly this validator internally
+            // (utility::validate_sheetname, reached via the public
+            // check_sheet_name wrapper), so the accepted/rejected set and the
+            // resulting XlsxError variant are unchanged. What changes is the
+            // ordering: previously the worksheet was appended first and
+            // set_name()'s error propagated afterwards, which left an
+            // unnamed worksheet in the workbook while the index counter had
+            // not advanced. The next add_worksheet() then handed back an
+            // index pointing at that orphan, so every subsequent write went
+            // to the wrong sheet -- silently, and the intended sheet saved
+            // empty. Validating first means a rejected name mutates nothing.
+            if let Some(n) = name {
+                rust_xlsxwriter::utility::check_sheet_name(n).map_err(xlsx_err_to_pyerr)?;
+            }
+
+            // Take the index from the workbook's own worksheet vector rather
+            // than a counter maintained alongside it. The two cannot drift if
+            // there is only one of them; the drift was the bug above.
+            let idx = wb.worksheets().len();
+
             let sheet = if constant_memory {
                 wb.add_worksheet_with_constant_memory()
             } else {
                 wb.add_worksheet()
             };
+            // Pre-validated above, so this cannot fail on name grounds; the
+            // mapping is kept rather than unwrapped so a future upstream
+            // validation change surfaces as an exception, not a panic.
             if let Some(n) = name {
                 sheet.set_name(n).map_err(xlsx_err_to_pyerr)?;
             }
-            let mut count = wb_ref.sheet_count.borrow_mut();
-            let idx = *count;
-            *count += 1;
             idx
         };
         Py::new(
