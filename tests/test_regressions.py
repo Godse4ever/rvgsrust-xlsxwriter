@@ -83,3 +83,55 @@ def test_many_sheets_keep_stable_indices_across_failures():
     # Each sheet must contain its own name, not a neighbour's.
     for name in handles:
         assert book[name]["A1"].value == name
+
+
+# ---------------------------------------------------------------------
+# add_table() bypassed the constant_memory row-order guard
+# ---------------------------------------------------------------------
+# add_table() writes header/total cells immediately rather than at save
+# time, but was the only cell-writing Worksheet method with no
+# check_row_order call. On a constant_memory worksheet, a table anchored
+# above the current high-water mark was accepted and silently produced a
+# corrupt file instead of raising.
+
+
+def test_add_table_rejects_backward_write_in_constant_memory():
+    from rvgsrust_xlsxwriter import Table
+
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+
+    # Advance the high-water mark well past where the table would start.
+    ws.write(50, 0, "later-row")
+
+    table = Table()
+    with pytest.raises(ValueError, match="constant_memory"):
+        ws.add_table(0, 0, 10, 2, table)
+
+
+def test_add_table_still_allowed_in_order_in_constant_memory():
+    """The guard must not reject a legitimate forward-ordered table."""
+    from rvgsrust_xlsxwriter import Table
+
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+    ws.write(0, 0, "header-area")
+
+    table = Table()
+    ws.add_table(5, 0, 10, 2, table)  # forward of row 0 -- must not raise
+    wb.close(TEST_FILE)
+    assert os.path.exists(TEST_FILE)
+
+
+def test_add_table_unaffected_on_normal_worksheet():
+    """Non-constant_memory sheets keep unrestricted ordering."""
+    from rvgsrust_xlsxwriter import Table
+
+    wb = Workbook()
+    ws = wb.add_worksheet("Normal")
+    ws.write(50, 0, "later-row")
+
+    table = Table()
+    ws.add_table(0, 0, 10, 2, table)  # backward, but allowed here
+    wb.close(TEST_FILE)
+    assert os.path.exists(TEST_FILE)

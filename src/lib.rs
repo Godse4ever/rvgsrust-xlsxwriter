@@ -2347,6 +2347,15 @@ impl Worksheet {
         last_col: u16,
         table: &Table,
     ) -> PyResult<()> {
+        // add_table() writes real cells immediately, not only at save time:
+        // upstream's implementation calls write_string_with_format() for each
+        // header caption (worksheet.rs, add_table) and likewise for a total
+        // row. It was therefore the one cell-writing method on this class
+        // without a constant_memory row-order check, which left exactly the
+        // silent-corruption path check_row_order() exists to close -- an
+        // add_table() anchored above the current high-water mark would be
+        // accepted here and quietly produce a damaged .xlsx.
+        self.check_row_order_range(first_row, last_row)?;
         let t = table.inner.clone();
         self.with_sheet(py, |sheet| {
             sheet
