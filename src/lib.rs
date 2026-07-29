@@ -2514,11 +2514,35 @@ impl Workbook {
         Py::new(py, Format::new())
     }
 
-    fn close(&self, path: &str) -> PyResult<()> {
-        self.inner
+    // `py` is injected by pyo3 and is not part of the Python-visible
+    // signature, so this remains `wb.close(path)` from Python.
+    fn close(&self, py: Python<'_>, path: &str) -> PyResult<()> {
+        let mut guard = self
+            .inner
             .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?
-            .save(path)
+            .map_err(|_| reentrant_workbook_err())?;
+
+        // save() is the single longest operation in the library -- it
+        // serialises every worksheet and deflates the whole archive -- and it
+        // touches no Python objects at all. Holding the GIL across it stalls
+        // every other thread in the process for the entire duration, which for
+        // a large workbook is seconds.
+        //
+        // Soundness of releasing it here:
+        //  - Ungil is satisfied via Send (pyo3 0.22 marker.rs: `unsafe impl<T:
+        //    Send> Ungil for T`). rust_xlsxwriter's types contain no Rc,
+        //    RefCell, Cell or raw pointers anywhere in the crate, so Workbook
+        //    is auto-Send and `&mut Workbook` is Send with it.
+        //  - The RefMut guard is held across the release, which keeps this the
+        //    only live mutable borrow. Another thread that acquires the GIL and
+        //    calls into the same Workbook hits try_borrow_mut() and gets the
+        //    RuntimeError above rather than a second &mut.
+        //  - RefCell's borrow flag is not atomic, but every access to it still
+        //    happens under the GIL: the guard is created before the release and
+        //    dropped after the re-acquire. Nothing touches the flag while the
+        //    GIL is released.
+        let workbook: &mut RustWorkbook = &mut guard;
+        py.allow_threads(move || workbook.save(path))
             .map_err(xlsx_err_to_pyerr)?;
         Ok(())
     }

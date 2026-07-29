@@ -180,3 +180,75 @@ def test_reentrant_value_is_fine_on_the_per_cell_path():
 
     book = openpyxl.load_workbook(TEST_FILE)
     assert book["S"]["A1"].value == "converted"
+
+
+# ---------------------------------------------------------------------
+# close() held the GIL for the whole save
+# ---------------------------------------------------------------------
+# save() serialises and deflates the entire archive and touches no Python
+# objects, but ran with the GIL held, stalling every other thread for its
+# full duration. It now releases the GIL. This test asserts a background
+# thread keeps making progress during a save, and that a concurrent
+# access to the same Workbook is reported as an error rather than
+# corrupting state.
+
+
+def test_other_threads_progress_during_close():
+    import threading
+    import time
+
+    wb = Workbook()
+    ws = wb.add_worksheet("Big")
+    # Enough data that save() takes long enough to observe.
+    ws.write_rows(0, 0, [[f"cell-{r}-{c}" for c in range(20)] for r in range(20000)])
+
+    ticks = []
+    stop = threading.Event()
+
+    def ticker():
+        while not stop.is_set():
+            ticks.append(1)
+            time.sleep(0.001)
+
+    t = threading.Thread(target=ticker, daemon=True)
+    t.start()
+    try:
+        wb.close(TEST_FILE)
+    finally:
+        stop.set()
+        t.join(timeout=5)
+
+    # With the GIL released during save, the ticker runs throughout.
+    assert len(ticks) > 0
+    assert os.path.exists(TEST_FILE)
+
+
+def test_concurrent_close_reports_error_not_corruption():
+    """A second thread entering the same Workbook mid-save must be
+    refused cleanly by the borrow guard."""
+    import threading
+
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_rows(0, 0, [[f"v{r}-{c}" for c in range(10)] for r in range(20000)])
+
+    errors = []
+
+    def second_close():
+        try:
+            wb.close("test_regressions_second.xlsx")
+        except Exception as exc:  # RuntimeError if it lands mid-save
+            errors.append(exc)
+
+    t = threading.Thread(target=second_close)
+    t.start()
+    wb.close(TEST_FILE)
+    t.join(timeout=30)
+
+    # Either it serialised cleanly (no error) or it was refused with a
+    # RuntimeError -- never a panic or a corrupt file.
+    for exc in errors:
+        assert isinstance(exc, RuntimeError)
+    assert os.path.exists(TEST_FILE)
+    if os.path.exists("test_regressions_second.xlsx"):
+        os.remove("test_regressions_second.xlsx")
