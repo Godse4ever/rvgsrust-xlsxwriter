@@ -1,5 +1,0 @@
-include Cargo.toml
-include LICENSE
-include README.md
-recursive-include src *.rs
-recursive-include python *.py

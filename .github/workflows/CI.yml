@@ -28,7 +28,7 @@ jobs:
         python -m venv .venv
         source .venv/bin/activate
         pip install --upgrade pip
-        pip install maturin pytest openpyxl pyarrow pandas
+        pip install maturin pytest openpyxl pyarrow pandas polars
 
     # -D warnings promotes all clippy warnings to errors. The three -A
     # flags come AFTER -D warnings so they take precedence for those
@@ -68,6 +68,18 @@ jobs:
   # maturin-action so the resulting .whl is manylinux-compliant
   # (avoids GLIBC_2.18+ symbol errors that occur when building
   # directly on ubuntu-latest).  Windows and macOS build normally.
+  # Cargo.toml declares rust-version = "1.83" (rust_xlsxwriter 0.96 pulls
+  # zip 7.2, whose own MSRV is 1.83). Nothing verified that claim, so a
+  # dependency bump could silently raise the real MSRV. cargo check with a
+  # pinned 1.83 toolchain fails loudly if that happens.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.83.0
+    - name: Check against declared MSRV
+      run: cargo check --locked || cargo check
+
   build-wheels-linux:
     runs-on: ubuntu-latest
     steps:
@@ -115,8 +127,23 @@ jobs:
         name: wheels-${{ matrix.os }}
         path: target/wheels/*.whl
 
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build sdist
+      uses: PyO3/maturin-action@v1
+      with:
+        command: sdist
+        args: --out dist
+    - name: Upload sdist
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheels-sdist
+        path: dist/*.tar.gz
+
   publish:
-    needs: [test, build-wheels-linux, build-wheels-non-linux]
+    needs: [test, msrv, build-wheels-linux, build-wheels-non-linux, build-sdist]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
@@ -142,4 +169,4 @@ jobs:
       env:
         TWINE_USERNAME: __token__
         TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: twine upload dist/*.whl --skip-existing
+      run: twine upload dist/*.whl dist/*.tar.gz --skip-existing
