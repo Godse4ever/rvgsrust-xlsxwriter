@@ -40,8 +40,8 @@ jobs:
         echo "exit=$?" >> clippy_exit.txt
         tail -c 12000 fmt_raw.txt > fmt.txt
 
-    - name: Rust 1.83 (declared MSRV)
-      uses: dtolnay/rust-toolchain@1.83.0
+    - name: Rust 1.85 (declared MSRV)
+      uses: dtolnay/rust-toolchain@1.85.0
 
     - name: Capture MSRV check
       run: |
@@ -64,7 +64,7 @@ jobs:
           echo '```'; cat clippy.txt; echo '```'
           echo '### rustfmt'
           echo '```'; cat fmt.txt; echo '```'
-          echo '### cargo check @ 1.83'
+          echo '### cargo check @ 1.85'
           echo '```'; cat msrv.txt; echo '```'
         } > body.md
         gh pr comment 8 --body-file body.md --repo "$GITHUB_REPOSITORY"
