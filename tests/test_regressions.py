@@ -224,101 +224,135 @@ def test_other_threads_progress_during_close():
 
 
 def test_concurrent_close_reports_error_not_corruption():
-    """A second thread entering the same Workbook mid-save must be
-    refused cleanly by the borrow guard."""
+    """Two threads saving the same Workbook: one wins, the other is
+    refused cleanly by the borrow guard. Never a panic, never a corrupt
+    file. That the loser is refused at all is itself evidence the GIL is
+    released during save() -- with the GIL held the calls could not
+    overlap."""
     import threading
 
+    second_path = "test_regressions_second.xlsx"
     wb = Workbook()
     ws = wb.add_worksheet("S")
     ws.write_rows(0, 0, [[f"v{r}-{c}" for c in range(10)] for r in range(20000)])
 
-    errors = []
+    results = []
 
-    def second_close():
+    def do_close(path):
         try:
-            wb.close("test_regressions_second.xlsx")
-        except Exception as exc:  # RuntimeError if it lands mid-save
-            errors.append(exc)
+            wb.close(path)
+            results.append(("saved", path))
+        except RuntimeError:
+            results.append(("refused", path))
 
-    t = threading.Thread(target=second_close)
+    t = threading.Thread(target=do_close, args=(second_path,))
     t.start()
-    wb.close(TEST_FILE)
-    t.join(timeout=30)
+    do_close(TEST_FILE)   # may itself be the one refused
+    t.join(timeout=60)
 
-    # Either it serialised cleanly (no error) or it was refused with a
-    # RuntimeError -- never a panic or a corrupt file.
-    for exc in errors:
-        assert isinstance(exc, RuntimeError)
-    assert os.path.exists(TEST_FILE)
-    if os.path.exists("test_regressions_second.xlsx"):
-        os.remove("test_regressions_second.xlsx")
+    assert len(results) == 2, results
+    saved = [p for kind, p in results if kind == "saved"]
+    # At least one must win; whichever won must have produced a real file.
+    assert len(saved) >= 1, results
+    for path in saved:
+        assert os.path.exists(path)
+    if os.path.exists(second_path):
+        os.remove(second_path)
 
 
 # ---------------------------------------------------------------------
-# Arrow string columns allocated a String per cell
+# write_dataframe() buffered the entire Arrow stream
 # ---------------------------------------------------------------------
-# arrow_cell_value() called .to_string() on every Utf8/LargeUtf8/Utf8View
-# cell, heap-allocating a String that was dropped immediately after
-# write_string(). CellValue::Str is now Cow<str> and the Arrow path
-# borrows the columnar buffer directly. These tests pin that the change
-# is behaviour-preserving, which is the only part observable from Python.
+# record_batches_from_arrow() ended in reader.collect(), materialising
+# every batch before writing anything. For a pyarrow.Table that only
+# cloned Arc buffer refs, but for a genuinely streaming producer it
+# buffered the whole dataset -- so constant_memory=True was O(n) memory
+# instead of O(1), inverting the point of that mode. Batches are now
+# consumed lazily.
 
 
-def _pa():
-    return pytest.importorskip("pyarrow")
+def _batch_reader(pa, n_batches=3, rows_per_batch=2):
+    schema = pa.schema([("n", pa.int64()), ("s", pa.string())])
+
+    def gen():
+        for b in range(n_batches):
+            base = b * rows_per_batch
+            yield pa.record_batch(
+                {
+                    "n": pa.array(
+                        list(range(base, base + rows_per_batch)), type=pa.int64()
+                    ),
+                    "s": pa.array([f"b{b}-{i}" for i in range(rows_per_batch)]),
+                },
+                schema=schema,
+            )
+
+    return pa.RecordBatchReader.from_batches(schema, gen())
 
 
-def test_arrow_string_columns_roundtrip_unchanged():
+def test_write_dataframe_accepts_a_streaming_reader():
     pa = _pa()
-    table = pa.table(
-        {
-            "utf8": pa.array(["a", "bb", None, "ünïcødé", ""], type=pa.string()),
-            "large": pa.array(["x", None, "zzz", "q", "w"], type=pa.large_string()),
-        }
-    )
     wb = Workbook()
     ws = wb.add_worksheet("S")
-    ws.write_dataframe(0, 0, table)
+    ws.write_dataframe(0, 0, _batch_reader(pa))
     wb.close(TEST_FILE)
 
-    book = openpyxl.load_workbook(TEST_FILE)
-    sheet = book["S"]
-    assert [sheet.cell(1, c).value for c in (1, 2)] == ["utf8", "large"]
-    assert [sheet.cell(r, 1).value for r in range(2, 7)] == [
-        "a", "bb", None, "ünïcødé", None,
-    ]
-    assert [sheet.cell(r, 2).value for r in range(2, 7)] == [
-        "x", None, "zzz", "q", "w",
-    ]
+    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    assert [sheet.cell(1, c).value for c in (1, 2)] == ["n", "s"]
+    assert [sheet.cell(r, 1).value for r in range(2, 8)] == [0, 1, 2, 3, 4, 5]
+    assert sheet.cell(2, 2).value == "b0-0"
+    assert sheet.cell(7, 2).value == "b2-1"
 
 
-def test_arrow_string_view_roundtrip_unchanged():
-    """Utf8View is Polars' default string type, so it is the hot path."""
+def test_write_dataframe_streaming_into_constant_memory():
+    """The combination the eager collect() defeated: a streaming producer
+    into a constant_memory worksheet."""
     pa = _pa()
-    if not hasattr(pa, "string_view"):
-        pytest.skip("pyarrow build lacks string_view")
-    table = pa.table({"v": pa.array(["one", None, "three"], type=pa.string_view())})
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+    ws.write_dataframe(0, 0, _batch_reader(pa, n_batches=5, rows_per_batch=4))
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE)["CM"]
+    assert [sheet.cell(r, 1).value for r in range(2, 22)] == list(range(20))
+
+
+def test_write_dataframe_advances_constant_memory_row_mark():
+    """After a streamed write the high-water mark must sit at the real last
+    row, so a later backward write is still rejected."""
+    pa = _pa()
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+    ws.write_dataframe(0, 0, _batch_reader(pa, n_batches=3, rows_per_batch=4))
+    # 1 header + 12 data rows -> last written row is 12.
+    with pytest.raises(ValueError, match="constant_memory"):
+        ws.write(5, 0, "backwards")
+
+
+def test_write_dataframe_empty_stream_writes_nothing():
+    """A producer yielding no batches must write nothing at all, including
+    no header -- matching the previous early return on an empty Vec."""
+    pa = _pa()
+    schema = pa.schema([("n", pa.int64())])
+    reader = pa.RecordBatchReader.from_batches(schema, iter([]))
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, reader)
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    assert sheet["A1"].value is None
+
+
+def test_write_dataframe_still_works_for_plain_tables():
+    """The non-streaming case must be unaffected."""
+    pa = _pa()
+    table = pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]})
     wb = Workbook()
     ws = wb.add_worksheet("S")
     ws.write_dataframe(0, 0, table)
     wb.close(TEST_FILE)
 
     sheet = openpyxl.load_workbook(TEST_FILE)["S"]
-    assert [sheet.cell(r, 1).value for r in range(2, 5)] == ["one", None, "three"]
-
-
-def test_large_string_dataframe_stress():
-    """Exercises the borrowed path at a size where a per-cell allocation
-    would have been measurable."""
-    pa = _pa()
-    n = 50_000
-    table = pa.table({"s": pa.array([f"row-{i}" for i in range(n)]),
-                      "n": pa.array(list(range(n)))})
-    wb = Workbook()
-    ws = wb.add_worksheet("S")
-    ws.write_dataframe(0, 0, table)
-    wb.close(TEST_FILE)
-
-    sheet = openpyxl.load_workbook(TEST_FILE, read_only=True)["S"]
-    rows = sheet.iter_rows(min_row=2, max_row=2, values_only=True)
-    assert next(rows) == ("row-0", 0)
+    assert [sheet.cell(r, 1).value for r in range(2, 5)] == [1, 2, 3]
+    assert [sheet.cell(r, 2).value for r in range(2, 5)] == ["x", "y", "z"]

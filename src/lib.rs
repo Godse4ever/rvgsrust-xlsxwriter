@@ -6,6 +6,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
+use arrow::record_batch::RecordBatchReader;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
@@ -63,12 +64,12 @@ fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
 // explicable Python exception instead.
 fn reentrant_workbook_err() -> PyErr {
     PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-        "Workbook is already being modified by a write in progress on this \
-         thread. This usually means a value's __str__/__repr__ (or a \
-         __del__) called back into the same Workbook while a bulk write \
-         such as write_records() was running. Convert such values to str \
-         before passing them in, and do not re-enter the Workbook from a \
-         conversion method.",
+        "Workbook is already being modified elsewhere. Either another thread \
+         is currently writing to or saving this Workbook (the GIL is released \
+         during save(), so saves genuinely overlap), or a value's \
+         __str__/__repr__ (or a __del__) called back into the same Workbook \
+         during a bulk write such as write_records(). Use one Workbook per \
+         thread, and convert values to str before passing them in.",
     )
 }
 
@@ -290,11 +291,11 @@ fn merge_value(
 // types; decimal, list, struct and dictionary-encoded columns are still
 // tracked as follow-up work.
 
-/// Pulls RecordBatches out of any object exposing `__arrow_c_stream__`
+/// Builds a lazy RecordBatch reader over any object exposing `__arrow_c_stream__`
 /// (pyarrow.Table, pandas.DataFrame 2.x+) or a `.to_arrow()` method
 /// (polars.DataFrame, which returns a pyarrow object with the capsule
 /// method).
-fn record_batches_from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch>> {
+fn arrow_stream_reader(obj: &Bound<'_, PyAny>) -> PyResult<ArrowArrayStreamReader> {
     let stream_source: Bound<'_, PyAny> = if obj.hasattr("__arrow_c_stream__")? {
         obj.clone()
     } else if obj.hasattr("to_arrow")? {
@@ -350,10 +351,7 @@ fn record_batches_from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch
         s
     };
 
-    let reader = ArrowArrayStreamReader::try_new(stream).map_err(to_pyerr)?;
-    reader
-        .collect::<std::result::Result<Vec<RecordBatch>, arrow::error::ArrowError>>()
-        .map_err(to_pyerr)
+    ArrowArrayStreamReader::try_new(stream).map_err(to_pyerr)
 }
 
 /// A typed reference into one column of a RecordBatch, resolved once per
@@ -1241,6 +1239,17 @@ impl Worksheet {
         }
         Ok(())
     }
+
+    // Raises the high-water mark after a write whose extent was not known
+    // in advance. write_dataframe() streams batches from the Arrow producer
+    // rather than collecting them, so the total row count is unavailable
+    // until the last batch has been consumed; it validates start_row up
+    // front with check_row_order() and then calls this at the end.
+    fn advance_row_mark(&self, row: u32) {
+        if self.constant_memory && row > self.min_allowed_row.get() {
+            self.min_allowed_row.set(row);
+        }
+    }
 }
 
 #[pymethods]
@@ -1546,12 +1555,11 @@ impl Worksheet {
         header_format: Option<&Format>,
         write_header: bool,
     ) -> PyResult<()> {
-        let batches = record_batches_from_arrow(data)?;
-        if batches.is_empty() {
-            return Ok(());
-        }
-
-        let schema = batches[0].schema();
+        let reader = arrow_stream_reader(data)?;
+        // schema() is available from RecordBatchReader before any batch is
+        // consumed, so the whole schema can still be validated up front
+        // without materialising the data.
+        let schema = reader.schema();
         let field_names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
 
         // Check every column's type up front so we fail with one clear
@@ -1611,40 +1619,10 @@ impl Worksheet {
 
         let head_fmt = header_format.map(|f| &f.inner);
 
-        // Same one-check-for-the-whole-call approach as write_records():
-        // total rows this call will touch is known upfront (sum of each
-        // batch's row count, each an O(1) lookup), so there's no need to
-        // check per-row.
-        let total_data_rows: u32 = batches.iter().map(|b| b.num_rows() as u32).sum();
-        let header_rows = if write_header { 1 } else { 0 };
-        if total_data_rows + header_rows > 0 {
-            let last_row = start_row + header_rows + total_data_rows - 1;
-            self.check_row_order_range(start_row, last_row)?;
-        }
-
-        let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
-        let sheet = wb
-            .worksheet_from_index(self.index)
-            .map_err(xlsx_err_to_pyerr)?;
-
-        let mut row_cursor = start_row;
-        if write_header {
-            for (i, name) in field_names.iter().enumerate() {
-                write_value(
-                    sheet,
-                    row_cursor,
-                    start_col + i as u16,
-                    &CellValue::Str(Cow::Borrowed(name.as_str())),
-                    head_fmt,
-                )
-                .map_err(xlsx_err_to_pyerr)?;
-            }
-            row_cursor += 1;
-        }
+        // The number of rows is not knowable without consuming the stream,
+        // so only the starting row can be validated up front; the mark is
+        // advanced to the true last row once the stream is exhausted.
+        self.check_row_order(start_row)?;
 
         // Temporal columns need a number format or Excel renders the raw
         // serial. Built once for the whole call rather than per cell:
@@ -1653,7 +1631,49 @@ impl Worksheet {
         let date_fmt = RustFormat::new().set_num_format("yyyy-mm-dd");
         let datetime_fmt = RustFormat::new().set_num_format("yyyy-mm-dd hh:mm:ss");
 
-        for batch in &batches {
+        let mut row_cursor = start_row;
+        let mut started = false;
+
+        for batch in reader {
+            let batch: RecordBatch = batch.map_err(to_pyerr)?;
+
+            // Borrowed per batch rather than once for the whole call. Pulling
+            // the next batch runs the producer's callback, which for a
+            // Python-implemented reader can execute arbitrary Python; holding
+            // the workbook borrow across that would turn any re-entrant access
+            // into an avoidable error. Re-borrowing costs one lookup per
+            // batch, not per cell.
+            let wb_ref = self.workbook.borrow(py);
+            let mut wb = wb_ref
+                .inner
+                .try_borrow_mut()
+                .map_err(|_| reentrant_workbook_err())?;
+            let sheet = wb
+                .worksheet_from_index(self.index)
+                .map_err(xlsx_err_to_pyerr)?;
+
+            // Written on the first batch rather than before the loop, so a
+            // producer that yields no batches at all still writes nothing --
+            // matching the previous behaviour of returning early when the
+            // collected Vec was empty.
+            if !started {
+                started = true;
+                if write_header {
+                    for (i, name) in field_names.iter().enumerate() {
+                        write_value(
+                            sheet,
+                            row_cursor,
+                            start_col + i as u16,
+                            &CellValue::Str(Cow::Borrowed(name.as_str())),
+                            head_fmt,
+                        )
+                        .map_err(xlsx_err_to_pyerr)?;
+                    }
+                    row_cursor += 1;
+                }
+            }
+
+            let batch = &batch;
             let columns: Vec<ArrowColumn<'_>> = (0..batch.num_columns())
                 .map(|c| resolve_arrow_column(batch.column(c).as_ref()))
                 .collect::<PyResult<Vec<_>>>()?;
@@ -1684,6 +1704,9 @@ impl Worksheet {
                 row_cursor += 1;
             }
         }
+
+        // row_cursor now sits one past the last row written.
+        self.advance_row_mark(row_cursor.saturating_sub(1));
 
         Ok(())
     }
