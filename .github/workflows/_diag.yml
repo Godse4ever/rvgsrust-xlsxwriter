@@ -51,6 +51,23 @@ jobs:
         tail -c 20000 msrv_raw.txt > msrv.txt
         wc -c msrv_raw.txt msrv.txt
 
+    - name: Rust stable again for build
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build and run pytest
+      run: |
+        set +e
+        python -m venv .venv
+        . .venv/bin/activate
+        pip install -q --upgrade pip
+        pip install -q maturin pytest openpyxl pyarrow pandas polars
+        maturin develop --release > build.txt 2>&1
+        echo "build_exit=$?" >> clippy_exit.txt
+        tail -c 4000 build.txt > buildtail.txt
+        pytest tests/ -q -rf --no-header > pytest.txt 2>&1
+        echo "pytest_exit=$?" >> clippy_exit.txt
+        tail -c 24000 pytest.txt > pyt.txt
+
     - name: Post diagnostics to PR
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -66,5 +83,9 @@ jobs:
           echo '```'; cat fmt.txt; echo '```'
           echo '### cargo check @ 1.85'
           echo '```'; cat msrv.txt; echo '```'
+          echo '### maturin build tail'
+          echo '```'; cat buildtail.txt; echo '```'
+          echo '### pytest'
+          echo '```'; cat pyt.txt; echo '```'
         } > body.md
         gh pr comment 8 --body-file body.md --repo "$GITHUB_REPOSITORY"
