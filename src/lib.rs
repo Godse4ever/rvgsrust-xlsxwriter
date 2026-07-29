@@ -1194,10 +1194,7 @@ impl Worksheet {
         F: FnOnce(&mut RustWorksheet) -> Result<R, rust_xlsxwriter::XlsxError>,
     {
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+        let mut wb = wb_ref.inner.try_borrow_mut().map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1376,10 +1373,7 @@ impl Worksheet {
 
         // Write all pre-classified values in a tight Rust loop.
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+        let mut wb = wb_ref.inner.try_borrow_mut().map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1461,10 +1455,7 @@ impl Worksheet {
         let head_fmt = header_format.map(|f| &f.inner);
 
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+        let mut wb = wb_ref.inner.try_borrow_mut().map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1623,10 +1614,7 @@ impl Worksheet {
         }
 
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+        let mut wb = wb_ref.inner.try_borrow_mut().map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -2468,10 +2456,7 @@ impl Workbook {
     ) -> PyResult<Py<Worksheet>> {
         let index = {
             let wb_ref = slf.borrow(py);
-            let mut wb = wb_ref
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+            let mut wb = wb_ref.inner.try_borrow_mut().map_err(|_| reentrant_workbook_err())?;
 
             // Validate the name BEFORE touching the workbook.
             //
@@ -2526,10 +2511,7 @@ impl Workbook {
     // `py` is injected by pyo3 and is not part of the Python-visible
     // signature, so this remains `wb.close(path)` from Python.
     fn close(&self, py: Python<'_>, path: &str) -> PyResult<()> {
-        let mut guard = self
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+        let mut guard = self.inner.try_borrow_mut().map_err(|_| reentrant_workbook_err())?;
 
         // save() is the single longest operation in the library -- it
         // serialises every worksheet and deflates the whole archive -- and it
@@ -2580,10 +2562,7 @@ impl Workbook {
         keywords: Option<&str>,
         comments: Option<&str>,
     ) -> PyResult<()> {
-        let mut wb = self
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+        let mut wb = self.inner.try_borrow_mut().map_err(|_| reentrant_workbook_err())?;
         let mut props = rust_xlsxwriter::DocProperties::new();
         if let Some(t) = title {
             props = props.set_title(t);
