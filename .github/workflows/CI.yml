@@ -169,31 +169,61 @@ jobs:
         name: wheels-sdist
         path: dist/*.tar.gz
 
+  # Publishing uses PyPI Trusted Publishing (OIDC) rather than a long-lived
+  # API token. The previous version ran `twine upload` with
+  # secrets.PYPI_API_TOKEN, but no such secret was ever configured on this
+  # repository -- which is why the v0.2.0 tag build failed at this step and
+  # nothing was ever actually published.
+  #
+  # Trusted Publishing removes the credential entirely: PyPI verifies a
+  # short-lived OIDC token minted by GitHub for this specific repository and
+  # workflow, so there is no secret to leak, rotate or accidentally paste
+  # anywhere. Setup is one form on PyPI (see RELEASING.md) and no secret is
+  # added to this repo.
   publish:
     needs: [lint, test, msrv, build-wheels-linux, build-wheels-non-linux, build-sdist]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-
+    permissions:
+      # Required for Trusted Publishing: lets the job mint the OIDC token
+      # PyPI checks. Nothing else in the workflow needs it.
+      id-token: write
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Download all wheels
+    - name: Download all wheels and the sdist
       uses: actions/download-artifact@v4
       with:
         pattern: wheels-*
         path: dist
         merge-multiple: true
 
-    - name: Install twine
-      run: pip install twine
+    # A PyPI version number can never be reused, even after deletion, so a
+    # tag that disagrees with the packaged version would burn it permanently.
+    # This project has already shipped a release where the three version
+    # declarations disagreed with each other, so all three are checked
+    # against the tag before anything is uploaded.
+    - name: Verify tag matches every declared version
+      run: |
+        set -euo pipefail
+        tag="${GITHUB_REF_NAME#v}"
+        pyproject=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+        cargo=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+        init=$(grep -m1 '^__version__ = ' python/rvgsrust_xlsxwriter/__init__.py | cut -d'"' -f2)
+        echo "tag=$tag pyproject=$pyproject cargo=$cargo __init__=$init"
+        for name in pyproject cargo init; do
+          eval "value=\$$name"
+          if [ "$value" != "$tag" ]; then
+            echo "::error::$name declares '$value' but the tag is '$tag'"
+            exit 1
+          fi
+        done
+
+    - name: Check the artifacts exist
+      run: |
+        ls -l dist/
+        test -n "$(find dist -name '*.whl' -print -quit)"
+        test -n "$(find dist -name '*.tar.gz' -print -quit)"
 
     - name: Publish to PyPI
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: twine upload dist/*.whl dist/*.tar.gz --skip-existing
+      uses: pypa/gh-action-pypi-publish@release/v1

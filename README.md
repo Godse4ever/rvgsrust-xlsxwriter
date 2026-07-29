@@ -720,19 +720,46 @@ python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 | Version | Features |
 |---------|----------|
 | **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images, Polars/Pandas support |
-| **v0.2** | ✅ Bulk `write_records()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables. 🚧 Charts (in progress, phased -- see below), conditional formatting, extended Arrow types |
-| **v0.3** | 🚧 Data validation, sparklines |
+| **v0.2** | ✅ Bulk `write_records()` / `write_rows()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables; charts (phases 1-3); conditional formatting; sparklines; page setup; extended Arrow types |
+| **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
+| **v0.3** | 🚧 Data validation; per-column formats in `write_dataframe()`; rich-text and comment/note support |
 | **v0.4** | 🚧 Full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
-types, ~214 public methods across ~39 types) is being implemented in
-phases rather than all at once, so each phase can be properly verified
-rather than shipping a large surface untested:
-1. Core `Chart`/`ChartSeries` + common types (Bar/Column/Line/Pie/
+types, ~214 public methods across ~39 types) were implemented in phases
+so each could be verified rather than shipping a large surface untested.
+All three phases have landed:
+1. ✅ Core `Chart`/`ChartSeries` + common types (Bar/Column/Line/Pie/
    Scatter + stacked variants) + basic title/legend/axis
-2. Formatting depth: line/font/fill styling
-3. Advanced: trendlines, error bars, data tables, layout, remaining
-   chart types (Radar, Stock, Doughnut, Surface, etc.)
+2. ✅ Formatting depth: `ChartFormat`/`ChartFont`, line/font/fill styling
+3. ✅ Decorations: `ChartMarker`, `ChartTrendline`, `ChartDataLabel`
+
+Remaining chart work, tracked in [MISSING.md](MISSING.md): error bars,
+data tables, manual layout, and the less common chart types (Radar,
+Stock, Doughnut, Surface).
+
+### Known limitations
+
+These are current, deliberate gaps rather than oversights:
+
+- **`write_dataframe()` column types.** Decimal, list, struct and
+  dictionary-encoded Arrow columns are not supported; such a column
+  raises `TypeError` and `dataframe.py` falls back to the per-cell path.
+- **Per-column formats in `write_dataframe()`.** Passing
+  `column_formats` routes through the slower per-cell loop, since the
+  Arrow fast path applies a format per column type, not per column.
+- **Timezones.** Excel has no timezone concept. Timezone-aware Arrow
+  timestamps are written as UTC wall-clock time and warn once per column.
+- **Precision.** Excel cells hold an f64, so integers above 2^53 lose
+  precision. This is a format limitation, not an implementation one.
+- **`constant_memory=True`** requires rows to be written in
+  non-decreasing order. This layer raises `ValueError` on violation;
+  `rust_xlsxwriter` itself would silently emit a corrupt file.
+- **Dependency floating.** No `Cargo.lock` is committed, so transitive
+  dependencies resolve to latest-compatible and the effective MSRV can
+  rise on a dependency bump. The `msrv` CI job exists to surface that.
+- **Python 3.8.** `requires-python` still declares `>=3.8`, but CI tests
+  3.9 upward; the `pandas>=2.0` extra already requires 3.9+.
 
 ---
 
