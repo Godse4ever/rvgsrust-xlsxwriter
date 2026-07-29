@@ -135,3 +135,48 @@ def test_add_table_unaffected_on_normal_worksheet():
     ws.add_table(0, 0, 10, 2, table)  # backward, but allowed here
     wb.close(TEST_FILE)
     assert os.path.exists(TEST_FILE)
+
+
+# ---------------------------------------------------------------------
+# Re-entrant workbook access panicked instead of raising
+# ---------------------------------------------------------------------
+# write_records() holds the workbook's RefCell borrow across the whole
+# loop while calling classify() per cell, and classify() falls back to
+# value.str() for unrecognised types. A __str__ that touches the same
+# Workbook re-entered borrow_mut() and hit a Rust panic surfacing as
+# pyo3's PanicException with only "already mutably borrowed". It is now a
+# RuntimeError explaining the cause.
+
+
+def test_reentrant_write_from_dunder_str_raises_runtime_error():
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+
+    class ReentrantValue:
+        """Has no __float__/__index__ and is not a str, so classify()
+        falls through to value.str() -- running this __str__ while the
+        workbook borrow is held."""
+
+        def __str__(self):
+            ws.write(99, 0, "re-entrant")
+            return "value"
+
+    with pytest.raises(RuntimeError, match="already being modified"):
+        ws.write_records(0, 0, [{"col": ReentrantValue()}])
+
+
+def test_reentrant_value_is_fine_on_the_per_cell_path():
+    """write() classifies before taking the borrow, so the same value is
+    harmless there. Pins that the fix did not over-restrict."""
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+
+    class Chatty:
+        def __str__(self):
+            return "converted"
+
+    ws.write(0, 0, Chatty())
+    wb.close(TEST_FILE)
+
+    book = openpyxl.load_workbook(TEST_FILE)
+    assert book["S"]["A1"].value == "converted"
