@@ -2469,9 +2469,9 @@ impl Workbook {
         let index = {
             let wb_ref = slf.borrow(py);
             let mut wb = wb_ref
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| reentrant_workbook_err())?;
+                .inner
+                .try_borrow_mut()
+                .map_err(|_| reentrant_workbook_err())?;
 
             // Validate the name BEFORE touching the workbook.
             //
