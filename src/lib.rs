@@ -14,6 +14,7 @@ use rust_xlsxwriter::{
     Table as RustTable, TableColumn as RustTableColumn, TableFunction, TableStyle,
     Workbook as RustWorkbook, Worksheet as RustWorksheet,
 };
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 
 // ============================================
@@ -153,9 +154,14 @@ fn parse_border(border: &str) -> PyResult<FormatBorder> {
 // bool into 1.0/0.0 if given the chance -- so checking numeric types
 // first would silently turn True/False into numbers instead of real
 // boolean cells (this was a real bug in the original ordering).
-enum CellValue {
+enum CellValue<'a> {
     Blank,
-    Str(String),
+    // Cow rather than String so the Arrow path can borrow straight out of
+    // the columnar string buffer instead of heap-allocating a String per
+    // cell that is dropped again immediately after write_string(). The
+    // Python paths still produce Cow::Owned, since the PyString they read
+    // from is a temporary that does not outlive the classify() call.
+    Str(Cow<'a, str>),
     Num(f64),
     Bool(bool),
     // Excel serial date/datetime -- days since 1899-12-30, fractional
@@ -181,7 +187,7 @@ const SUPPORTED_ARROW_TYPES: &str = "supported: int8/16/32/64, uint8/16/32/64, \
      float32/64, string/utf8, large_utf8, utf8view, bool, date32, date64, \
      timestamp[s|ms|us|ns]";
 
-fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue> {
+fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue<'static>> {
     if value.is_none() {
         Ok(CellValue::Blank)
     } else if let Ok(b) = value.extract::<bool>() {
@@ -200,9 +206,9 @@ fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue> {
     } else if let Ok(i) = value.extract::<i64>() {
         Ok(CellValue::Num(i as f64))
     } else if let Ok(s) = value.extract::<String>() {
-        Ok(CellValue::Str(s))
+        Ok(CellValue::Str(Cow::Owned(s)))
     } else {
-        Ok(CellValue::Str(value.str()?.to_string()))
+        Ok(CellValue::Str(Cow::Owned(value.str()?.to_string())))
     }
 }
 
@@ -213,16 +219,16 @@ fn write_value(
     sheet: &mut RustWorksheet,
     row: u32,
     col: u16,
-    cv: &CellValue,
+    cv: &CellValue<'_>,
     fmt: Option<&RustFormat>,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
     match (cv, fmt) {
         (CellValue::Blank, Some(f)) => sheet.write_blank(row, col, f).map(|_| ()),
         (CellValue::Blank, None) => Ok(()), // nothing meaningful to write without a format
         (CellValue::Str(s), Some(f)) => sheet
-            .write_string_with_format(row, col, s.as_str(), f)
+            .write_string_with_format(row, col, s.as_ref(), f)
             .map(|_| ()),
-        (CellValue::Str(s), None) => sheet.write_string(row, col, s.as_str()).map(|_| ()),
+        (CellValue::Str(s), None) => sheet.write_string(row, col, s.as_ref()).map(|_| ()),
         (CellValue::Num(n), Some(f)) => sheet.write_number_with_format(row, col, *n, f).map(|_| ()),
         (CellValue::Num(n), None) => sheet.write_number(row, col, *n).map(|_| ()),
         (CellValue::Bool(b), Some(f)) => {
@@ -256,7 +262,7 @@ fn merge_value(
     first_col: u16,
     last_row: u32,
     last_col: u16,
-    cv: &CellValue,
+    cv: &CellValue<'_>,
     fmt: &RustFormat,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
     // merge_range() itself only accepts a plain &str -- confirmed this
@@ -475,7 +481,7 @@ macro_rules! datetime_cell {
 // doesn't say which column produced it. Everything else keeps the standard
 // mapping, so IoError still surfaces as OSError rather than ValueError.
 fn arrow_write_err(
-    cv: &CellValue,
+    cv: &CellValue<'_>,
     column_name: &str,
     row: usize,
     e: rust_xlsxwriter::XlsxError,
@@ -490,7 +496,7 @@ fn arrow_write_err(
     }
 }
 
-fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
+fn arrow_cell_value<'a>(col: &ArrowColumn<'a>, row: usize) -> CellValue<'a> {
     match col {
         ArrowColumn::Int8(a) => num_cell!(a, row),
         ArrowColumn::Int16(a) => num_cell!(a, row),
@@ -516,24 +522,27 @@ fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
             }
         }
         ArrowColumn::Utf8(a) => {
-            if a.is_null(row) {
+            let arr: &'a StringArray = *a;
+            if arr.is_null(row) {
                 CellValue::Blank
             } else {
-                CellValue::Str(a.value(row).to_string())
+                CellValue::Str(Cow::Borrowed(arr.value(row)))
             }
         }
         ArrowColumn::LargeUtf8(a) => {
-            if a.is_null(row) {
+            let arr: &'a LargeStringArray = *a;
+            if arr.is_null(row) {
                 CellValue::Blank
             } else {
-                CellValue::Str(a.value(row).to_string())
+                CellValue::Str(Cow::Borrowed(arr.value(row)))
             }
         }
         ArrowColumn::Utf8View(a) => {
-            if a.is_null(row) {
+            let arr: &'a StringViewArray = *a;
+            if arr.is_null(row) {
                 CellValue::Blank
             } else {
-                CellValue::Str(a.value(row).to_string())
+                CellValue::Str(Cow::Borrowed(arr.value(row)))
             }
         }
         ArrowColumn::Bool(a) => {
@@ -1346,7 +1355,7 @@ impl Worksheet {
         // avoids the per-row downcast and iterator allocation of the naive
         // downcast::<PyList>() + .iter() approach.
         let n_rows = rows.len();
-        let mut classified_rows: Vec<(Vec<CellValue>, bool)> = Vec::with_capacity(n_rows);
+        let mut classified_rows: Vec<(Vec<CellValue<'static>>, bool)> = Vec::with_capacity(n_rows);
 
         for r in 0..n_rows {
             let row_obj = rows.get_item(r)?;
@@ -1476,7 +1485,7 @@ impl Worksheet {
                     sheet,
                     row_cursor,
                     start_col + i as u16,
-                    &CellValue::Str(h.clone()),
+                    &CellValue::Str(Cow::Borrowed(h.as_str())),
                     head_fmt,
                 )
                 .map_err(xlsx_err_to_pyerr)?;
@@ -1629,7 +1638,7 @@ impl Worksheet {
                     sheet,
                     row_cursor,
                     start_col + i as u16,
-                    &CellValue::Str(name.clone()),
+                    &CellValue::Str(Cow::Borrowed(name.as_str())),
                     head_fmt,
                 )
                 .map_err(xlsx_err_to_pyerr)?;
