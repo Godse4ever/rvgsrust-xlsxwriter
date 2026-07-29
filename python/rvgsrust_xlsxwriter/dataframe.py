@@ -12,6 +12,16 @@ formatting isn't supported by write_dataframe() yet) or a column has an
 unsupported type, this falls back to the original per-cell write() loop
 so every DataFrame this module has ever accepted still works -- just
 without the speed benefit in those cases.
+
+The fast path streams Arrow record batches rather than materialising them,
+so it also accepts any streaming producer exposing __arrow_c_stream__ (for
+example a pyarrow.RecordBatchReader over a Parquet file), and its peak
+memory is bounded by one batch rather than by the whole dataset.
+
+Fallback contract: only TypeError triggers the per-cell retry, because
+write_dataframe() validates the entire schema before writing anything, so a
+TypeError is guaranteed to mean nothing was written. Failures after writing
+has started surface as RuntimeError and are not retried.
 """
 
 try:
@@ -67,7 +77,15 @@ def write_polars_dataframe(worksheet, df, row=0, col=0, header_format=None, colu
             worksheet.write_dataframe(row, col, df, header_format=header_format)
             return
         except TypeError:
-            pass  # unsupported column type in the fast path -- fall back below
+            # Only TypeError is caught, and that is deliberate rather than
+            # incidental. write_dataframe() validates the whole schema before
+            # writing any cell, so a TypeError means "this column type is not
+            # supported yet" and *nothing has been written* -- making the
+            # per-cell retry below safe. Any failure that occurs once writing
+            # has begun is raised as RuntimeError instead, precisely so it
+            # propagates here rather than triggering a retry that would
+            # duplicate the rows already on the sheet.
+            pass
 
     _write_dataframe_per_cell(
         worksheet, df.columns, df.iter_rows(), row, col, header_format, column_formats
@@ -99,7 +117,15 @@ def write_pandas_dataframe(worksheet, df, row=0, col=0, header_format=None, colu
             worksheet.write_dataframe(row, col, df, header_format=header_format)
             return
         except TypeError:
-            pass  # unsupported column type in the fast path -- fall back below
+            # Only TypeError is caught, and that is deliberate rather than
+            # incidental. write_dataframe() validates the whole schema before
+            # writing any cell, so a TypeError means "this column type is not
+            # supported yet" and *nothing has been written* -- making the
+            # per-cell retry below safe. Any failure that occurs once writing
+            # has begun is raised as RuntimeError instead, precisely so it
+            # propagates here rather than triggering a retry that would
+            # duplicate the rows already on the sheet.
+            pass
 
     columns = [str(c) for c in df.columns]
     rows = (row_data for _, row_data in df.iterrows())
