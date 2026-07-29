@@ -15,11 +15,35 @@ import pytest
 from rvgsrust_xlsxwriter import Workbook
 
 TEST_FILE = "test_regressions.xlsx"
+SECOND_FILE = "test_regressions_second.xlsx"
 
 
 def teardown_function(function):
-    if os.path.exists(TEST_FILE):
-        os.remove(TEST_FILE)
+    for path in (TEST_FILE, SECOND_FILE):
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except PermissionError:
+                # Windows refuses to unlink a file that still has an open
+                # handle (WinError 32). Every test here closes its workbook,
+                # so this is only a safety net against a stray reference --
+                # leaving the file behind must not fail an otherwise passing
+                # test run.
+                pass
+
+
+def _load(path=TEST_FILE):
+    """Load a workbook and release the file handle immediately.
+
+    openpyxl keeps the underlying zip archive open, and on Windows an open
+    handle prevents teardown from deleting the file. A non-read-only load
+    has every value in memory by the time load_workbook() returns, so the
+    handle can be dropped straight away and the returned object stays fully
+    usable.
+    """
+    book = openpyxl.load_workbook(path)
+    book.close()
+    return book
 
 
 # ---------------------------------------------------------------------
@@ -57,7 +81,7 @@ def test_rejected_sheet_name_leaves_workbook_unchanged(bad_name):
     second.write(0, 0, "landed-correctly")
     wb.close(TEST_FILE)
 
-    book = openpyxl.load_workbook(TEST_FILE)
+    book = _load()
     # No orphan sheet from the failed call.
     assert book.sheetnames == ["First", "Second"]
     # The write went to the sheet the caller actually asked for.
@@ -78,7 +102,7 @@ def test_many_sheets_keep_stable_indices_across_failures():
         ws.write(0, 0, name)
     wb.close(TEST_FILE)
 
-    book = openpyxl.load_workbook(TEST_FILE)
+    book = _load()
     assert book.sheetnames == [f"S{i}" for i in range(5)]
     # Each sheet must contain its own name, not a neighbour's.
     for name in handles:
@@ -178,7 +202,7 @@ def test_reentrant_value_is_fine_on_the_per_cell_path():
     ws.write(0, 0, Chatty())
     wb.close(TEST_FILE)
 
-    book = openpyxl.load_workbook(TEST_FILE)
+    book = _load()
     assert book["S"]["A1"].value == "converted"
 
 
@@ -231,7 +255,7 @@ def test_concurrent_close_reports_error_not_corruption():
     overlap."""
     import threading
 
-    second_path = "test_regressions_second.xlsx"
+    second_path = SECOND_FILE
     wb = Workbook()
     ws = wb.add_worksheet("S")
     ws.write_rows(0, 0, [[f"v{r}-{c}" for c in range(10)] for r in range(20000)])
@@ -256,8 +280,6 @@ def test_concurrent_close_reports_error_not_corruption():
     assert len(saved) >= 1, results
     for path in saved:
         assert os.path.exists(path)
-    if os.path.exists(second_path):
-        os.remove(second_path)
 
 
 # ---------------------------------------------------------------------
@@ -287,7 +309,7 @@ def test_arrow_string_columns_roundtrip_unchanged():
     ws.write_dataframe(0, 0, table)
     wb.close(TEST_FILE)
 
-    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    sheet = _load()["S"]
     assert [sheet.cell(1, c).value for c in (1, 2)] == ["utf8", "large"]
     assert [sheet.cell(r, 1).value for r in range(2, 7)] == [
         "a", "bb", None, "ünïcødé", None,
@@ -308,7 +330,7 @@ def test_arrow_string_view_roundtrip_unchanged():
     ws.write_dataframe(0, 0, table)
     wb.close(TEST_FILE)
 
-    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    sheet = _load()["S"]
     assert [sheet.cell(r, 1).value for r in range(2, 5)] == ["one", None, "three"]
 
 
@@ -324,9 +346,14 @@ def test_large_string_dataframe_stress():
     ws.write_dataframe(0, 0, table)
     wb.close(TEST_FILE)
 
-    sheet = openpyxl.load_workbook(TEST_FILE, read_only=True)["S"]
-    rows = sheet.iter_rows(min_row=2, max_row=2, values_only=True)
-    assert next(rows) == ("row-0", 0)
+    # read_only mode streams from the archive, so the handle must be closed
+    # explicitly once the row has been pulled.
+    book = openpyxl.load_workbook(TEST_FILE, read_only=True)
+    try:
+        first = next(book["S"].iter_rows(min_row=2, max_row=2, values_only=True))
+    finally:
+        book.close()
+    assert first == ("row-0", 0)
 
 
 # ---------------------------------------------------------------------
@@ -366,7 +393,7 @@ def test_write_dataframe_accepts_a_streaming_reader():
     ws.write_dataframe(0, 0, _batch_reader(pa))
     wb.close(TEST_FILE)
 
-    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    sheet = _load()["S"]
     assert [sheet.cell(1, c).value for c in (1, 2)] == ["n", "s"]
     assert [sheet.cell(r, 1).value for r in range(2, 8)] == [0, 1, 2, 3, 4, 5]
     assert sheet.cell(2, 2).value == "b0-0"
@@ -382,7 +409,7 @@ def test_write_dataframe_streaming_into_constant_memory():
     ws.write_dataframe(0, 0, _batch_reader(pa, n_batches=5, rows_per_batch=4))
     wb.close(TEST_FILE)
 
-    sheet = openpyxl.load_workbook(TEST_FILE)["CM"]
+    sheet = _load()["CM"]
     assert [sheet.cell(r, 1).value for r in range(2, 22)] == list(range(20))
 
 
@@ -409,7 +436,7 @@ def test_write_dataframe_empty_stream_writes_nothing():
     ws.write_dataframe(0, 0, reader)
     wb.close(TEST_FILE)
 
-    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    sheet = _load()["S"]
     assert sheet["A1"].value is None
 
 
@@ -422,6 +449,6 @@ def test_write_dataframe_still_works_for_plain_tables():
     ws.write_dataframe(0, 0, table)
     wb.close(TEST_FILE)
 
-    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    sheet = _load()["S"]
     assert [sheet.cell(r, 1).value for r in range(2, 5)] == [1, 2, 3]
     assert [sheet.cell(r, 2).value for r in range(2, 5)] == ["x", "y", "z"]
