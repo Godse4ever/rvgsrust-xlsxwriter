@@ -46,6 +46,31 @@ fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
     }
 }
 
+// Every path that mutates the workbook goes through
+// RefCell::borrow_mut(). That panics on a double borrow, and a double
+// borrow is genuinely reachable from Python rather than being an
+// internal invariant: the bulk write paths hold the borrow across
+// per-cell classify() calls, and classify() falls back to value.str()
+// for unrecognised types, which runs arbitrary Python. A __str__ (or a
+// __del__ triggered mid-loop) that touches the same Workbook re-enters
+// borrow_mut() while the first borrow is still live.
+//
+// A panic there crosses the FFI boundary as pyo3's PanicException,
+// which is catchable but reports only "already mutably borrowed:
+// BorrowMutError" -- nothing about what the caller did or how to avoid
+// it. try_borrow_mut() plus this message turns it into an ordinary,
+// explicable Python exception instead.
+fn reentrant_workbook_err() -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+        "Workbook is already being modified by a write in progress on this \
+         thread. This usually means a value's __str__/__repr__ (or a \
+         __del__) called back into the same Workbook while a bulk write \
+         such as write_records() was running. Convert such values to str \
+         before passing them in, and do not re-enter the Workbook from a \
+         conversion method.",
+    )
+}
+
 // ============================================
 // COLOR HELPER
 // ============================================
@@ -1160,7 +1185,10 @@ impl Worksheet {
         F: FnOnce(&mut RustWorksheet) -> Result<R, rust_xlsxwriter::XlsxError>,
     {
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
+        let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1339,7 +1367,10 @@ impl Worksheet {
 
         // Write all pre-classified values in a tight Rust loop.
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
+        let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1421,7 +1452,10 @@ impl Worksheet {
         let head_fmt = header_format.map(|f| &f.inner);
 
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
+        let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1580,7 +1614,10 @@ impl Worksheet {
         }
 
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
+        let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -2422,7 +2459,10 @@ impl Workbook {
     ) -> PyResult<Py<Worksheet>> {
         let index = {
             let wb_ref = slf.borrow(py);
-            let mut wb = wb_ref.inner.borrow_mut();
+            let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
 
             // Validate the name BEFORE touching the workbook.
             //
@@ -2476,7 +2516,8 @@ impl Workbook {
 
     fn close(&self, path: &str) -> PyResult<()> {
         self.inner
-            .borrow_mut()
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
             .save(path)
             .map_err(xlsx_err_to_pyerr)?;
         Ok(())
@@ -2490,7 +2531,8 @@ impl Workbook {
     // is the range/formula the name refers to, e.g. "Sheet1!$A$1:$A$10".
     fn define_name(&self, name: &str, formula: &str) -> PyResult<()> {
         self.inner
-            .borrow_mut()
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
             .define_name(name, formula)
             .map_err(xlsx_err_to_pyerr)?;
         Ok(())
@@ -2504,8 +2546,11 @@ impl Workbook {
         subject: Option<&str>,
         keywords: Option<&str>,
         comments: Option<&str>,
-    ) {
-        let mut wb = self.inner.borrow_mut();
+    ) -> PyResult<()> {
+        let mut wb = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let mut props = rust_xlsxwriter::DocProperties::new();
         if let Some(t) = title {
             props = props.set_title(t);
@@ -2523,6 +2568,7 @@ impl Workbook {
             props = props.set_comment(c);
         }
         wb.set_properties(&props);
+        Ok(())
     }
 }
 
