@@ -522,7 +522,7 @@ fn arrow_cell_value<'a>(col: &ArrowColumn<'a>, row: usize) -> CellValue<'a> {
             }
         }
         ArrowColumn::Utf8(a) => {
-            let arr: &'a StringArray = *a;
+            let arr: &'a StringArray = a;
             if arr.is_null(row) {
                 CellValue::Blank
             } else {
@@ -530,7 +530,7 @@ fn arrow_cell_value<'a>(col: &ArrowColumn<'a>, row: usize) -> CellValue<'a> {
             }
         }
         ArrowColumn::LargeUtf8(a) => {
-            let arr: &'a LargeStringArray = *a;
+            let arr: &'a LargeStringArray = a;
             if arr.is_null(row) {
                 CellValue::Blank
             } else {
@@ -538,7 +538,7 @@ fn arrow_cell_value<'a>(col: &ArrowColumn<'a>, row: usize) -> CellValue<'a> {
             }
         }
         ArrowColumn::Utf8View(a) => {
-            let arr: &'a StringViewArray = *a;
+            let arr: &'a StringViewArray = a;
             if arr.is_null(row) {
                 CellValue::Blank
             } else {

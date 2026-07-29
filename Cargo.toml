@@ -2,7 +2,7 @@
 name = "rvgsrust-xlsxwriter"
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.85"
 license = "MIT"
 description = "Python bindings for rust_xlsxwriter -- a Rust-powered XLSX writer"
 repository = "https://github.com/Godse4ever/rvgsrust-xlsxwriter"
@@ -34,6 +34,19 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 #   increasing order, so they're unaffected by this in normal use; the
 #   check exists for direct write()/write_row()/merge_range()/etc calls
 #   that might not maintain that invariant on their own.
+#
+# MSRV note: rust-version is 1.85, not 1.83. Verified empirically in CI,
+# not inferred: with no Cargo.lock committed, transitive dependencies
+# resolve to latest-compatible, and indexmap 2.14.0 (pulled in via the
+# arrow stack) declares edition2024. Cargo 1.83 cannot parse that
+# manifest at all ("feature `edition2024` is required"), so the build
+# fails during resolution rather than compilation. edition2024 was
+# stabilised in Rust 1.85, which is therefore the real floor.
+#
+# Because dependencies float, this floor can rise again on a transitive
+# bump. The msrv job in CI exists to make that visible rather than
+# letting the declared value quietly become fiction, which is what had
+# already happened with 1.83.
 #
 # Toolchain note: this exact pin could not be compiled in the sandbox
 # this was developed in (rustc 1.75, apt-installed) -- confirmed via
