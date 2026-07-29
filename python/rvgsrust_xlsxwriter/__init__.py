@@ -17,13 +17,15 @@ Features
 - Autofilter
 - Sheet protection and freeze panes
 - Rich string support (write_rich_string)
+- Charts, conditional formatting and sparklines
 - Polars, Pandas, and PyArrow DataFrame support (zero-copy Arrow path)
 
 Not a drop-in replacement for Python xlsxwriter: the API is inspired by
 it but differs in real ways (e.g. Workbook() takes no path argument;
 call close(path) instead; Format objects are built via chained setter
-methods rather than a single dict). Charts, conditional formatting, and
-data validation are not yet implemented -- see the Roadmap in README.md.
+methods rather than a single dict). Charts, conditional formatting and
+sparklines ARE implemented (see the exports below); data validation is
+not yet -- see the Roadmap in README.md.
 
 Note on memory management: Worksheet objects hold a reference back to
 their parent Workbook (needed to access the underlying Rust worksheet).
@@ -73,7 +75,7 @@ Quick Start
 # code 2, taking the whole test job with it.
 from __future__ import annotations
 
-__version__ = "0.2.0.dev0"
+__version__ = "0.2.0"
 __author__ = "RVGS Team"
 __license__ = "MIT"
 
