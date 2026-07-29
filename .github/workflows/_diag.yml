@@ -30,8 +30,8 @@ jobs:
           -A clippy::too_many_arguments \
           -A clippy::new_without_default > clippy_raw.txt 2>&1
         echo "exit=$?" > clippy_exit.txt
-        grep -E '^(error|warning)' -A 6 clippy_raw.txt | tail -c 40000 > clippy.txt
-        wc -c clippy.txt
+        tail -c 30000 clippy_raw.txt > clippy.txt
+        wc -c clippy_raw.txt clippy.txt
 
     - name: Capture rustfmt
       run: |
@@ -48,7 +48,8 @@ jobs:
         set +e
         cargo check > msrv_raw.txt 2>&1
         echo "msrv_exit=$?" >> clippy_exit.txt
-        grep -E '^(error|warning)' -A 8 msrv_raw.txt | tail -c 20000 > msrv.txt
+        tail -c 20000 msrv_raw.txt > msrv.txt
+        wc -c msrv_raw.txt msrv.txt
 
     - name: Post diagnostics to PR
       env:
