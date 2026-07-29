@@ -1674,9 +1674,30 @@ impl Worksheet {
             }
 
             let batch = &batch;
-            let columns: Vec<ArrowColumn<'_>> = (0..batch.num_columns())
+            // The schema was validated up front from the reader's declared
+            // schema, so a failure here means a batch's actual column type
+            // disagrees with what the producer declared. By this point rows
+            // may already be on the sheet, which makes the failure
+            // unrecoverable: re-raise it as RuntimeError rather than the
+            // TypeError resolve_arrow_column() produces, so that callers
+            // which treat TypeError as "unsupported type, retry another way"
+            // -- notably dataframe.py's per-cell fallback -- do not silently
+            // re-write the same rows and duplicate them.
+            let columns: Vec<ArrowColumn<'_>> = match (0..batch.num_columns())
                 .map(|c| resolve_arrow_column(batch.column(c).as_ref()))
-                .collect::<PyResult<Vec<_>>>()?;
+                .collect::<PyResult<Vec<_>>>()
+            {
+                Ok(cols) => cols,
+                Err(e) => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "write_dataframe(): a record batch's column type disagrees with \
+                         the stream's declared schema after {} row(s) had already been \
+                         written. The worksheet is now partially written and this call \
+                         cannot be safely retried. Underlying error: {e}",
+                        row_cursor.saturating_sub(start_row)
+                    )));
+                }
+            };
 
             // A column's type is fixed for the whole batch, so pick its
             // format once here instead of re-matching on every cell --
