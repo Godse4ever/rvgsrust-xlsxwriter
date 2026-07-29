@@ -252,3 +252,73 @@ def test_concurrent_close_reports_error_not_corruption():
     assert os.path.exists(TEST_FILE)
     if os.path.exists("test_regressions_second.xlsx"):
         os.remove("test_regressions_second.xlsx")
+
+
+# ---------------------------------------------------------------------
+# Arrow string columns allocated a String per cell
+# ---------------------------------------------------------------------
+# arrow_cell_value() called .to_string() on every Utf8/LargeUtf8/Utf8View
+# cell, heap-allocating a String that was dropped immediately after
+# write_string(). CellValue::Str is now Cow<str> and the Arrow path
+# borrows the columnar buffer directly. These tests pin that the change
+# is behaviour-preserving, which is the only part observable from Python.
+
+
+def _pa():
+    return pytest.importorskip("pyarrow")
+
+
+def test_arrow_string_columns_roundtrip_unchanged():
+    pa = _pa()
+    table = pa.table(
+        {
+            "utf8": pa.array(["a", "bb", None, "ünïcødé", ""], type=pa.string()),
+            "large": pa.array(["x", None, "zzz", "q", "w"], type=pa.large_string()),
+        }
+    )
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, table)
+    wb.close(TEST_FILE)
+
+    book = openpyxl.load_workbook(TEST_FILE)
+    sheet = book["S"]
+    assert [sheet.cell(1, c).value for c in (1, 2)] == ["utf8", "large"]
+    assert [sheet.cell(r, 1).value for r in range(2, 7)] == [
+        "a", "bb", None, "ünïcødé", None,
+    ]
+    assert [sheet.cell(r, 2).value for r in range(2, 7)] == [
+        "x", None, "zzz", "q", "w",
+    ]
+
+
+def test_arrow_string_view_roundtrip_unchanged():
+    """Utf8View is Polars' default string type, so it is the hot path."""
+    pa = _pa()
+    if not hasattr(pa, "string_view"):
+        pytest.skip("pyarrow build lacks string_view")
+    table = pa.table({"v": pa.array(["one", None, "three"], type=pa.string_view())})
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, table)
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE)["S"]
+    assert [sheet.cell(r, 1).value for r in range(2, 5)] == ["one", None, "three"]
+
+
+def test_large_string_dataframe_stress():
+    """Exercises the borrowed path at a size where a per-cell allocation
+    would have been measurable."""
+    pa = _pa()
+    n = 50_000
+    table = pa.table({"s": pa.array([f"row-{i}" for i in range(n)]),
+                      "n": pa.array(list(range(n)))})
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, table)
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE, read_only=True)["S"]
+    rows = sheet.iter_rows(min_row=2, max_row=2, values_only=True)
+    assert next(rows) == ("row-0", 0)
