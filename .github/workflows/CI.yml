@@ -8,40 +8,31 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  # Lint runs once on Linux rather than once per matrix entry: clippy and
+  # rustfmt results do not vary by OS or Python version, so repeating them
+  # would only burn runner minutes.
+  #
+  # -D warnings promotes all clippy warnings to errors. The three -A flags
+  # come AFTER -D warnings so they take precedence for those specific lints
+  # (rustc processes lint flags left-to-right, later wins). The
+  # [lints.clippy] table in Cargo.toml already sets these to allow, but
+  # -D warnings is a broader group flag that would otherwise override the
+  # table's specific allows -- passing them again here as explicit -A flags
+  # guarantees the allows win regardless of flag ordering with Cargo. See
+  # Cargo.toml for the rationale on each suppressed lint.
+  lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
 
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy, rustfmt
 
-    - name: Create virtualenv and install dependencies
-      run: |
-        python -m venv .venv
-        source .venv/bin/activate
-        pip install --upgrade pip
-        pip install maturin pytest openpyxl pyarrow pandas polars
-
-    # -D warnings promotes all clippy warnings to errors. The three -A
-    # flags come AFTER -D warnings so they take precedence for those
-    # specific lints (rustc processes lint flags left-to-right, later
-    # wins). The [lints.clippy] table in Cargo.toml already sets these
-    # to allow, but -D warnings is a broader group flag that would
-    # otherwise override the table's specific allows -- passing them
-    # again here as explicit -A flags after -D warnings guarantees the
-    # allows win regardless of flag ordering with Cargo. See Cargo.toml
-    # for the rationale on each suppressed lint.
     - name: Lint (clippy)
       run: |
-        cargo clippy -- -D warnings \
+        cargo clippy --all-targets -- -D warnings \
           -A clippy::useless_conversion \
           -A clippy::too_many_arguments \
           -A clippy::new_without_default
@@ -49,15 +40,51 @@ jobs:
     - name: Format check
       run: cargo fmt --check
 
-    - name: Build and install
+  # Wheels ship for Linux, macOS and Windows, but the suite previously ran
+  # only on Linux/3.11 -- so nothing verified the library actually worked on
+  # the other two platforms, or on any Python version other than 3.11.
+  #
+  # Installs with `pip install .` rather than `maturin develop` so a single
+  # command works on all three runners: maturin develop needs an activated
+  # virtualenv, and activation differs on Windows (Scripts\activate vs
+  # bin/activate). maturin is the PEP 517 backend, so `pip install .` builds
+  # the release extension anyway.
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Do not cancel the other platforms when one fails: a platform-specific
+      # failure is exactly what this matrix exists to surface, and knowing
+      # whether it is one platform or all of them is the useful signal.
+      fail-fast: false
+      matrix:
+        include:
+          # Oldest and newest supported Python, plus a mid version.
+          - { os: ubuntu-latest,  python: '3.9'  }
+          - { os: ubuntu-latest,  python: '3.12' }
+          - { os: ubuntu-latest,  python: '3.13' }
+          # One Python per remaining OS: platform coverage is the point here,
+          # and version coverage is already handled above.
+          - { os: macos-latest,   python: '3.12' }
+          - { os: windows-latest, python: '3.12' }
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python }}
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install package and test dependencies
       run: |
-        source .venv/bin/activate
-        maturin develop --release
+        python -m pip install --upgrade pip
+        python -m pip install pytest openpyxl pyarrow pandas polars
+        python -m pip install .
 
     - name: Run tests
-      run: |
-        source .venv/bin/activate
-        pytest tests/ -v
+      run: pytest tests/ -v
 
   # This crate builds against pyo3's stable ABI (abi3-py38, see
   # Cargo.toml), which means a single wheel per OS/architecture works
@@ -143,7 +170,7 @@ jobs:
         path: dist/*.tar.gz
 
   publish:
-    needs: [test, msrv, build-wheels-linux, build-wheels-non-linux, build-sdist]
+    needs: [lint, test, msrv, build-wheels-linux, build-wheels-non-linux, build-sdist]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
