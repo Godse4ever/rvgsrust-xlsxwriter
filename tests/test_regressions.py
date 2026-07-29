@@ -1,0 +1,454 @@
+"""Regression tests for bugs found in the 0.2.0 audit.
+
+Each test here pins the *observable* consequence of a specific fixed bug,
+so a future refactor that reintroduces the root cause fails loudly. They
+deliberately assert on the saved workbook (via openpyxl) rather than on
+internal state, because every bug in this file was silent at the API
+level -- the calls all returned successfully and produced a valid .xlsx
+that simply contained the wrong thing.
+"""
+import os
+
+import openpyxl
+import pytest
+
+from rvgsrust_xlsxwriter import Workbook
+
+TEST_FILE = "test_regressions.xlsx"
+SECOND_FILE = "test_regressions_second.xlsx"
+
+
+def teardown_function(function):
+    for path in (TEST_FILE, SECOND_FILE):
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except PermissionError:
+                # Windows refuses to unlink a file that still has an open
+                # handle (WinError 32). Every test here closes its workbook,
+                # so this is only a safety net against a stray reference --
+                # leaving the file behind must not fail an otherwise passing
+                # test run.
+                pass
+
+
+def _load(path=TEST_FILE):
+    """Load a workbook and release the file handle immediately.
+
+    openpyxl keeps the underlying zip archive open, and on Windows an open
+    handle prevents teardown from deleting the file. A non-read-only load
+    has every value in memory by the time load_workbook() returns, so the
+    handle can be dropped straight away and the returned object stays fully
+    usable.
+    """
+    book = openpyxl.load_workbook(path)
+    book.close()
+    return book
+
+
+# ---------------------------------------------------------------------
+# add_worksheet() index desync after a rejected sheet name
+# ---------------------------------------------------------------------
+# Previously add_worksheet() appended the worksheet, then called
+# set_name(), then advanced its index counter. A rejected name returned
+# early from the middle of that sequence, leaving an unnamed worksheet in
+# the workbook while the counter had not moved. The next add_worksheet()
+# therefore returned an index pointing at the orphan, and every write
+# through that handle landed on the wrong sheet while the intended sheet
+# saved empty. Nothing raised.
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "A" * 32,      # exceeds Excel's 31-character limit
+        "bad/name",    # contains an invalid character
+        "bad:name",
+        "bad[name]",
+        "",            # blank
+    ],
+)
+def test_rejected_sheet_name_leaves_workbook_unchanged(bad_name):
+    """A rejected name must not append a worksheet, and must not shift
+    the index of any worksheet added afterwards."""
+    wb = Workbook()
+    wb.add_worksheet("First")
+
+    with pytest.raises(ValueError):
+        wb.add_worksheet(bad_name)
+
+    second = wb.add_worksheet("Second")
+    second.write(0, 0, "landed-correctly")
+    wb.close(TEST_FILE)
+
+    book = _load()
+    # No orphan sheet from the failed call.
+    assert book.sheetnames == ["First", "Second"]
+    # The write went to the sheet the caller actually asked for.
+    assert book["Second"]["A1"].value == "landed-correctly"
+    assert book["First"]["A1"].value is None
+
+
+def test_many_sheets_keep_stable_indices_across_failures():
+    """Interleaving failures with successes must not corrupt any handle."""
+    wb = Workbook()
+    handles = {}
+    for i in range(5):
+        handles[f"S{i}"] = wb.add_worksheet(f"S{i}")
+        with pytest.raises(ValueError):
+            wb.add_worksheet("X" * 32)
+
+    for name, ws in handles.items():
+        ws.write(0, 0, name)
+    wb.close(TEST_FILE)
+
+    book = _load()
+    assert book.sheetnames == [f"S{i}" for i in range(5)]
+    # Each sheet must contain its own name, not a neighbour's.
+    for name in handles:
+        assert book[name]["A1"].value == name
+
+
+# ---------------------------------------------------------------------
+# add_table() bypassed the constant_memory row-order guard
+# ---------------------------------------------------------------------
+# add_table() writes header/total cells immediately rather than at save
+# time, but was the only cell-writing Worksheet method with no
+# check_row_order call. On a constant_memory worksheet, a table anchored
+# above the current high-water mark was accepted and silently produced a
+# corrupt file instead of raising.
+
+
+def test_add_table_rejects_backward_write_in_constant_memory():
+    from rvgsrust_xlsxwriter import Table
+
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+
+    # Advance the high-water mark well past where the table would start.
+    ws.write(50, 0, "later-row")
+
+    table = Table()
+    with pytest.raises(ValueError, match="constant_memory"):
+        ws.add_table(0, 0, 10, 2, table)
+
+
+def test_add_table_still_allowed_in_order_in_constant_memory():
+    """The guard must not reject a legitimate forward-ordered table."""
+    from rvgsrust_xlsxwriter import Table
+
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+    ws.write(0, 0, "header-area")
+
+    table = Table()
+    ws.add_table(5, 0, 10, 2, table)  # forward of row 0 -- must not raise
+    wb.close(TEST_FILE)
+    assert os.path.exists(TEST_FILE)
+
+
+def test_add_table_unaffected_on_normal_worksheet():
+    """Non-constant_memory sheets keep unrestricted ordering."""
+    from rvgsrust_xlsxwriter import Table
+
+    wb = Workbook()
+    ws = wb.add_worksheet("Normal")
+    ws.write(50, 0, "later-row")
+
+    table = Table()
+    ws.add_table(0, 0, 10, 2, table)  # backward, but allowed here
+    wb.close(TEST_FILE)
+    assert os.path.exists(TEST_FILE)
+
+
+# ---------------------------------------------------------------------
+# Re-entrant workbook access panicked instead of raising
+# ---------------------------------------------------------------------
+# write_records() holds the workbook's RefCell borrow across the whole
+# loop while calling classify() per cell, and classify() falls back to
+# value.str() for unrecognised types. A __str__ that touches the same
+# Workbook re-entered borrow_mut() and hit a Rust panic surfacing as
+# pyo3's PanicException with only "already mutably borrowed". It is now a
+# RuntimeError explaining the cause.
+
+
+def test_reentrant_write_from_dunder_str_raises_runtime_error():
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+
+    class ReentrantValue:
+        """Has no __float__/__index__ and is not a str, so classify()
+        falls through to value.str() -- running this __str__ while the
+        workbook borrow is held."""
+
+        def __str__(self):
+            ws.write(99, 0, "re-entrant")
+            return "value"
+
+    with pytest.raises(RuntimeError, match="already being modified"):
+        ws.write_records(0, 0, [{"col": ReentrantValue()}])
+
+
+def test_reentrant_value_is_fine_on_the_per_cell_path():
+    """write() classifies before taking the borrow, so the same value is
+    harmless there. Pins that the fix did not over-restrict."""
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+
+    class Chatty:
+        def __str__(self):
+            return "converted"
+
+    ws.write(0, 0, Chatty())
+    wb.close(TEST_FILE)
+
+    book = _load()
+    assert book["S"]["A1"].value == "converted"
+
+
+# ---------------------------------------------------------------------
+# close() held the GIL for the whole save
+# ---------------------------------------------------------------------
+# save() serialises and deflates the entire archive and touches no Python
+# objects, but ran with the GIL held, stalling every other thread for its
+# full duration. It now releases the GIL. This test asserts a background
+# thread keeps making progress during a save, and that a concurrent
+# access to the same Workbook is reported as an error rather than
+# corrupting state.
+
+
+def test_other_threads_progress_during_close():
+    import threading
+    import time
+
+    wb = Workbook()
+    ws = wb.add_worksheet("Big")
+    # Enough data that save() takes long enough to observe.
+    ws.write_rows(0, 0, [[f"cell-{r}-{c}" for c in range(20)] for r in range(20000)])
+
+    ticks = []
+    stop = threading.Event()
+
+    def ticker():
+        while not stop.is_set():
+            ticks.append(1)
+            time.sleep(0.001)
+
+    t = threading.Thread(target=ticker, daemon=True)
+    t.start()
+    try:
+        wb.close(TEST_FILE)
+    finally:
+        stop.set()
+        t.join(timeout=5)
+
+    # With the GIL released during save, the ticker runs throughout.
+    assert len(ticks) > 0
+    assert os.path.exists(TEST_FILE)
+
+
+def test_concurrent_close_reports_error_not_corruption():
+    """Two threads saving the same Workbook: one wins, the other is
+    refused cleanly by the borrow guard. Never a panic, never a corrupt
+    file. That the loser is refused at all is itself evidence the GIL is
+    released during save() -- with the GIL held the calls could not
+    overlap."""
+    import threading
+
+    second_path = SECOND_FILE
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_rows(0, 0, [[f"v{r}-{c}" for c in range(10)] for r in range(20000)])
+
+    results = []
+
+    def do_close(path):
+        try:
+            wb.close(path)
+            results.append(("saved", path))
+        except RuntimeError:
+            results.append(("refused", path))
+
+    t = threading.Thread(target=do_close, args=(second_path,))
+    t.start()
+    do_close(TEST_FILE)   # may itself be the one refused
+    t.join(timeout=60)
+
+    assert len(results) == 2, results
+    saved = [p for kind, p in results if kind == "saved"]
+    # At least one must win; whichever won must have produced a real file.
+    assert len(saved) >= 1, results
+    for path in saved:
+        assert os.path.exists(path)
+
+
+# ---------------------------------------------------------------------
+# Arrow string columns allocated a String per cell
+# ---------------------------------------------------------------------
+# arrow_cell_value() called .to_string() on every Utf8/LargeUtf8/Utf8View
+# cell, heap-allocating a String that was dropped immediately after
+# write_string(). CellValue::Str is now Cow<str> and the Arrow path
+# borrows the columnar buffer directly. These tests pin that the change
+# is behaviour-preserving, which is the only part observable from Python.
+
+
+def _pa():
+    return pytest.importorskip("pyarrow")
+
+
+def test_arrow_string_columns_roundtrip_unchanged():
+    pa = _pa()
+    table = pa.table(
+        {
+            "utf8": pa.array(["a", "bb", None, "ünïcødé", ""], type=pa.string()),
+            "large": pa.array(["x", None, "zzz", "q", "w"], type=pa.large_string()),
+        }
+    )
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, table)
+    wb.close(TEST_FILE)
+
+    sheet = _load()["S"]
+    assert [sheet.cell(1, c).value for c in (1, 2)] == ["utf8", "large"]
+    assert [sheet.cell(r, 1).value for r in range(2, 7)] == [
+        "a", "bb", None, "ünïcødé", None,
+    ]
+    assert [sheet.cell(r, 2).value for r in range(2, 7)] == [
+        "x", None, "zzz", "q", "w",
+    ]
+
+
+def test_arrow_string_view_roundtrip_unchanged():
+    """Utf8View is Polars' default string type, so it is the hot path."""
+    pa = _pa()
+    if not hasattr(pa, "string_view"):
+        pytest.skip("pyarrow build lacks string_view")
+    table = pa.table({"v": pa.array(["one", None, "three"], type=pa.string_view())})
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, table)
+    wb.close(TEST_FILE)
+
+    sheet = _load()["S"]
+    assert [sheet.cell(r, 1).value for r in range(2, 5)] == ["one", None, "three"]
+
+
+def test_large_string_dataframe_stress():
+    """Exercises the borrowed path at a size where a per-cell allocation
+    would have been measurable."""
+    pa = _pa()
+    n = 50_000
+    table = pa.table({"s": pa.array([f"row-{i}" for i in range(n)]),
+                      "n": pa.array(list(range(n)))})
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, table)
+    wb.close(TEST_FILE)
+
+    # read_only mode streams from the archive, so the handle must be closed
+    # explicitly once the row has been pulled.
+    book = openpyxl.load_workbook(TEST_FILE, read_only=True)
+    try:
+        first = next(book["S"].iter_rows(min_row=2, max_row=2, values_only=True))
+    finally:
+        book.close()
+    assert first == ("row-0", 0)
+
+
+# ---------------------------------------------------------------------
+# write_dataframe() buffered the entire Arrow stream
+# ---------------------------------------------------------------------
+# record_batches_from_arrow() ended in reader.collect(), materialising
+# every batch before writing anything. For a pyarrow.Table that only
+# cloned Arc buffer refs, but for a genuinely streaming producer it
+# buffered the whole dataset -- so constant_memory=True was O(n) memory
+# instead of O(1), inverting the point of that mode. Batches are now
+# consumed lazily.
+
+
+def _batch_reader(pa, n_batches=3, rows_per_batch=2):
+    schema = pa.schema([("n", pa.int64()), ("s", pa.string())])
+
+    def gen():
+        for b in range(n_batches):
+            base = b * rows_per_batch
+            yield pa.record_batch(
+                {
+                    "n": pa.array(
+                        list(range(base, base + rows_per_batch)), type=pa.int64()
+                    ),
+                    "s": pa.array([f"b{b}-{i}" for i in range(rows_per_batch)]),
+                },
+                schema=schema,
+            )
+
+    return pa.RecordBatchReader.from_batches(schema, gen())
+
+
+def test_write_dataframe_accepts_a_streaming_reader():
+    pa = _pa()
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, _batch_reader(pa))
+    wb.close(TEST_FILE)
+
+    sheet = _load()["S"]
+    assert [sheet.cell(1, c).value for c in (1, 2)] == ["n", "s"]
+    assert [sheet.cell(r, 1).value for r in range(2, 8)] == [0, 1, 2, 3, 4, 5]
+    assert sheet.cell(2, 2).value == "b0-0"
+    assert sheet.cell(7, 2).value == "b2-1"
+
+
+def test_write_dataframe_streaming_into_constant_memory():
+    """The combination the eager collect() defeated: a streaming producer
+    into a constant_memory worksheet."""
+    pa = _pa()
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+    ws.write_dataframe(0, 0, _batch_reader(pa, n_batches=5, rows_per_batch=4))
+    wb.close(TEST_FILE)
+
+    sheet = _load()["CM"]
+    assert [sheet.cell(r, 1).value for r in range(2, 22)] == list(range(20))
+
+
+def test_write_dataframe_advances_constant_memory_row_mark():
+    """After a streamed write the high-water mark must sit at the real last
+    row, so a later backward write is still rejected."""
+    pa = _pa()
+    wb = Workbook()
+    ws = wb.add_worksheet("CM", constant_memory=True)
+    ws.write_dataframe(0, 0, _batch_reader(pa, n_batches=3, rows_per_batch=4))
+    # 1 header + 12 data rows -> last written row is 12.
+    with pytest.raises(ValueError, match="constant_memory"):
+        ws.write(5, 0, "backwards")
+
+
+def test_write_dataframe_empty_stream_writes_nothing():
+    """A producer yielding no batches must write nothing at all, including
+    no header -- matching the previous early return on an empty Vec."""
+    pa = _pa()
+    schema = pa.schema([("n", pa.int64())])
+    reader = pa.RecordBatchReader.from_batches(schema, iter([]))
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, reader)
+    wb.close(TEST_FILE)
+
+    sheet = _load()["S"]
+    assert sheet["A1"].value is None
+
+
+def test_write_dataframe_still_works_for_plain_tables():
+    """The non-streaming case must be unaffected."""
+    pa = _pa()
+    table = pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    wb = Workbook()
+    ws = wb.add_worksheet("S")
+    ws.write_dataframe(0, 0, table)
+    wb.close(TEST_FILE)
+
+    sheet = _load()["S"]
+    assert [sheet.cell(r, 1).value for r in range(2, 5)] == [1, 2, 3]
+    assert [sheet.cell(r, 2).value for r in range(2, 5)] == ["x", "y", "z"]

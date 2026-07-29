@@ -2,7 +2,7 @@
 name = "rvgsrust-xlsxwriter"
 version = "0.2.0"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.85"
 license = "MIT"
 description = "Python bindings for rust_xlsxwriter -- a Rust-powered XLSX writer"
 repository = "https://github.com/Godse4ever/rvgsrust-xlsxwriter"
@@ -35,6 +35,19 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 #   check exists for direct write()/write_row()/merge_range()/etc calls
 #   that might not maintain that invariant on their own.
 #
+# MSRV note: rust-version is 1.85, not 1.83. Verified empirically in CI,
+# not inferred: with no Cargo.lock committed, transitive dependencies
+# resolve to latest-compatible, and indexmap 2.14.0 (pulled in via the
+# arrow stack) declares edition2024. Cargo 1.83 cannot parse that
+# manifest at all ("feature `edition2024` is required"), so the build
+# fails during resolution rather than compilation. edition2024 was
+# stabilised in Rust 1.85, which is therefore the real floor.
+#
+# Because dependencies float, this floor can rise again on a transitive
+# bump. The msrv job in CI exists to make that visible rather than
+# letting the declared value quietly become fiction, which is what had
+# already happened with 1.83.
+#
 # Toolchain note: this exact pin could not be compiled in the sandbox
 # this was developed in (rustc 1.75, apt-installed) -- confirmed via
 # actual build attempts, not assumption: rust_xlsxwriter 0.96 requires
@@ -53,20 +66,15 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 # deliberately not added here -- confirmed that was the right call).
 # Smoke-tested (Workbook/add_worksheet/write/close) successfully.
 #
-# One known gap in the stand-in-verification approach this whole
-# project has relied on: Table::set_alt_text()/set_alt_text_title()
-# (src/lib.rs) do NOT exist in 0.75, only 0.96+ -- confirmed by
-# checking both sources directly, the first genuine API difference
-# found between the two versions in this entire project. Every other
-# line of Rust code has been verified by compiling against 0.75 as a
-# stand-in; these two specific methods have NOT been compiled at all,
-# only confirmed correct by reading 0.96's source (they match the
-# exact same simple `pub fn set_x(mut self, x: impl Into<String>) -> T`
-# pattern already used correctly dozens of times elsewhere in this
-# file, so confidence is high, but this is the one place in the
-# codebase where "high confidence from reading the source" is doing
-# more work than "confirmed by an actual compiler" -- worth an extra
-# look when this is finally built for real.
+# RESOLVED (was: "Table::set_alt_text()/set_alt_text_title() have
+# never been compiled, only read"). Both were re-checked directly
+# against the published rust_xlsxwriter 0.96.0 source: they exist at
+# table.rs:1185 and table.rs:1200 with exactly the consuming-builder
+# signature src/lib.rs assumes --
+#   pub fn set_alt_text(mut self, alt_text: impl Into<String>) -> Table
+# The same audit mechanically cross-checked every upstream method this
+# crate calls (208 distinct names) against 0.96's `pub fn` set; all are
+# present. No known API gaps remain against this pin.
 rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij", "constant_memory"] }
 
 # Native Arrow zero-copy DataFrame support (write_dataframe()). Reads

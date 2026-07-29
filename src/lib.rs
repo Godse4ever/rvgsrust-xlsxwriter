@@ -6,6 +6,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
+use arrow::record_batch::RecordBatchReader;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
@@ -14,6 +15,7 @@ use rust_xlsxwriter::{
     Table as RustTable, TableColumn as RustTableColumn, TableFunction, TableStyle,
     Workbook as RustWorkbook, Worksheet as RustWorksheet,
 };
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 
 // ============================================
@@ -44,6 +46,31 @@ fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
         }
         other => PyErr::new::<pyo3::exceptions::PyValueError, _>(other.to_string()),
     }
+}
+
+// Every path that mutates the workbook goes through
+// RefCell::borrow_mut(). That panics on a double borrow, and a double
+// borrow is genuinely reachable from Python rather than being an
+// internal invariant: the bulk write paths hold the borrow across
+// per-cell classify() calls, and classify() falls back to value.str()
+// for unrecognised types, which runs arbitrary Python. A __str__ (or a
+// __del__ triggered mid-loop) that touches the same Workbook re-enters
+// borrow_mut() while the first borrow is still live.
+//
+// A panic there crosses the FFI boundary as pyo3's PanicException,
+// which is catchable but reports only "already mutably borrowed:
+// BorrowMutError" -- nothing about what the caller did or how to avoid
+// it. try_borrow_mut() plus this message turns it into an ordinary,
+// explicable Python exception instead.
+fn reentrant_workbook_err() -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+        "Workbook is already being modified elsewhere. Either another thread \
+         is currently writing to or saving this Workbook (the GIL is released \
+         during save(), so saves genuinely overlap), or a value's \
+         __str__/__repr__ (or a __del__) called back into the same Workbook \
+         during a bulk write such as write_records(). Use one Workbook per \
+         thread, and convert values to str before passing them in.",
+    )
 }
 
 // ============================================
@@ -128,9 +155,14 @@ fn parse_border(border: &str) -> PyResult<FormatBorder> {
 // bool into 1.0/0.0 if given the chance -- so checking numeric types
 // first would silently turn True/False into numbers instead of real
 // boolean cells (this was a real bug in the original ordering).
-enum CellValue {
+enum CellValue<'a> {
     Blank,
-    Str(String),
+    // Cow rather than String so the Arrow path can borrow straight out of
+    // the columnar string buffer instead of heap-allocating a String per
+    // cell that is dropped again immediately after write_string(). The
+    // Python paths still produce Cow::Owned, since the PyString they read
+    // from is a temporary that does not outlive the classify() call.
+    Str(Cow<'a, str>),
     Num(f64),
     Bool(bool),
     // Excel serial date/datetime -- days since 1899-12-30, fractional
@@ -156,7 +188,7 @@ const SUPPORTED_ARROW_TYPES: &str = "supported: int8/16/32/64, uint8/16/32/64, \
      float32/64, string/utf8, large_utf8, utf8view, bool, date32, date64, \
      timestamp[s|ms|us|ns]";
 
-fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue> {
+fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue<'static>> {
     if value.is_none() {
         Ok(CellValue::Blank)
     } else if let Ok(b) = value.extract::<bool>() {
@@ -175,9 +207,9 @@ fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue> {
     } else if let Ok(i) = value.extract::<i64>() {
         Ok(CellValue::Num(i as f64))
     } else if let Ok(s) = value.extract::<String>() {
-        Ok(CellValue::Str(s))
+        Ok(CellValue::Str(Cow::Owned(s)))
     } else {
-        Ok(CellValue::Str(value.str()?.to_string()))
+        Ok(CellValue::Str(Cow::Owned(value.str()?.to_string())))
     }
 }
 
@@ -188,16 +220,16 @@ fn write_value(
     sheet: &mut RustWorksheet,
     row: u32,
     col: u16,
-    cv: &CellValue,
+    cv: &CellValue<'_>,
     fmt: Option<&RustFormat>,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
     match (cv, fmt) {
         (CellValue::Blank, Some(f)) => sheet.write_blank(row, col, f).map(|_| ()),
         (CellValue::Blank, None) => Ok(()), // nothing meaningful to write without a format
         (CellValue::Str(s), Some(f)) => sheet
-            .write_string_with_format(row, col, s.as_str(), f)
+            .write_string_with_format(row, col, s.as_ref(), f)
             .map(|_| ()),
-        (CellValue::Str(s), None) => sheet.write_string(row, col, s.as_str()).map(|_| ()),
+        (CellValue::Str(s), None) => sheet.write_string(row, col, s.as_ref()).map(|_| ()),
         (CellValue::Num(n), Some(f)) => sheet.write_number_with_format(row, col, *n, f).map(|_| ()),
         (CellValue::Num(n), None) => sheet.write_number(row, col, *n).map(|_| ()),
         (CellValue::Bool(b), Some(f)) => {
@@ -231,7 +263,7 @@ fn merge_value(
     first_col: u16,
     last_row: u32,
     last_col: u16,
-    cv: &CellValue,
+    cv: &CellValue<'_>,
     fmt: &RustFormat,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
     // merge_range() itself only accepts a plain &str -- confirmed this
@@ -259,11 +291,11 @@ fn merge_value(
 // types; decimal, list, struct and dictionary-encoded columns are still
 // tracked as follow-up work.
 
-/// Pulls RecordBatches out of any object exposing `__arrow_c_stream__`
+/// Builds a lazy RecordBatch reader over any object exposing `__arrow_c_stream__`
 /// (pyarrow.Table, pandas.DataFrame 2.x+) or a `.to_arrow()` method
 /// (polars.DataFrame, which returns a pyarrow object with the capsule
 /// method).
-fn record_batches_from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch>> {
+fn arrow_stream_reader(obj: &Bound<'_, PyAny>) -> PyResult<ArrowArrayStreamReader> {
     let stream_source: Bound<'_, PyAny> = if obj.hasattr("__arrow_c_stream__")? {
         obj.clone()
     } else if obj.hasattr("to_arrow")? {
@@ -319,10 +351,7 @@ fn record_batches_from_arrow(obj: &Bound<'_, PyAny>) -> PyResult<Vec<RecordBatch
         s
     };
 
-    let reader = ArrowArrayStreamReader::try_new(stream).map_err(to_pyerr)?;
-    reader
-        .collect::<std::result::Result<Vec<RecordBatch>, arrow::error::ArrowError>>()
-        .map_err(to_pyerr)
+    ArrowArrayStreamReader::try_new(stream).map_err(to_pyerr)
 }
 
 /// A typed reference into one column of a RecordBatch, resolved once per
@@ -450,7 +479,7 @@ macro_rules! datetime_cell {
 // doesn't say which column produced it. Everything else keeps the standard
 // mapping, so IoError still surfaces as OSError rather than ValueError.
 fn arrow_write_err(
-    cv: &CellValue,
+    cv: &CellValue<'_>,
     column_name: &str,
     row: usize,
     e: rust_xlsxwriter::XlsxError,
@@ -465,7 +494,7 @@ fn arrow_write_err(
     }
 }
 
-fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
+fn arrow_cell_value<'a>(col: &ArrowColumn<'a>, row: usize) -> CellValue<'a> {
     match col {
         ArrowColumn::Int8(a) => num_cell!(a, row),
         ArrowColumn::Int16(a) => num_cell!(a, row),
@@ -491,24 +520,27 @@ fn arrow_cell_value(col: &ArrowColumn<'_>, row: usize) -> CellValue {
             }
         }
         ArrowColumn::Utf8(a) => {
-            if a.is_null(row) {
+            let arr: &'a StringArray = a;
+            if arr.is_null(row) {
                 CellValue::Blank
             } else {
-                CellValue::Str(a.value(row).to_string())
+                CellValue::Str(Cow::Borrowed(arr.value(row)))
             }
         }
         ArrowColumn::LargeUtf8(a) => {
-            if a.is_null(row) {
+            let arr: &'a LargeStringArray = a;
+            if arr.is_null(row) {
                 CellValue::Blank
             } else {
-                CellValue::Str(a.value(row).to_string())
+                CellValue::Str(Cow::Borrowed(arr.value(row)))
             }
         }
         ArrowColumn::Utf8View(a) => {
-            if a.is_null(row) {
+            let arr: &'a StringViewArray = a;
+            if arr.is_null(row) {
                 CellValue::Blank
             } else {
-                CellValue::Str(a.value(row).to_string())
+                CellValue::Str(Cow::Borrowed(arr.value(row)))
             }
         }
         ArrowColumn::Bool(a) => {
@@ -1160,7 +1192,10 @@ impl Worksheet {
         F: FnOnce(&mut RustWorksheet) -> Result<R, rust_xlsxwriter::XlsxError>,
     {
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
+        let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1203,6 +1238,17 @@ impl Worksheet {
             self.min_allowed_row.set(last_row_touched);
         }
         Ok(())
+    }
+
+    // Raises the high-water mark after a write whose extent was not known
+    // in advance. write_dataframe() streams batches from the Arrow producer
+    // rather than collecting them, so the total row count is unavailable
+    // until the last batch has been consumed; it validates start_row up
+    // front with check_row_order() and then calls this at the end.
+    fn advance_row_mark(&self, row: u32) {
+        if self.constant_memory && row > self.min_allowed_row.get() {
+            self.min_allowed_row.set(row);
+        }
     }
 }
 
@@ -1318,7 +1364,7 @@ impl Worksheet {
         // avoids the per-row downcast and iterator allocation of the naive
         // downcast::<PyList>() + .iter() approach.
         let n_rows = rows.len();
-        let mut classified_rows: Vec<(Vec<CellValue>, bool)> = Vec::with_capacity(n_rows);
+        let mut classified_rows: Vec<(Vec<CellValue<'static>>, bool)> = Vec::with_capacity(n_rows);
 
         for r in 0..n_rows {
             let row_obj = rows.get_item(r)?;
@@ -1339,7 +1385,10 @@ impl Worksheet {
 
         // Write all pre-classified values in a tight Rust loop.
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
+        let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1421,7 +1470,10 @@ impl Worksheet {
         let head_fmt = header_format.map(|f| &f.inner);
 
         let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
+        let mut wb = wb_ref
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let sheet = wb
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
@@ -1442,7 +1494,7 @@ impl Worksheet {
                     sheet,
                     row_cursor,
                     start_col + i as u16,
-                    &CellValue::Str(h.clone()),
+                    &CellValue::Str(Cow::Borrowed(h.as_str())),
                     head_fmt,
                 )
                 .map_err(xlsx_err_to_pyerr)?;
@@ -1503,12 +1555,11 @@ impl Worksheet {
         header_format: Option<&Format>,
         write_header: bool,
     ) -> PyResult<()> {
-        let batches = record_batches_from_arrow(data)?;
-        if batches.is_empty() {
-            return Ok(());
-        }
-
-        let schema = batches[0].schema();
+        let reader = arrow_stream_reader(data)?;
+        // schema() is available from RecordBatchReader before any batch is
+        // consumed, so the whole schema can still be validated up front
+        // without materialising the data.
+        let schema = reader.schema();
         let field_names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
 
         // Check every column's type up front so we fail with one clear
@@ -1568,37 +1619,10 @@ impl Worksheet {
 
         let head_fmt = header_format.map(|f| &f.inner);
 
-        // Same one-check-for-the-whole-call approach as write_records():
-        // total rows this call will touch is known upfront (sum of each
-        // batch's row count, each an O(1) lookup), so there's no need to
-        // check per-row.
-        let total_data_rows: u32 = batches.iter().map(|b| b.num_rows() as u32).sum();
-        let header_rows = if write_header { 1 } else { 0 };
-        if total_data_rows + header_rows > 0 {
-            let last_row = start_row + header_rows + total_data_rows - 1;
-            self.check_row_order_range(start_row, last_row)?;
-        }
-
-        let wb_ref = self.workbook.borrow(py);
-        let mut wb = wb_ref.inner.borrow_mut();
-        let sheet = wb
-            .worksheet_from_index(self.index)
-            .map_err(xlsx_err_to_pyerr)?;
-
-        let mut row_cursor = start_row;
-        if write_header {
-            for (i, name) in field_names.iter().enumerate() {
-                write_value(
-                    sheet,
-                    row_cursor,
-                    start_col + i as u16,
-                    &CellValue::Str(name.clone()),
-                    head_fmt,
-                )
-                .map_err(xlsx_err_to_pyerr)?;
-            }
-            row_cursor += 1;
-        }
+        // The number of rows is not knowable without consuming the stream,
+        // so only the starting row can be validated up front; the mark is
+        // advanced to the true last row once the stream is exhausted.
+        self.check_row_order(start_row)?;
 
         // Temporal columns need a number format or Excel renders the raw
         // serial. Built once for the whole call rather than per cell:
@@ -1607,10 +1631,73 @@ impl Worksheet {
         let date_fmt = RustFormat::new().set_num_format("yyyy-mm-dd");
         let datetime_fmt = RustFormat::new().set_num_format("yyyy-mm-dd hh:mm:ss");
 
-        for batch in &batches {
-            let columns: Vec<ArrowColumn<'_>> = (0..batch.num_columns())
+        let mut row_cursor = start_row;
+        let mut started = false;
+
+        for batch in reader {
+            let batch: RecordBatch = batch.map_err(to_pyerr)?;
+
+            // Borrowed per batch rather than once for the whole call. Pulling
+            // the next batch runs the producer's callback, which for a
+            // Python-implemented reader can execute arbitrary Python; holding
+            // the workbook borrow across that would turn any re-entrant access
+            // into an avoidable error. Re-borrowing costs one lookup per
+            // batch, not per cell.
+            let wb_ref = self.workbook.borrow(py);
+            let mut wb = wb_ref
+                .inner
+                .try_borrow_mut()
+                .map_err(|_| reentrant_workbook_err())?;
+            let sheet = wb
+                .worksheet_from_index(self.index)
+                .map_err(xlsx_err_to_pyerr)?;
+
+            // Written on the first batch rather than before the loop, so a
+            // producer that yields no batches at all still writes nothing --
+            // matching the previous behaviour of returning early when the
+            // collected Vec was empty.
+            if !started {
+                started = true;
+                if write_header {
+                    for (i, name) in field_names.iter().enumerate() {
+                        write_value(
+                            sheet,
+                            row_cursor,
+                            start_col + i as u16,
+                            &CellValue::Str(Cow::Borrowed(name.as_str())),
+                            head_fmt,
+                        )
+                        .map_err(xlsx_err_to_pyerr)?;
+                    }
+                    row_cursor += 1;
+                }
+            }
+
+            let batch = &batch;
+            // The schema was validated up front from the reader's declared
+            // schema, so a failure here means a batch's actual column type
+            // disagrees with what the producer declared. By this point rows
+            // may already be on the sheet, which makes the failure
+            // unrecoverable: re-raise it as RuntimeError rather than the
+            // TypeError resolve_arrow_column() produces, so that callers
+            // which treat TypeError as "unsupported type, retry another way"
+            // -- notably dataframe.py's per-cell fallback -- do not silently
+            // re-write the same rows and duplicate them.
+            let columns: Vec<ArrowColumn<'_>> = match (0..batch.num_columns())
                 .map(|c| resolve_arrow_column(batch.column(c).as_ref()))
-                .collect::<PyResult<Vec<_>>>()?;
+                .collect::<PyResult<Vec<_>>>()
+            {
+                Ok(cols) => cols,
+                Err(e) => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                        "write_dataframe(): a record batch's column type disagrees with \
+                         the stream's declared schema after {} row(s) had already been \
+                         written. The worksheet is now partially written and this call \
+                         cannot be safely retried. Underlying error: {e}",
+                        row_cursor.saturating_sub(start_row)
+                    )));
+                }
+            };
 
             // A column's type is fixed for the whole batch, so pick its
             // format once here instead of re-matching on every cell --
@@ -1638,6 +1725,9 @@ impl Worksheet {
                 row_cursor += 1;
             }
         }
+
+        // row_cursor now sits one past the last row written.
+        self.advance_row_mark(row_cursor.saturating_sub(1));
 
         Ok(())
     }
@@ -2347,6 +2437,15 @@ impl Worksheet {
         last_col: u16,
         table: &Table,
     ) -> PyResult<()> {
+        // add_table() writes real cells immediately, not only at save time:
+        // upstream's implementation calls write_string_with_format() for each
+        // header caption (worksheet.rs, add_table) and likewise for a total
+        // row. It was therefore the one cell-writing method on this class
+        // without a constant_memory row-order check, which left exactly the
+        // silent-corruption path check_row_order() exists to close -- an
+        // add_table() anchored above the current high-water mark would be
+        // accepted here and quietly produce a damaged .xlsx.
+        self.check_row_order_range(first_row, last_row)?;
         let t = table.inner.clone();
         self.with_sheet(py, |sheet| {
             sheet
@@ -2367,9 +2466,6 @@ impl Worksheet {
 #[pyclass(subclass)]
 struct Workbook {
     inner: RefCell<RustWorkbook>,
-    // Tracks how many worksheets have been added so each Worksheet
-    // handle knows its own stable index into the workbook's storage.
-    sheet_count: RefCell<usize>,
 }
 
 #[pymethods]
@@ -2378,7 +2474,6 @@ impl Workbook {
     fn new() -> Self {
         Workbook {
             inner: RefCell::new(RustWorkbook::new()),
-            sheet_count: RefCell::new(0),
         }
     }
 
@@ -2417,18 +2512,44 @@ impl Workbook {
     ) -> PyResult<Py<Worksheet>> {
         let index = {
             let wb_ref = slf.borrow(py);
-            let mut wb = wb_ref.inner.borrow_mut();
+            let mut wb = wb_ref
+                .inner
+                .try_borrow_mut()
+                .map_err(|_| reentrant_workbook_err())?;
+
+            // Validate the name BEFORE touching the workbook.
+            //
+            // set_name() runs exactly this validator internally
+            // (utility::validate_sheetname, reached via the public
+            // check_sheet_name wrapper), so the accepted/rejected set and the
+            // resulting XlsxError variant are unchanged. What changes is the
+            // ordering: previously the worksheet was appended first and
+            // set_name()'s error propagated afterwards, which left an
+            // unnamed worksheet in the workbook while the index counter had
+            // not advanced. The next add_worksheet() then handed back an
+            // index pointing at that orphan, so every subsequent write went
+            // to the wrong sheet -- silently, and the intended sheet saved
+            // empty. Validating first means a rejected name mutates nothing.
+            if let Some(n) = name {
+                rust_xlsxwriter::utility::check_sheet_name(n).map_err(xlsx_err_to_pyerr)?;
+            }
+
+            // Take the index from the workbook's own worksheet vector rather
+            // than a counter maintained alongside it. The two cannot drift if
+            // there is only one of them; the drift was the bug above.
+            let idx = wb.worksheets().len();
+
             let sheet = if constant_memory {
                 wb.add_worksheet_with_constant_memory()
             } else {
                 wb.add_worksheet()
             };
+            // Pre-validated above, so this cannot fail on name grounds; the
+            // mapping is kept rather than unwrapped so a future upstream
+            // validation change surfaces as an exception, not a panic.
             if let Some(n) = name {
                 sheet.set_name(n).map_err(xlsx_err_to_pyerr)?;
             }
-            let mut count = wb_ref.sheet_count.borrow_mut();
-            let idx = *count;
-            *count += 1;
             idx
         };
         Py::new(
@@ -2446,10 +2567,35 @@ impl Workbook {
         Py::new(py, Format::new())
     }
 
-    fn close(&self, path: &str) -> PyResult<()> {
-        self.inner
-            .borrow_mut()
-            .save(path)
+    // `py` is injected by pyo3 and is not part of the Python-visible
+    // signature, so this remains `wb.close(path)` from Python.
+    fn close(&self, py: Python<'_>, path: &str) -> PyResult<()> {
+        let mut guard = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
+
+        // save() is the single longest operation in the library -- it
+        // serialises every worksheet and deflates the whole archive -- and it
+        // touches no Python objects at all. Holding the GIL across it stalls
+        // every other thread in the process for the entire duration, which for
+        // a large workbook is seconds.
+        //
+        // Soundness of releasing it here:
+        //  - Ungil is satisfied via Send (pyo3 0.22 marker.rs: `unsafe impl<T:
+        //    Send> Ungil for T`). rust_xlsxwriter's types contain no Rc,
+        //    RefCell, Cell or raw pointers anywhere in the crate, so Workbook
+        //    is auto-Send and `&mut Workbook` is Send with it.
+        //  - The RefMut guard is held across the release, which keeps this the
+        //    only live mutable borrow. Another thread that acquires the GIL and
+        //    calls into the same Workbook hits try_borrow_mut() and gets the
+        //    RuntimeError above rather than a second &mut.
+        //  - RefCell's borrow flag is not atomic, but every access to it still
+        //    happens under the GIL: the guard is created before the release and
+        //    dropped after the re-acquire. Nothing touches the flag while the
+        //    GIL is released.
+        let workbook: &mut RustWorkbook = &mut guard;
+        py.allow_threads(move || workbook.save(path))
             .map_err(xlsx_err_to_pyerr)?;
         Ok(())
     }
@@ -2462,7 +2608,8 @@ impl Workbook {
     // is the range/formula the name refers to, e.g. "Sheet1!$A$1:$A$10".
     fn define_name(&self, name: &str, formula: &str) -> PyResult<()> {
         self.inner
-            .borrow_mut()
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
             .define_name(name, formula)
             .map_err(xlsx_err_to_pyerr)?;
         Ok(())
@@ -2476,8 +2623,11 @@ impl Workbook {
         subject: Option<&str>,
         keywords: Option<&str>,
         comments: Option<&str>,
-    ) {
-        let mut wb = self.inner.borrow_mut();
+    ) -> PyResult<()> {
+        let mut wb = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
         let mut props = rust_xlsxwriter::DocProperties::new();
         if let Some(t) = title {
             props = props.set_title(t);
@@ -2495,6 +2645,7 @@ impl Workbook {
             props = props.set_comment(c);
         }
         wb.set_properties(&props);
+        Ok(())
     }
 }
 
