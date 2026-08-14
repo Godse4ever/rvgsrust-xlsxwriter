@@ -195,3 +195,14 @@ __all__ = [
     "ChartTrendline",
     "ChartDataLabel",
 ]
+
+# `from __future__ import annotations` above binds the name `annotations`
+# at module scope as a side effect (it's a real object -- see PEP 563 --
+# not just a compiler directive), so it shows up in dir(), autocomplete,
+# and `from rvgsrust_xlsxwriter import *` if not removed. __all__ already
+# keeps it out of `import *`, but dir() ignores __all__ entirely, so the
+# name has to actually be deleted from the namespace. Safe to delete here:
+# every annotation in this file is stored as a lazily-evaluated string
+# (that's what the future import does) and is never looked up on this
+# name at runtime.
+del annotations
