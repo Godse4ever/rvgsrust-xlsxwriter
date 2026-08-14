@@ -29,8 +29,8 @@
 | **Worksheet Tables** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Rich Strings** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Polars/Pandas/PyArrow** | Manual | ✅ Zero-copy | ✅ **Zero-copy** |
-| **Charts** | ✅ Yes | ❌ No | 🚧 *Coming v0.3* |
-| **Conditional Format** | ✅ Yes | ❌ No | 🚧 *Coming v0.3* |
+| **Charts** | ✅ Yes | ❌ No | ✅ **Yes** |
+| **Conditional Format** | ✅ Yes | ❌ No | ✅ **Yes** |
 
 **We win on completeness.** Both `rustpy-xlsxwriter` and `rvgsrust-xlsxwriter` use the same Rust core, but we expose *every* feature so you never have to fall back to Python.
 
