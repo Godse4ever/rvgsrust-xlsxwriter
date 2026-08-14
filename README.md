@@ -16,6 +16,7 @@
 | Feature | `xlsxwriter` (Python) | `rustpy-xlsxwriter` | `rvgsrust-xlsxwriter` |
 |---------|----------------------|---------------------|----------------------|
 | Speed (100k rows) | 1× (baseline) | — | **6–8× faster** ⚡ |
+| **GIL released during `save()`** | ❌ blocks | ❌ blocks | ✅ **Yes** (~20ms stall vs ~1,300ms on a wide workload) |
 | **Cell Merging** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Full Format API** | ✅ Yes | ⚠️ Limited | ✅ **Complete** |
 | **Borders (all sides)** | ✅ Yes | ⚠️ Basic | ✅ **All sides + colors** |
