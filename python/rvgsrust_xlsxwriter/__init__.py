@@ -75,7 +75,7 @@ Quick Start
 # code 2, taking the whole test job with it.
 from __future__ import annotations
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 __author__ = "RVGS Team"
 __license__ = "MIT"
 
@@ -146,14 +146,26 @@ class Workbook(_CoreWorkbook):
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         if exc_type is None:
-            if self.path is None:
-                raise ValueError(
-                    "Workbook.__exit__: no path set. "
-                    "Either pass path= to Workbook() or call close(path) manually."
-                )
-            self.close(self.path)
+            # Try to close using the stored path if the user omitted it.
+            self.close()
         # If an exception occurred, don't try to save -- let it propagate.
         return False
+
+    def close(self, path: str | None = None) -> None:
+        """Close and save the workbook.
+
+        If `path` is omitted, the constructor-provided `path` stored on
+        the instance is used. Passing an explicit `path` continues to work
+        as an override (backwards compatible).
+        """
+        if path is None:
+            path = getattr(self, "path", None)
+        if path is None:
+            raise ValueError(
+                "Workbook.close(): no path specified. Either pass a path to close() or construct the Workbook with a path."
+            )
+        # Delegate to the underlying Rust-backed close(path) method.
+        return super().close(path)
 
 
 __all__ = [
