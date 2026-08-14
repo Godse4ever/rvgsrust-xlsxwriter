@@ -162,7 +162,7 @@ class Workbook(_CoreWorkbook):
             path = getattr(self, "path", None)
         if path is None:
             raise ValueError(
-                "Workbook.close(): no path specified. Either pass a path to close() or construct the Workbook with a path."
+                "Workbook.close(): no path set. Either pass a path to close() or construct the Workbook with a path."
             )
         # Delegate to the underlying Rust-backed close(path) method.
         return super().close(path)
