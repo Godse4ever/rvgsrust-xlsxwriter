@@ -6,7 +6,7 @@
 
 [![PyPI version](https://badge.fury.io/py/rvgsrust-xlsxwriter.svg)](https://pypi.org/project/rvgsrust-xlsxwriter/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust](https://img.shields.io/badge/Rust-1.83%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org)
 
 ---
@@ -34,7 +34,7 @@
 
 **We win on completeness.** Both `rustpy-xlsxwriter` and `rvgsrust-xlsxwriter` use the same Rust core, but we expose *every* feature so you never have to fall back to Python.
 
-Speed figures measured against `rust_xlsxwriter` 0.96 on Intel i5-6267U, 100k rows × 8 cols — see [Performance & Benchmarks](#performance--benchmarks) for full numbers.
+The **6–8×** figure is measured against pure-Python `xlsxwriter` at 100,000 rows × 8 columns (tall, narrow shape) — see [Performance & Benchmarks](#performance--benchmarks) for full numbers and methodology. Against another Rust-backed writer with the same `rust_xlsxwriter` core (`rustpy-xlsxwriter`), independent testing on a wide workload (76,480 columns × 1,261 rows) measured a more modest **~12% faster** overall save time. Where this library won decisively on that same wide workload was responsiveness during `save()`: a background thread polling every 5ms saw a worst-case stall of **~20ms**, versus **~1,300ms** for the comparison library — the GIL is released during save, so a GUI or async app stays responsive instead of freezing. That's arguably a stronger selling point than raw throughput for desktop-app use cases, even though it's less prominent in the numbers above.
 
 ---
 
@@ -64,8 +64,8 @@ pip install rvgsrust-xlsxwriter[all]
 ```python
 from rvgsrust_xlsxwriter import Workbook
 
-# Create workbook
-wb = Workbook()
+# Create workbook -- pass the path up front so close() needs no argument later
+wb = Workbook("report.xlsx")
 ws = wb.add_worksheet("Sales")
 
 # Create a rich format
@@ -98,8 +98,18 @@ ws.write_formula(1, 3, "=B2+C2", data_format)
 # Auto-fit columns
 ws.autofit()
 
-# Save
-wb.close("report.xlsx")
+# Save -- close() with no argument uses the path given to the constructor.
+# Passing a path here still works too, and overrides the constructor path.
+wb.close()
+```
+
+The context-manager form does the same thing automatically on `__exit__`:
+
+```python
+with Workbook("report.xlsx") as wb:
+    ws = wb.add_worksheet("Sales")
+    ws.write(0, 0, "Product")
+# saved to report.xlsx here, close() called for you
 ```
 
 ---
@@ -722,8 +732,9 @@ python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 | **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images, Polars/Pandas support |
 | **v0.2** | ✅ Bulk `write_records()` / `write_rows()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables; charts (phases 1-3); conditional formatting; sparklines; page setup; extended Arrow types |
 | **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
-| **v0.3** | 🚧 Data validation; per-column formats in `write_dataframe()`; rich-text and comment/note support |
-| **v0.4** | 🚧 Full xlsxwriter API compatibility layer |
+| **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment |
+| **v0.3** | 🚧 Headers/footers (`set_header`/`set_footer` text); `save_to_buffer() -> bytes`; data validation (dropdown lists, cell rules); per-column formats in `write_dataframe()`; row/column outline grouping |
+| **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
@@ -768,8 +779,19 @@ These are current, deliberate gaps rather than oversights:
 [MISSING.md](MISSING.md) audits the exposed Python API against
 rust_xlsxwriter 0.96 and lists what is not yet wrapped, with upstream
 `file:line` references, a suggested Python API shape, and a priority for
-each. Sparklines are at full parity; the largest gaps are per-column and
-per-range formats, page setup and print settings, and per-side borders.
+each. Sparklines, cell/row/column/range formats, and page setup and print
+settings are all at full parity now -- an earlier pass had flagged
+per-side borders as missing too, but that was a false positive from a
+naming mismatch (`set_top_border` vs upstream's `set_border_top`), not an
+actual gap.
+
+The largest remaining gaps are headers/footers, `save_to_buffer()`,
+data validation, and row/column outline grouping on `Worksheet`; error
+bars, secondary axes and a handful of formatting options on `Chart`; and
+icon sets on conditional formats. `Format` has ~6 low-priority gaps left
+(quote prefix, hyperlink style, checkbox format, font family/charset,
+reading direction, `unset_*` inverses) -- see MISSING.md's "Suggested
+order" for the full ranked list.
 
 ## Performance TODO
 
