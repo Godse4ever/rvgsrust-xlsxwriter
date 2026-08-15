@@ -1,56 +1,21 @@
 # API parity gaps vs rust_xlsxwriter 0.96
 
-**Listing only — nothing here is implemented, and nothing here should be
-implemented in the same session as the audit.**
+Only open items below. Anything closed has been removed from this file
+rather than marked done, so this stays a to-do list, not a changelog —
+see [CHANGELOG.md](CHANGELOG.md) for what shipped.
 
 All `file:line` references are to
 [`v0.96.0`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.96.0/src)
 and were read from the source, not from docs.rs.
-
-## Method
-
-Public inherent methods on each upstream type were extracted and diffed
-against the methods exposed by our `#[pymethods]` blocks. Three classes of
-apparent gap were excluded as false positives:
-
-- **`*_with_format` variants.** Upstream splits `write_string` /
-  `write_string_with_format`; we take an optional `format=None` instead.
-  About 20 upstream methods collapse this way.
-- **Accessors we deliberately flattened.** `Chart::x_axis()`, `title()`,
-  `legend()`, `Workbook::worksheet_from_index()` and similar return `&mut`
-  references that cannot cross into Python. Their *contents* are audited
-  below; the accessors themselves are not gaps.
-- **Constructors and internals.** `Chart::new_pie()` and friends are
-  covered by our `Chart("pie")` string form. `validate()`,
-  `populate_string_table()`, `format_dxf_index()`, `set_axis_ids()` are
-  internal.
 
 Priorities are a judgement call about request frequency, weighted toward
 this project's actual use — survey and market-research reporting, where
 page setup, print layout and per-column formatting come up far more often
 than VBA or chartsheets. They are not upstream's opinion.
 
-## Already at parity
-
-Worth recording so this is not re-audited:
-
-- **Sparklines: 28 of 28 methods exposed. No gaps.** Note the brief listed
-  a `custom_ranges` parameter as a parity item — **no such method or
-  parameter exists in 0.96**, on either `Sparkline` or the two
-  `Worksheet::add_sparkline*` methods.
-- **Workbook document properties and workbook-level defined names** are
-  already exposed (`set_properties`, `define_name`), also listed in the
-  brief as gaps.
-- Conditional formats: all 12 rule types except icon sets (below).
-
 ---
 
-## 1. Format — ~30 gaps
-
-The single biggest cluster, and the one users hit first.
-
-**Border sides, diagonal borders, cell protection, strikethrough and
-pattern foreground colour are now all exposed.** What remains:
+## 1. Format — 6 gaps, all Low priority
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -61,65 +26,18 @@ pattern foreground colour are now all exposed.** What remains:
 | Reading direction | `format.rs:1647` | `set_reading_direction(n)` | Low |
 | `unset_*` inverses | `format.rs:2364` | `unset_bold()`, `unset_italic()`, `unset_text_wrap()`, `unset_shrink()`, `unset_hidden()`, `unset_quote_prefix()` | Low |
 
-### Audit correction
-
-The first version of this file listed **per-side border styles as missing
-and ranked them highest-value. That was wrong** — they were already
-exposed, as `set_top_border` / `set_bottom_border` / `set_left_border` /
-`set_right_border`, which reversed upstream's `set_border_top` word order.
-The diff that produced this file matched on prefix variants but not on
-reordered words, so it reported four methods as absent that were present.
-
-Since corrected: the reversed names are still there (deprecated, kept
-for compatibility), and `set_border_top` / `set_border_bottom` /
-`set_border_left` / `set_border_right` were added as the canonical
-names matching `set_border_color()` / `set_border_diagonal()` /
-`set_border_*_color()`. Both spellings now do the same thing.
-
-`Worksheet::set_freeze_panes` was the same mistake: we expose it as
-`freeze_panes`, without the `set_` prefix.
-
-Both are corrected above. The lesson for anyone re-running this audit: a
-name-based diff will over-report whenever the binding renames a method,
-and this binding renames deliberately in several places
-(`set_display_equation` for upstream's `display_equation`, `set_custom`
-for `to_custom`, the reversed border names). Treat any single entry as a
-hypothesis to check against `src/lib.rs`, not as fact.
-
 ---
 
-## 2. Worksheet — ~120 gaps
+## 2. Worksheet
 
-### 2a. Cell, row, column and range formats — **CLOSED**
-
-`set_column_format`, `set_column_range_format`, `set_row_format`,
-`set_cell_format` and `set_range_format` are now exposed. This was ranked
-first because it was the gap hit directly while implementing extended
-Arrow types: date columns needed a number format applied and a caller had
-no way to fix a wrongly formatted column afterwards, which is why
-`write_dataframe` applies the date formats itself.
-
-Still missing in this area:
+### 2a. Cell/row/column/range formats — 2 gaps left
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
 | Range format with a border | `worksheet.rs:10549` | `set_range_format_with_border(r1, c1, r2, c2, format, border)` | Medium |
 | Clear a cell's format | `worksheet.rs:10776` | `clear_cell_format(row, col)` | Low |
 
-### 2b. Page setup and printing — **CLOSED**
-
-All 19 methods are now exposed, mirroring upstream names 1:1:
-`set_landscape`, `set_portrait`, `set_paper_size`, `set_page_order`,
-`set_margins`, `set_print_area`, `set_repeat_rows`, `set_repeat_columns`,
-`set_print_fit_to_pages`, `set_print_scale`, `set_page_breaks`,
-`set_vertical_page_breaks`, `set_print_gridlines`, `set_print_headings`,
-`set_print_center_horizontally`, `set_print_center_vertically`,
-`set_print_black_and_white`, `set_print_draft`,
-`set_print_first_page_number`.
-
-None needed a new pyclass. Paper size stays a numeric Excel code.
-
-### 2c. Headers and footers — **High**
+### 2b. Headers and footers — High
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -127,7 +45,7 @@ None needed a new pyclass. Paper size stays a numeric Excel code.
 | Header / footer images | `worksheet.rs:13662`, `13700` | `set_header_image(position, image)` — needs an `Image` pyclass first | Medium |
 | Align / scale with page | — | `set_header_footer_align_with_page(bool)`, `set_header_footer_scale_with_doc(bool)` | Low |
 
-### 2d. Row and column grouping — **Medium-High**
+### 2c. Row and column grouping — Medium-High
 
 `group_rows(first, last)` (`worksheet.rs:6929`),
 `group_columns(first, last)` (`7278`), the `*_collapsed` variants, and
@@ -135,7 +53,7 @@ None needed a new pyclass. Paper size stays a numeric Excel code.
 
 Outline grouping is how collapsible sections in a report are built.
 
-### 2e. Data validation — **High**
+### 2d. Data validation — High
 
 `add_data_validation(r1, c1, r2, c2, validation)` at
 `worksheet.rs:9388`, plus the whole `DataValidation` type
@@ -144,20 +62,10 @@ Outline grouping is how collapsible sections in a report are built.
 Suggested shape: a `DataValidation` pyclass following the same pattern as
 the conditional formats — string-valued rule kinds validated with a
 `ValueError` listing accepted values. Dropdown lists are one of the most
-requested spreadsheet features there is.
-
-### 2f. Formulas — **Medium**
-
-| Feature | Upstream | Suggested Python API | Priority |
-|---|---|---|---|
-| Array formulas over a range | `worksheet.rs:3448` | `write_array_formula(r1, c1, r2, c2, formula, format=None)` | Medium |
-| Dynamic array formulas | `worksheet.rs:3641` | `write_dynamic_array_formula(...)`, `write_dynamic_formula(row, col, ...)` | Medium |
-| Cached formula results | `worksheet.rs:10285` | `set_formula_result(row, col, result)`, `set_formula_result_default(...)` | Medium |
-
-Cached results matter for anything read by a tool that doesn't recalculate
+requested Excel-writer features across every language binding
 — including openpyxl and pandas.
 
-### 2g. Notes, filters, views, protection, images — **Medium**
+### 2e. Notes, filters, views, protection, images — Medium
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -177,7 +85,7 @@ Cached results matter for anything read by a tool that doesn't recalculate
 
 ---
 
-## 3. Workbook — ~15 gaps
+## 3. Workbook — 7 gaps
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -196,7 +104,8 @@ a path is what a web service needs, and it avoids a temp-file round trip.
 
 ## 4. Charts — ~60 gaps
 
-Parts 1–3 covered the core. What remains:
+Parts 1–3 covered the core (series, formatting, markers/trendlines/data
+labels). What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -231,14 +140,11 @@ Parts 1–3 covered the core. What remains:
 | Custom icons | `conditional_format.rs:6351` | `ConditionalFormatCustomIcon` for per-threshold icon and value overrides, via `set_icons([...])` | Medium |
 
 Icon sets are the one conspicuously missing conditional format — they are
-a first-class Excel feature and visually obvious by their absence. The
-"custom min/max/mid values" the brief lists as a gap are already covered
-by the existing `set_minimum` / `set_midpoint` / `set_maximum`; the custom
-values that remain missing are the icon-set thresholds specifically.
+a first-class Excel feature and visually obvious by their absence.
 
 ---
 
-## Suspected upstream bug
+## Suspected upstream bug (not a parity gap)
 
 `Worksheet::set_print_first_page_number` (`worksheet.rs:18697`) writes the
 page number into the `useFirstPageNumber` attribute and never emits a
@@ -261,42 +167,16 @@ what is currently written rather than what ought to be, and will fail if
 upstream changes it. Not worked around locally: doing so would mean
 writing worksheet XML ourselves. Worth reporting upstream.
 
-## Suggested order
-
-Ranked by value per unit of effort, not by section order above:
-
-1. ~~**`set_column_format` / `set_row_format` / `set_range_format`**~~ —
-   done, see section 2a.
-2. ~~**Page setup and print settings**~~ — done, see section 2b.
-3. ~~**Per-side borders and cell protection on `Format`**~~ — done. The
-   border styles already existed; the colours, diagonals, protection,
-   strikethrough and foreground colour have been added.
-4. **Headers and footers** (text only; images need an `Image` pyclass).
-5. **`save_to_buffer()`** — one method, unlocks web-service use.
-6. **Data validation** — needs a new pyclass, but high demand.
-7. **Row and column grouping.**
-8. **Conditional format icon sets.**
-9. **Chart error bars and secondary axes.**
-10. Everything else.
-
-Items 1–5 are all mechanical and would close the majority of what a
-reporting-focused user would notice missing.
-
 ---
 
-## Not upstream-parity gaps, tracked separately
+## Suggested order
 
-These came from real-world testing rather than this audit, and are
-resolved — noting here only so they're not re-flagged by a future
-diff against upstream:
+Ranked by value per unit of effort:
 
-- `set_column_range_width()` — added, mirrors `set_column_range_format()`.
-- `.pyi` type stubs and a `py.typed` marker — added.
-- `Cargo.lock` — committed for reproducible builds.
-- `column_formats` on the Python-level `write_dataframe` convenience
-  wrappers (`rvgsrust_xlsxwriter.dataframe`) — now applied via
-  `set_column_format()` on the fast Arrow path, instead of forcing the
-  slow per-cell fallback. Still column-scoped, so the OOXML
-  per-cell-format-wins-over-column-format precedence rule in section 2a
-  above still applies — this didn't change that, just the ergonomics
-  and the fact that the fast path no longer gets abandoned pointlessly.
+1. **Headers and footers** (text only; images need an `Image` pyclass).
+2. **`save_to_buffer()`** — one method, unlocks web-service use.
+3. **Data validation** — needs a new pyclass, but high demand.
+4. **Row and column grouping.**
+5. **Conditional format icon sets.**
+6. **Chart error bars and secondary axes.**
+7. Everything else.
