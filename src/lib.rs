@@ -677,10 +677,11 @@ impl Format {
     }
 
     // Per-side border colours. set_border_color above sets all four at
-    // once; these target one side each. Note the per-side border *styles*
-    // are already exposed as set_top_border / set_bottom_border /
-    // set_left_border / set_right_border, which reverse upstream's word
-    // order.
+    // once; these target one side each. The per-side border *styles* are
+    // exposed both under the historical names (set_top_border etc, which
+    // reverse this set_border_*_color naming) and under set_border_top()
+    // etc, which match this file's naming -- see the set_top_border/
+    // set_border_top block below.
     fn set_border_top_color<'a>(
         mut slf: PyRefMut<'a, Self>,
         color: &str,
@@ -782,6 +783,10 @@ impl Format {
         Ok(slf)
     }
 
+    /// Deprecated: prefer set_border_top(), which matches the naming used
+    /// by set_border_color()/set_border_diagonal() and is consistent with
+    /// the colour setters (set_border_top_color(), etc). Kept as an alias,
+    /// not removed, so existing code keeps working.
     fn set_top_border<'a>(
         mut slf: PyRefMut<'a, Self>,
         border: &str,
@@ -791,6 +796,18 @@ impl Format {
         Ok(slf)
     }
 
+    /// Canonical name for set_top_border() -- see that method's doc comment.
+    fn set_border_top<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
+        slf.update(|f| f.set_border_top(style));
+        Ok(slf)
+    }
+
+    /// Deprecated: prefer set_border_bottom(). See set_top_border()'s doc
+    /// comment for why.
     fn set_bottom_border<'a>(
         mut slf: PyRefMut<'a, Self>,
         border: &str,
@@ -800,6 +817,19 @@ impl Format {
         Ok(slf)
     }
 
+    /// Canonical name for set_bottom_border() -- see set_top_border()'s doc
+    /// comment.
+    fn set_border_bottom<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
+        slf.update(|f| f.set_border_bottom(style));
+        Ok(slf)
+    }
+
+    /// Deprecated: prefer set_border_left(). See set_top_border()'s doc
+    /// comment for why.
     fn set_left_border<'a>(
         mut slf: PyRefMut<'a, Self>,
         border: &str,
@@ -809,7 +839,31 @@ impl Format {
         Ok(slf)
     }
 
+    /// Canonical name for set_left_border() -- see set_top_border()'s doc
+    /// comment.
+    fn set_border_left<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
+        slf.update(|f| f.set_border_left(style));
+        Ok(slf)
+    }
+
+    /// Deprecated: prefer set_border_right(). See set_top_border()'s doc
+    /// comment for why.
     fn set_right_border<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        border: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let style = parse_border(border)?;
+        slf.update(|f| f.set_border_right(style));
+        Ok(slf)
+    }
+
+    /// Canonical name for set_right_border() -- see set_top_border()'s doc
+    /// comment.
+    fn set_border_right<'a>(
         mut slf: PyRefMut<'a, Self>,
         border: &str,
     ) -> PyResult<PyRefMut<'a, Self>> {
@@ -1852,6 +1906,23 @@ impl Worksheet {
         let fmt = &format.inner;
         self.with_sheet(py, |sheet| {
             sheet.set_column_range_format(first_col, last_col, fmt)?;
+            Ok(())
+        })
+    }
+
+    /// Set a uniform width across a range of columns in a single call,
+    /// instead of one set_column_width() call per column. Mirrors
+    /// set_column_range_format() above. See rust_xlsxwriter's
+    /// Worksheet::set_column_range_width().
+    fn set_column_range_width(
+        &self,
+        py: Python<'_>,
+        first_col: u16,
+        last_col: u16,
+        width: f64,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_column_range_width(first_col, last_col, width)?;
             Ok(())
         })
     }
