@@ -733,7 +733,7 @@ python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 | **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images, Polars/Pandas support |
 | **v0.2** | ✅ Bulk `write_records()` / `write_rows()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables; charts (phases 1-3); conditional formatting; sparklines; page setup; extended Arrow types |
 | **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
-| **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `column_formats` in the `dataframe.py` convenience wrappers now rides the fast Arrow path instead of forcing a per-cell fallback; `annotations` no longer leaks into the module namespace |
+| **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `write_dataframe(column_formats=...)` -- a true per-cell merge, so a border survives on a date column alongside its own number format, not the column-scoped workaround this shipped with first; `annotations` no longer leaks into the module namespace |
 | **v0.3** | 🚧 Headers/footers (`set_header`/`set_footer` text); `save_to_buffer() -> bytes`; data validation (dropdown lists, cell rules); row/column outline grouping |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
@@ -757,15 +757,6 @@ These are current, deliberate gaps rather than oversights:
 - **`write_dataframe()` column types.** Decimal, list, struct and
   dictionary-encoded Arrow columns are not supported; such a column
   raises `TypeError` and `dataframe.py` falls back to the per-cell path.
-- **Per-column formats in `write_dataframe()` are column-scoped, not per-cell.**
-  The Python-level `column_formats` argument (in `rvgsrust_xlsxwriter.dataframe`'s
-  `write_polars_dataframe`/`write_pandas_dataframe`) now applies via
-  `set_column_format()` after the fast Arrow write, rather than forcing the
-  slow per-cell loop -- but that means it's still subject to OOXML's rule
-  that a cell's own format wins over its column's format, same as calling
-  `set_column_range_format()` yourself. There's no per-cell merge into the
-  Arrow write path itself. For guaranteed per-cell precedence, use
-  `set_range_format()` or `set_cell_format()` directly.
 - **Timezones.** Excel has no timezone concept. Timezone-aware Arrow
   timestamps are written as UTC wall-clock time and warn once per column.
 - **Precision.** Excel cells hold an f64, so integers above 2^53 lose
