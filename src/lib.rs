@@ -1599,7 +1599,17 @@ impl Worksheet {
     // SUPPORTED_ARROW_TYPES for the column types accepted; date and
     // timestamp columns get a date number format applied automatically
     // so they render as dates rather than as raw serial numbers.
-    #[pyo3(signature = (start_row, start_col, data, header_format=None, write_header=true))]
+    //
+    // column_formats (dict[str, Format], keyed by column name) merges a
+    // per-column format into every cell of that column as it's written,
+    // rather than being applied afterward via set_column_format(), which
+    // would lose to a cell's own number format under OOXML precedence
+    // rules -- the exact bug this parameter exists to avoid. Merging
+    // happens once per column before the batch loop starts (see
+    // col_fmts_owned below), not per cell, so it doesn't touch the fast
+    // path's per-cell cost. Unknown column names raise ValueError before
+    // any row is written.
+    #[pyo3(signature = (start_row, start_col, data, header_format=None, write_header=true, column_formats=None))]
     fn write_dataframe(
         &self,
         py: Python<'_>,
@@ -1608,6 +1618,7 @@ impl Worksheet {
         data: &Bound<'_, PyAny>,
         header_format: Option<&Format>,
         write_header: bool,
+        column_formats: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<()> {
         let reader = arrow_stream_reader(data)?;
         // schema() is available from RecordBatchReader before any batch is
@@ -1615,6 +1626,43 @@ impl Worksheet {
         // without materialising the data.
         let schema = reader.schema();
         let field_names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
+
+        // column_formats validation and extraction happens up front, same
+        // as the dtype checks below, so an unknown column name is
+        // reported before any row is written rather than partway through.
+        // The PyRef is only borrowed long enough to clone the underlying
+        // RustFormat out of it -- everything downstream works on owned
+        // RustFormat values, so there is no PyO3 lifetime to thread
+        // through the batch loop.
+        let mut requested_fmt_by_pos: Vec<Option<RustFormat>> =
+            (0..field_names.len()).map(|_| None).collect();
+        if let Some(cf) = column_formats {
+            let mut unknown: Vec<String> = Vec::new();
+            for (key, value) in cf.iter() {
+                let name: String = key.extract()?;
+                match field_names.iter().position(|n| n == &name) {
+                    Some(idx) => {
+                        let fmt_ref = value.extract::<PyRef<'_, Format>>()?;
+                        requested_fmt_by_pos[idx] = Some(fmt_ref.inner.clone());
+                    }
+                    None => unknown.push(name),
+                }
+            }
+            if !unknown.is_empty() {
+                unknown.sort();
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "write_dataframe(): column_formats has key(s) not present in \
+                     the dataframe: {}. Available columns: {}",
+                    unknown.join(", "),
+                    field_names.join(", ")
+                )));
+            }
+        }
+
+        // 0 = no special number format, 1 = date, 2 = datetime. Recorded
+        // alongside the existing type-check loop below rather than in a
+        // second pass over schema.fields().
+        let mut col_kind: Vec<u8> = Vec::with_capacity(field_names.len());
 
         // Check every column's type up front so we fail with one clear
         // error instead of partway through a partially-written sheet.
@@ -1633,9 +1681,8 @@ impl Worksheet {
                 | ArrowDataType::Utf8
                 | ArrowDataType::LargeUtf8
                 | ArrowDataType::Utf8View
-                | ArrowDataType::Boolean
-                | ArrowDataType::Date32
-                | ArrowDataType::Date64 => {}
+                | ArrowDataType::Boolean => col_kind.push(0),
+                ArrowDataType::Date32 | ArrowDataType::Date64 => col_kind.push(1),
                 // TimeUnit has exactly four variants, all handled by
                 // resolve_arrow_column, so the unit needs no check here.
                 // The timezone does: Excel has no concept of one, and
@@ -1644,6 +1691,7 @@ impl Worksheet {
                 // later. Warned once per column, at schema-validation
                 // time, so it costs nothing on the per-cell hot path.
                 ArrowDataType::Timestamp(_, tz) => {
+                    col_kind.push(2);
                     if let Some(tz) = tz {
                         let warn_cls = py.get_type_bound::<pyo3::exceptions::PyUserWarning>();
                         PyErr::warn_bound(
@@ -1682,8 +1730,35 @@ impl Worksheet {
         // serial. Built once for the whole call rather than per cell:
         // rust_xlsxwriter dedupes identical formats in its xf table, so a
         // per-cell Format would be correct but would allocate 100k times.
-        let date_fmt = RustFormat::new().set_num_format("yyyy-mm-dd");
-        let datetime_fmt = RustFormat::new().set_num_format("yyyy-mm-dd hh:mm:ss");
+        //
+        // column_formats merging happens here too, once per column
+        // rather than per batch or per cell: a column's dtype and its
+        // requested format are both fixed for the whole call, so the
+        // merged result is the same every time it would otherwise be
+        // recomputed. Merging means applying the dtype's number format
+        // on top of the user's format via the builder (set_num_format
+        // consumes and returns Self), not replacing one with the other
+        // -- a border and a date numFmtId are independent style axes in
+        // OOXML, so both survive in the same cellXf. This is the actual
+        // fix for the bug column_formats exists to solve: a column
+        // format applied via set_column_format()/set_column_range_format()
+        // loses to a cell's own number format under OOXML precedence
+        // rules, silently dropping borders on date/datetime columns.
+        // Merging into the per-cell format here sidesteps that rule
+        // entirely rather than tripping over it.
+        let col_fmts_owned: Vec<Option<RustFormat>> = col_kind
+            .iter()
+            .zip(requested_fmt_by_pos.into_iter())
+            .map(|(&kind, requested)| match (kind, requested) {
+                (0, None) => None,
+                (1, None) => Some(RustFormat::new().set_num_format("yyyy-mm-dd")),
+                (2, None) => Some(RustFormat::new().set_num_format("yyyy-mm-dd hh:mm:ss")),
+                (0, Some(f)) => Some(f),
+                (1, Some(f)) => Some(f.set_num_format("yyyy-mm-dd")),
+                (2, Some(f)) => Some(f.set_num_format("yyyy-mm-dd hh:mm:ss")),
+                _ => unreachable!("col_kind only ever holds 0, 1, or 2"),
+            })
+            .collect();
 
         let mut row_cursor = start_row;
         let mut started = false;
@@ -1753,21 +1828,17 @@ impl Worksheet {
                 }
             };
 
-            // A column's type is fixed for the whole batch, so pick its
-            // format once here instead of re-matching on every cell --
-            // this keeps the inner loop's cost identical to before for
-            // non-temporal data.
-            let col_fmts: Vec<Option<&RustFormat>> = columns
-                .iter()
-                .map(|col| match col {
-                    ArrowColumn::Date32(_) | ArrowColumn::Date64(_) => Some(&date_fmt),
-                    ArrowColumn::TimestampSecond(_)
-                    | ArrowColumn::TimestampMillisecond(_)
-                    | ArrowColumn::TimestampMicrosecond(_)
-                    | ArrowColumn::TimestampNanosecond(_) => Some(&datetime_fmt),
-                    _ => None,
-                })
-                .collect();
+            // Column formats (including any column_formats merge) were
+            // computed once before this loop, keyed by position -- same
+            // for every batch, since a column's dtype and requested
+            // format don't change mid-stream. This replaces what used to
+            // be a per-batch match on each column's resolved ArrowColumn
+            // variant with a cheap reference lookup, so the inner
+            // per-cell loop below is untouched either way: passing
+            // column_formats adds work before the batch loop, not inside
+            // it.
+            let col_fmts: Vec<Option<&RustFormat>> =
+                col_fmts_owned.iter().map(|f| f.as_ref()).collect();
 
             for r in 0..batch.num_rows() {
                 for (c, col) in columns.iter().enumerate() {
