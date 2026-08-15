@@ -84,7 +84,27 @@ jobs:
         python -m pip install .
 
     - name: Run tests
-      run: pytest tests/ -v
+      run: |
+        pytest tests/ -v 2>&1 | tee /tmp/pytest_output.txt || true
+        echo "PYTEST_EXIT=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+      shell: bash
+
+    - name: Write pytest output to step summary (temporary diagnostic, remove before merge)
+      if: always()
+      run: |
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+        tail -c 60000 /tmp/pytest_output.txt >> "$GITHUB_STEP_SUMMARY"
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+      shell: bash
+
+    - name: Fail the job if pytest failed (diagnostic step above must not mask this)
+      if: always()
+      run: |
+        if [ "$PYTEST_EXIT" != "0" ]; then
+          echo "pytest exited with $PYTEST_EXIT"
+          exit 1
+        fi
+      shell: bash
 
   # This crate builds against pyo3's stable ABI (abi3-py38, see
   # Cargo.toml), which means a single wheel per OS/architecture works
