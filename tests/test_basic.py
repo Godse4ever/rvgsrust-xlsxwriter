@@ -718,6 +718,51 @@ def test_workbook_close_explicit_path_overrides_constructor_path():
             os.remove(override_path)
 
 
+def test_save_to_buffer_returns_valid_xlsx_bytes():
+    import io
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, "in_memory")
+    buf = wb.save_to_buffer()
+    assert isinstance(buf, bytes)
+    assert len(buf) > 0
+    # A real xlsx is a zip archive -- "PK" magic bytes at the start is a
+    # cheap sanity check before paying for a full openpyxl parse.
+    assert buf[:2] == b"PK"
+    sheet = openpyxl.load_workbook(io.BytesIO(buf)).active
+    assert sheet["A1"].value == "in_memory"
+
+
+def test_save_to_buffer_matches_close_content():
+    # Same workbook, same content, written both ways -- the two paths
+    # through rust_xlsxwriter (save() vs save_to_buffer()) should
+    # produce the same worksheet content. Not a byte-for-byte
+    # comparison: rust_xlsxwriter embeds a creation timestamp in
+    # docProps/core.xml that varies with wall-clock time, so two
+    # separately-constructed workbooks can legitimately differ at the
+    # byte level even with identical cell data -- that's documented
+    # upstream behaviour, not a bug to pin down here.
+    import io
+
+    wb1 = Workbook(path=TEST_FILE)
+    ws1 = wb1.add_worksheet()
+    ws1.write(0, 0, "parity")
+    ws1.write(1, 0, 42)
+    wb1.close()
+    sheet_via_close = _load().active
+
+    wb2 = Workbook()
+    ws2 = wb2.add_worksheet()
+    ws2.write(0, 0, "parity")
+    ws2.write(1, 0, 42)
+    buf = wb2.save_to_buffer()
+    sheet_via_buffer = openpyxl.load_workbook(io.BytesIO(buf)).active
+
+    assert sheet_via_close["A1"].value == sheet_via_buffer["A1"].value
+    assert sheet_via_close["A2"].value == sheet_via_buffer["A2"].value
+
+
 def test_workbook_context_manager_exception_does_not_save():
     # If an exception is raised inside the with block, __exit__ must
     # NOT attempt to save (and must re-raise the original exception).

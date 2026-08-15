@@ -8,7 +8,7 @@ use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::ffi_stream::{ArrowArrayStreamReader, FFI_ArrowArrayStream};
 use arrow::record_batch::RecordBatchReader;
 use pyo3::prelude::*;
-use pyo3::types::{PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
+use pyo3::types::{PyBytes, PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
 use rust_xlsxwriter::{
     Color, ExcelDateTime, Format as RustFormat, FormatAlign, FormatBorder, FormatPattern,
@@ -2740,6 +2740,31 @@ impl Workbook {
         py.allow_threads(move || workbook.save(path))
             .map_err(xlsx_err_to_pyerr)?;
         Ok(())
+    }
+
+    // Same operation as close(), same cost, same GIL-release rationale
+    // (see the comment on close() above) -- this only differs in where
+    // the bytes end up. Returning Vec<u8> instead of writing a path is
+    // what a web service needs (respond with the bytes directly, no
+    // temp-file round trip), and it's also how you'd get the file into
+    // an in-memory zip or a streamed HTTP response.
+    //
+    // rust_xlsxwriter's save_to_buffer() takes &mut self and does not
+    // consume the workbook, so in principle it could be called more than
+    // once, or interleaved with close() -- this binding doesn't add any
+    // restriction against that. Whether that produces something useful
+    // (rather than just wasted work) is between the caller and
+    // rust_xlsxwriter, not something this layer polices.
+    fn save_to_buffer(&self, py: Python<'_>) -> PyResult<Py<PyBytes>> {
+        let mut guard = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?;
+        let workbook: &mut RustWorkbook = &mut guard;
+        let buf: Vec<u8> = py
+            .allow_threads(move || workbook.save_to_buffer())
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(PyBytes::new_bound(py, &buf).unbind())
     }
 
     // Defines a named range/formula usable in Excel formulas and the
