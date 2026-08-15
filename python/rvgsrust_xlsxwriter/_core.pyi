@@ -169,12 +169,19 @@ class Worksheet:
     def write_dataframe(
         self, start_row: int, start_col: int, data: Any,
         header_format: Optional[Format] = None, write_header: bool = True,
+        column_formats: Optional[dict[str, Format]] = None,
     ) -> None:
         """Zero-copy Arrow path. `data` must expose __arrow_c_stream__
         (pandas 2.x+, polars via .to_arrow(), pyarrow.Table/RecordBatchReader).
-        No column_formats parameter yet -- see set_column_format /
-        set_column_range_format for the column-scoped workaround, or the
-        per-cell fallback in rvgsrust_xlsxwriter.dataframe.
+
+        column_formats merges a per-column format into every cell as
+        it's written, keyed by column name. This is a true per-cell
+        merge, not a column-scoped format applied afterward: a border
+        given here survives on a date/datetime column alongside that
+        column's own date number format, because both land in the same
+        cellXf rather than the column-level format losing to the cell's
+        own format under OOXML precedence. Raises ValueError if a key
+        doesn't match any column name, before any row is written.
         """
         ...
     def write_formula(self, row: int, col: int, formula: str, format: Optional[Format] = None) -> None: ...

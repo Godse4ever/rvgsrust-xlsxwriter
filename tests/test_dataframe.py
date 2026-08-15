@@ -429,3 +429,154 @@ def test_still_unsupported_type_raises_typeerror():
     msg = str(exc.value)
     assert "amount" in msg
     assert "date32" in msg  # the supported-types list is included
+
+
+# ---------------------------------------------------------------------
+# column_formats: the actual bug this parameter exists to fix is that a
+# COLUMN-scoped format (set_column_format / set_column_range_format)
+# loses to a cell's own number format under OOXML precedence, so a
+# border silently vanishes on any date/datetime column. These tests
+# assert the merge happens per cell, not that a column_formats argument
+# merely exists.
+# ---------------------------------------------------------------------
+
+def _border_count_in_styles(path):
+    """Count <border> child elements inside <borders> in styles.xml.
+    A shared Format instance passed for every column should still
+    produce one border definition, not one per column."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    with zipfile.ZipFile(path) as z:
+        xml_bytes = z.read("xl/styles.xml")
+    root = ET.fromstring(xml_bytes)
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    borders = root.find("m:borders", ns)
+    # The default/empty border (index 0, no sides set) is always present,
+    # so a single real border definition on top of that is 2 elements,
+    # not 1 -- assert against that baseline rather than a bare count.
+    return len(borders.findall("m:border", ns))
+
+
+@requires_pyarrow
+def test_write_dataframe_column_formats_merges_not_overwrites():
+    """The regression this feature exists for: a border applied via
+    column_formats must survive on a date column, which still carries
+    its own numFmtId. Before the fix, a column-scoped workaround
+    (set_column_format) silently dropped the border on exactly this
+    column, with no error."""
+    import datetime
+    import openpyxl.utils
+
+    table = pa.table({
+        "q_int": pa.array([1, 2], type=pa.int64()),
+        "q_float": pa.array([1.5, 2.5], type=pa.float64()),
+        "q_str": pa.array(["a", "b"], type=pa.string()),
+        "q_date": pa.array(
+            [datetime.date(2026, 1, 1), datetime.date(2026, 1, 2)], type=pa.date32()
+        ),
+    })
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    border_fmt = wb.add_format()
+    border_fmt.set_border("thin")
+    border_fmt.set_border_color("#BFBFBF")
+    # The same Format instance for every column, deliberately: the
+    # write side must not require one Format per column to get one
+    # border definition in styles.xml.
+    ws.write_dataframe(
+        0, 0, table, write_header=True,
+        column_formats={c: border_fmt for c in table.column_names},
+    )
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    n_cols = len(table.column_names)
+    for col_idx in range(1, n_cols + 1):
+        cell = sheet.cell(row=2, column=col_idx)
+        assert cell.border.top.style == "thin", (
+            f"column {table.column_names[col_idx - 1]!r} lost its border "
+            f"(border={cell.border.top.style!r})"
+        )
+
+    # q_date is the 4th column -- must still carry a date number format,
+    # not just "General", or the border came at the cost of the date
+    # rendering as a raw serial again.
+    date_cell = sheet.cell(row=2, column=n_cols)
+    assert date_cell.number_format not in ("General", None), (
+        f"q_date lost its date number format: {date_cell.number_format!r}"
+    )
+    assert date_cell.value == datetime.datetime(2026, 1, 1)
+
+    # One shared Format instance across 4 columns of 3 different dtypes
+    # (int/float, str, date) should not produce 4 separate border
+    # definitions in styles.xml.
+    n_borders = _border_count_in_styles(TEST_FILE)
+    assert n_borders <= 3, (
+        f"expected at most a couple of border definitions (default + "
+        f"shared), got {n_borders} -- looks like the format wasn't "
+        f"deduped across columns"
+    )
+
+
+@requires_pyarrow
+def test_write_dataframe_column_formats_constant_memory():
+    """Same as the merge test above, but with constant_memory=True --
+    column_formats must work in the streaming path too, since formats
+    are applied at write time before rows are flushed."""
+    import datetime
+
+    table = pa.table({
+        "q_str": pa.array(["a", "b"], type=pa.string()),
+        "q_date": pa.array(
+            [datetime.date(2026, 1, 1), datetime.date(2026, 1, 2)], type=pa.date32()
+        ),
+    })
+    wb = Workbook()
+    ws = wb.add_worksheet(constant_memory=True)
+    border_fmt = wb.add_format()
+    border_fmt.set_border("thin")
+    ws.write_dataframe(
+        0, 0, table, write_header=True,
+        column_formats={c: border_fmt for c in table.column_names},
+    )
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    assert sheet.cell(row=2, column=2).border.top.style == "thin"
+    assert sheet.cell(row=2, column=2).number_format not in ("General", None)
+
+
+@requires_pyarrow
+def test_write_dataframe_column_formats_unknown_key_raises():
+    table = pa.table({"a": pa.array([1, 2], type=pa.int64())})
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_bold()
+    with pytest.raises(ValueError) as exc:
+        ws.write_dataframe(0, 0, table, column_formats={"nope": fmt})
+    assert "nope" in str(exc.value)
+
+
+@requires_pyarrow
+def test_write_dataframe_column_formats_none_is_unchanged():
+    """Omitting column_formats must be byte-identical to today's
+    behaviour -- this is a pure addition, not a behaviour change for
+    existing callers."""
+    table = pa.table({"a": pa.array([1, 2], type=pa.int64())})
+    wb1 = Workbook()
+    ws1 = wb1.add_worksheet()
+    ws1.write_dataframe(0, 0, table)
+    wb1.close(TEST_FILE)
+    with open(TEST_FILE, "rb") as f:
+        bytes_without_kwarg = f.read()
+
+    wb2 = Workbook()
+    ws2 = wb2.add_worksheet()
+    ws2.write_dataframe(0, 0, table, column_formats=None)
+    wb2.close(TEST_FILE)
+    with open(TEST_FILE, "rb") as f:
+        bytes_with_explicit_none = f.read()
+
+    assert bytes_without_kwarg == bytes_with_explicit_none
