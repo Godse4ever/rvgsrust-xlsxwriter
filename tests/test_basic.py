@@ -677,6 +677,27 @@ def test_workbook_context_manager_no_path_raises():
             wb.add_worksheet()
 
 
+def test_workbook_close_no_arg_uses_constructor_path():
+    # The direct (non-`with`) call form: close() with no argument must
+    # use the path given to the constructor, same as __exit__ does. This
+    # is the form shown first in the README's Quick Start, and is a
+    # distinct code path from the context-manager tests above even
+    # though both end up calling the same close().
+    wb = Workbook(path=TEST_FILE)
+    ws = wb.add_worksheet()
+    ws.write(0, 0, "close_no_arg")
+    wb.close()
+    sheet = _load().active
+    assert sheet["A1"].value == "close_no_arg"
+
+
+def test_workbook_close_no_arg_no_path_raises():
+    wb = Workbook()
+    wb.add_worksheet()
+    with pytest.raises(ValueError, match="no path set"):
+        wb.close()
+
+
 def test_workbook_context_manager_exception_does_not_save():
     # If an exception is raised inside the with block, __exit__ must
     # NOT attempt to save (and must re-raise the original exception).
