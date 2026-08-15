@@ -66,9 +66,15 @@ pattern foreground colour are now all exposed.** What remains:
 The first version of this file listed **per-side border styles as missing
 and ranked them highest-value. That was wrong** — they were already
 exposed, as `set_top_border` / `set_bottom_border` / `set_left_border` /
-`set_right_border`, which reverse upstream's `set_border_top` word order.
+`set_right_border`, which reversed upstream's `set_border_top` word order.
 The diff that produced this file matched on prefix variants but not on
 reordered words, so it reported four methods as absent that were present.
+
+Since corrected: the reversed names are still there (deprecated, kept
+for compatibility), and `set_border_top` / `set_border_bottom` /
+`set_border_left` / `set_border_right` were added as the canonical
+names matching `set_border_color()` / `set_border_diagonal()` /
+`set_border_*_color()`. Both spellings now do the same thing.
 
 `Worksheet::set_freeze_panes` was the same mistake: we expose it as
 `freeze_panes`, without the `set_` prefix.
@@ -275,3 +281,22 @@ Ranked by value per unit of effort, not by section order above:
 
 Items 1–5 are all mechanical and would close the majority of what a
 reporting-focused user would notice missing.
+
+---
+
+## Not upstream-parity gaps, tracked separately
+
+These came from real-world testing rather than this audit, and are
+resolved — noting here only so they're not re-flagged by a future
+diff against upstream:
+
+- `set_column_range_width()` — added, mirrors `set_column_range_format()`.
+- `.pyi` type stubs and a `py.typed` marker — added.
+- `Cargo.lock` — committed for reproducible builds.
+- `column_formats` on the Python-level `write_dataframe` convenience
+  wrappers (`rvgsrust_xlsxwriter.dataframe`) — now applied via
+  `set_column_format()` on the fast Arrow path, instead of forcing the
+  slow per-cell fallback. Still column-scoped, so the OOXML
+  per-cell-format-wins-over-column-format precedence rule in section 2a
+  above still applies — this didn't change that, just the ergonomics
+  and the fact that the fast path no longer gets abandoned pointlessly.
