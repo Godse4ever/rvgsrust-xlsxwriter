@@ -70,6 +70,41 @@ def test_set_column_range_format_rejects_reversed_range():
         _build(build)
 
 
+def test_set_column_range_width():
+    def build(ws):
+        ws.set_column_range_width(1, 3, 20.5)
+
+    _, sheet_xml, _ = _build(build)
+    cols = re.findall(r'<col[^>]*min="2"[^>]*max="4"[^>]*>', sheet_xml)
+    assert cols, sheet_xml
+    assert 'width="20.5"' in cols[0], cols[0]
+    assert 'customWidth="1"' in cols[0], cols[0]
+
+
+def test_set_column_range_width_collapses_to_one_col_span():
+    """A single <col min=".." max=".."> spanning the range, not one
+    <col> per column -- that's the entire point of the range call over
+    looping set_column_width()."""
+    def build(ws):
+        ws.set_column_range_width(0, 9, 12.0)
+
+    _, sheet_xml, _ = _build(build)
+    cols = re.findall(r"<col\b[^>]*>", sheet_xml)
+    matching = [c for c in cols if 'width="12"' in c or 'width="12.0"' in c]
+    assert len(matching) == 1, (
+        f"expected one collapsed <col> element for the whole range, "
+        f"got {len(matching)}: {cols}"
+    )
+
+
+def test_set_column_range_width_rejects_reversed_range():
+    def build(ws):
+        ws.set_column_range_width(5, 2, 15.0)
+
+    with pytest.raises(ValueError):
+        _build(build)
+
+
 # ------------------------------ row ------------------------------
 
 
