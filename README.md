@@ -113,6 +113,18 @@ with Workbook("report.xlsx") as wb:
 # saved to report.xlsx here, close() called for you
 ```
 
+`save_to_buffer()` skips the file entirely and returns the xlsx as
+`bytes` -- useful for a web response or an in-memory pipeline, with no
+temp-file round trip:
+
+```python
+wb = Workbook()
+ws = wb.add_worksheet()
+ws.write(0, 0, "In memory")
+xlsx_bytes = wb.save_to_buffer()
+# e.g. return Response(xlsx_bytes, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+```
+
 ---
 
 ## Features
@@ -734,7 +746,7 @@ python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 | **v0.2** | ✅ Bulk `write_records()` / `write_rows()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables; charts (phases 1-3); conditional formatting; sparklines; page setup; extended Arrow types |
 | **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
 | **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `write_dataframe(column_formats=...)` -- a true per-cell merge, so a border survives on a date column alongside its own number format, not the column-scoped workaround this shipped with first; `annotations` no longer leaks into the module namespace |
-| **v0.3** | 🚧 Headers/footers (`set_header`/`set_footer` text); `save_to_buffer() -> bytes`; data validation (dropdown lists, cell rules); row/column outline grouping |
+| **v0.3** | 🚧 Headers/footers (`set_header`/`set_footer` text); data validation (dropdown lists, cell rules); row/column outline grouping. `save_to_buffer()` shipped ahead of the rest of this batch. |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
@@ -782,10 +794,10 @@ naming itself (`set_top_border` vs upstream's `set_border_top`) has
 since been reconciled: both spellings work, the reversed ones kept for
 compatibility.
 
-The largest remaining gaps are headers/footers, `save_to_buffer()`,
-data validation, and row/column outline grouping on `Worksheet`; error
-bars, secondary axes and a handful of formatting options on `Chart`; and
-icon sets on conditional formats. `Format` has ~6 low-priority gaps left
+The largest remaining gaps are headers/footers, data validation, and
+row/column outline grouping on `Worksheet`; error bars, secondary axes
+and a handful of formatting options on `Chart`; and icon sets on
+conditional formats. `Format` has ~6 low-priority gaps left
 (quote prefix, hyperlink style, checkbox format, font family/charset,
 reading direction, `unset_*` inverses) -- see MISSING.md's "Suggested
 order" for the full ranked list.
