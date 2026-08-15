@@ -85,20 +85,16 @@ requested Excel-writer features across every language binding
 
 ---
 
-## 3. Workbook — 7 gaps
+## 3. Workbook — 6 gaps
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Save to a buffer | `workbook.rs:1371` | `save_to_buffer() -> bytes` | **Medium-High** |
 | Chartsheets | `workbook.rs:906` | `add_chartsheet()` — needs a `Chartsheet` pyclass | Medium |
 | Themes | `workbook.rs:1918` | `use_excel_2023_theme()`, `use_custom_theme(...)` | Low |
 | Workbook default format | — | `set_default_format(format)` | Low |
 | VBA projects | `workbook.rs:2141` | `add_vba_project(path)`, `set_vba_name(name)` | Low |
 | Read-only recommended | `workbook.rs:2345` | `read_only_recommended()` | Low |
 | Temp dir / large zip | `workbook.rs:828` | `set_tempdir(path)`, `use_zip_large_file(bool)` | Low |
-
-`save_to_buffer()` is the notable one: returning bytes instead of writing
-a path is what a web service needs, and it avoids a temp-file round trip.
 
 ---
 
@@ -174,9 +170,8 @@ writing worksheet XML ourselves. Worth reporting upstream.
 Ranked by value per unit of effort:
 
 1. **Headers and footers** (text only; images need an `Image` pyclass).
-2. **`save_to_buffer()`** — one method, unlocks web-service use.
-3. **Data validation** — needs a new pyclass, but high demand.
-4. **Row and column grouping.**
-5. **Conditional format icon sets.**
-6. **Chart error bars and secondary axes.**
-7. Everything else.
+2. **Data validation** — needs a new pyclass, but high demand.
+3. **Row and column grouping.**
+4. **Conditional format icon sets.**
+5. **Chart error bars and secondary axes.**
+6. Everything else.
