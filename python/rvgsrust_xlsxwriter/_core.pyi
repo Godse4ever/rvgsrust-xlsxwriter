@@ -151,6 +151,14 @@ class Workbook:
     def close(self, path: Optional[str] = None) -> None:
         """Save and close. Uses the constructor path when `path` is omitted."""
         ...
+    def save_to_buffer(self) -> bytes:
+        """Serialize the workbook to bytes instead of writing a path --
+        useful for a web response or streaming, with no temp-file
+        round trip. Same cost as close()/save(), and the GIL is
+        released for it the same way. Can be called more than once or
+        alongside close(); this binding places no restriction on that.
+        """
+        ...
 
 class Worksheet:
     def write(self, row: int, col: int, value: Any, format: Optional[Format] = None) -> None: ...
