@@ -677,6 +677,50 @@ def test_workbook_context_manager_no_path_raises():
             wb.add_worksheet()
 
 
+def test_close_with_no_argument_uses_constructor_path():
+    # The direct (non-context-manager) call pattern shown in the
+    # README's Quick Start: Workbook(path).close() with no argument.
+    # test_workbook_context_manager above exercises the same underlying
+    # close(path=None) via __exit__, but not this call shape directly.
+    wb = Workbook(TEST_FILE)
+    ws = wb.add_worksheet()
+    ws.write(0, 0, "no_arg_close")
+    wb.close()
+    sheet = _load().active
+    assert sheet["A1"].value == "no_arg_close"
+
+
+def test_close_explicit_path_overrides_constructor_path():
+    # Passing a path to close() must still override the constructor
+    # path, per the docstring -- this is the backward-compatible half
+    # of the no-arg fix, not just the new behaviour.
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        override_path = tf.name
+    try:
+        wb = Workbook(TEST_FILE)
+        ws = wb.add_worksheet()
+        ws.write(0, 0, "explicit_override")
+        wb.close(override_path)
+        assert os.path.exists(override_path)
+        sheet = openpyxl.load_workbook(override_path).active
+        assert sheet["A1"].value == "explicit_override"
+    finally:
+        if os.path.exists(override_path):
+            os.remove(override_path)
+
+
+def test_close_with_no_path_anywhere_raises():
+    # Direct (non-context-manager) call with no constructor path and no
+    # argument to close() -- same error as the context-manager case,
+    # reached a different way.
+    wb = Workbook()
+    wb.add_worksheet()
+    with pytest.raises(ValueError, match="no path set"):
+        wb.close()
+
+
 def test_workbook_context_manager_exception_does_not_save():
     # If an exception is raised inside the with block, __exit__ must
     # NOT attempt to save (and must re-raise the original exception).
