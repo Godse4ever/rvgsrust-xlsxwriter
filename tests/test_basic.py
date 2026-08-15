@@ -698,6 +698,26 @@ def test_workbook_close_no_arg_no_path_raises():
         wb.close()
 
 
+def test_workbook_close_explicit_path_overrides_constructor_path():
+    # close(path) stays a valid override even when the constructor was
+    # also given a path -- the explicit argument wins, and the file
+    # actually lands at the override path, not the constructor's.
+    override_path = "test_output_override.xlsx"
+    if os.path.exists(override_path):
+        os.remove(override_path)
+    try:
+        wb = Workbook(path=TEST_FILE)
+        ws = wb.add_worksheet()
+        ws.write(0, 0, "override")
+        wb.close(override_path)
+        assert os.path.exists(override_path)
+        sheet = _load(override_path).active
+        assert sheet["A1"].value == "override"
+    finally:
+        if os.path.exists(override_path):
+            os.remove(override_path)
+
+
 def test_workbook_context_manager_exception_does_not_save():
     # If an exception is raised inside the with block, __exit__ must
     # NOT attempt to save (and must re-raise the original exception).
