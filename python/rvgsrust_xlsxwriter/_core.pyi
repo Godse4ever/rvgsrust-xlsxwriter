@@ -169,12 +169,21 @@ class Worksheet:
     def write_dataframe(
         self, start_row: int, start_col: int, data: Any,
         header_format: Optional[Format] = None, write_header: bool = True,
+        column_formats: Optional[dict[str, Format]] = None,
     ) -> None:
         """Zero-copy Arrow path. `data` must expose __arrow_c_stream__
         (pandas 2.x+, polars via .to_arrow(), pyarrow.Table/RecordBatchReader).
-        No column_formats parameter yet -- see set_column_format /
-        set_column_range_format for the column-scoped workaround, or the
-        per-cell fallback in rvgsrust_xlsxwriter.dataframe.
+
+        column_formats, keyed by column name, is merged into every cell
+        of that column as it's written -- including under the automatic
+        date/datetime number format, so e.g. a border survives on a date
+        column rather than losing to the cell's own numFmtId (the OOXML
+        precedence rule that set_column_format()/set_column_range_format()
+        are vulnerable to when applied after the fact). The merge happens
+        once per column before the row loop, not per cell or per batch,
+        so passing column_formats does not add per-cell cost. Raises
+        ValueError, before any row is written, for any key not present
+        among the dataframe's columns.
         """
         ...
     def write_formula(self, row: int, col: int, formula: str, format: Optional[Format] = None) -> None: ...
