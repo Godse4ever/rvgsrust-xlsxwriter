@@ -733,8 +733,8 @@ python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 | **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images, Polars/Pandas support |
 | **v0.2** | ✅ Bulk `write_records()` / `write_rows()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables; charts (phases 1-3); conditional formatting; sparklines; page setup; extended Arrow types |
 | **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
-| **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment |
-| **v0.3** | 🚧 Headers/footers (`set_header`/`set_footer` text); `save_to_buffer() -> bytes`; data validation (dropdown lists, cell rules); per-column formats in `write_dataframe()`; row/column outline grouping |
+| **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `column_formats` in the `dataframe.py` convenience wrappers now rides the fast Arrow path instead of forcing a per-cell fallback; `annotations` no longer leaks into the module namespace |
+| **v0.3** | 🚧 Headers/footers (`set_header`/`set_footer` text); `save_to_buffer() -> bytes`; data validation (dropdown lists, cell rules); row/column outline grouping |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
@@ -757,9 +757,15 @@ These are current, deliberate gaps rather than oversights:
 - **`write_dataframe()` column types.** Decimal, list, struct and
   dictionary-encoded Arrow columns are not supported; such a column
   raises `TypeError` and `dataframe.py` falls back to the per-cell path.
-- **Per-column formats in `write_dataframe()`.** Passing
-  `column_formats` routes through the slower per-cell loop, since the
-  Arrow fast path applies a format per column type, not per column.
+- **Per-column formats in `write_dataframe()` are column-scoped, not per-cell.**
+  The Python-level `column_formats` argument (in `rvgsrust_xlsxwriter.dataframe`'s
+  `write_polars_dataframe`/`write_pandas_dataframe`) now applies via
+  `set_column_format()` after the fast Arrow write, rather than forcing the
+  slow per-cell loop -- but that means it's still subject to OOXML's rule
+  that a cell's own format wins over its column's format, same as calling
+  `set_column_range_format()` yourself. There's no per-cell merge into the
+  Arrow write path itself. For guaranteed per-cell precedence, use
+  `set_range_format()` or `set_cell_format()` directly.
 - **Timezones.** Excel has no timezone concept. Timezone-aware Arrow
   timestamps are written as UTC wall-clock time and warn once per column.
 - **Precision.** Excel cells hold an f64, so integers above 2^53 lose
@@ -767,9 +773,6 @@ These are current, deliberate gaps rather than oversights:
 - **`constant_memory=True`** requires rows to be written in
   non-decreasing order. This layer raises `ValueError` on violation;
   `rust_xlsxwriter` itself would silently emit a corrupt file.
-- **Dependency floating.** No `Cargo.lock` is committed, so transitive
-  dependencies resolve to latest-compatible and the effective MSRV can
-  rise on a dependency bump. The `msrv` CI job exists to surface that.
 - **Python 3.8.** `requires-python` still declares `>=3.8`, but CI tests
   3.9 upward; the `pandas>=2.0` extra already requires 3.9+.
 
@@ -780,11 +783,13 @@ These are current, deliberate gaps rather than oversights:
 [MISSING.md](MISSING.md) audits the exposed Python API against
 rust_xlsxwriter 0.96 and lists what is not yet wrapped, with upstream
 `file:line` references, a suggested Python API shape, and a priority for
-each. Sparklines, cell/row/column/range formats, and page setup and print
-settings are all at full parity now -- an earlier pass had flagged
-per-side borders as missing too, but that was a false positive from a
-naming mismatch (`set_top_border` vs upstream's `set_border_top`), not an
-actual gap.
+each. Sparklines, cell/row/column/range formats, page setup and print
+settings, and per-side border naming are all at full parity now -- an
+earlier audit pass had flagged per-side borders as missing entirely,
+which was a false positive from a naming mismatch, and separately the
+naming itself (`set_top_border` vs upstream's `set_border_top`) has
+since been reconciled: both spellings work, the reversed ones kept for
+compatibility.
 
 The largest remaining gaps are headers/footers, `save_to_buffer()`,
 data validation, and row/column outline grouping on `Worksheet`; error
