@@ -1094,3 +1094,39 @@ def test_write_rows_constant_memory_with_write_header():
     assert sheet["A4"].value == "Carol"
     assert sheet["A5"].value == "Dave"
     assert sheet["B5"].value == 88
+
+
+def test_write_rows_interleaves_classify_and_write():
+    """write_rows() classifies and writes each row in a single pass now
+    (matching write_records()), instead of classifying the whole
+    dataset before writing anything. That means a row write_rows()
+    can't process partway through leaves the rows before it already on
+    the sheet -- this pins that behaviour down explicitly rather than
+    leaving it implicit, since it's a real, deliberate change from the
+    old two-pass version's all-or-nothing failure behaviour.
+
+    Uses a malformed row (not a list) to trigger the failure, not an
+    unclassifiable value -- classify() falls back to str() for any
+    type it doesn't otherwise recognise, so there's no Python value
+    that reliably fails classification. "each row must be a list" is
+    the one deterministic failure in this path.
+    """
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    with pytest.raises(TypeError, match="each row must be a list"):
+        ws.write_rows(0, 0, [
+            ["row0", 1],
+            ["row1", 2],
+            "not_a_list",
+            ["row3", 4],
+        ])
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    # Rows before the failure were already written to the sheet.
+    assert sheet["A1"].value == "row0"
+    assert sheet["A2"].value == "row1"
+    # The malformed row, and everything after it, were never reached.
+    assert sheet["A3"].value is None
+    assert sheet["A4"].value is None
+
