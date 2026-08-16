@@ -37,13 +37,14 @@ than VBA or chartsheets. They are not upstream's opinion.
 | Range format with a border | `worksheet.rs:10549` | `set_range_format_with_border(r1, c1, r2, c2, format, border)` | Medium |
 | Clear a cell's format | `worksheet.rs:10776` | `clear_cell_format(row, col)` | Low |
 
-### 2b. Headers and footers — High
+### 2b. Headers and footers — text done, images/scale remain
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Header / footer text | `worksheet.rs:13505`, `13539` | `set_header(text)`, `set_footer(text)` | **High** |
 | Header / footer images | `worksheet.rs:13662`, `13700` | `set_header_image(position, image)` — needs an `Image` pyclass first | Medium |
 | Align / scale with page | — | `set_header_footer_align_with_page(bool)`, `set_header_footer_scale_with_doc(bool)` | Low |
+
+`set_header(text)` / `set_footer(text)` are implemented.
 
 ### 2c. Row and column grouping — Medium-High
 
@@ -169,9 +170,10 @@ writing worksheet XML ourselves. Worth reporting upstream.
 
 Ranked by value per unit of effort:
 
-1. **Headers and footers** (text only; images need an `Image` pyclass).
-2. **Data validation** — needs a new pyclass, but high demand.
-3. **Row and column grouping.**
-4. **Conditional format icon sets.**
-5. **Chart error bars and secondary axes.**
-6. Everything else.
+1. **Data validation** — needs a new pyclass, but high demand.
+2. **Row and column grouping.**
+3. **Conditional format icon sets.**
+4. **Chart error bars and secondary axes.**
+5. Everything else.
+
+Headers/footers (text) shipped ahead of this list.
