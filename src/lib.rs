@@ -1378,11 +1378,16 @@ impl Worksheet {
     // For bulk data from CSV readers, DB cursors, or any positional source,
     // this is faster than write_records().
     //
-    // Implementation note: we pre-classify ALL cell values (Python→Rust
-    // type conversion) in one pass before acquiring the workbook borrow,
-    // then write the fully-classified data in a tight Rust loop. This keeps
-    // the costly Python API calls separated from the I/O path and lets the
-    // Rust write loop run without any Python interaction.
+    // Classify and write are interleaved in a single pass, same as
+    // write_records(): borrow the worksheet once, then for each row read
+    // its values and write them immediately, rather than classifying the
+    // entire dataset into a Vec<Vec<CellValue>> before writing anything.
+    // An earlier version did the two-pass version -- it reads as a
+    // deliberate "separate Python calls from the I/O path" optimization,
+    // but it isn't one: it holds the whole dataset in memory twice (as
+    // Python objects, then again as classified Rust values) for no
+    // corresponding speed benefit, which write_records()'s own comment
+    // already argues against for exactly this reason. Fixed to match.
     //
     // write_header=True writes the first row with header_format (matching
     // write_records() API). Default is write_header=False.
@@ -1411,33 +1416,14 @@ impl Worksheet {
 
         let data_fmt = format.map(|f| &f.inner);
         let head_fmt = header_format.map(|f| &f.inner);
-
-        // Pre-classify: convert all Python values to CellValue in one pass
-        // before acquiring the workbook borrow. Each row becomes a Vec<CellValue>.
-        // Using rows.get_item(r) + row_list.get_item(c) (direct index, O(1))
-        // avoids the per-row downcast and iterator allocation of the naive
-        // downcast::<PyList>() + .iter() approach.
         let n_rows = rows.len();
-        let mut classified_rows: Vec<(Vec<CellValue<'static>>, bool)> = Vec::with_capacity(n_rows);
 
-        for r in 0..n_rows {
-            let row_obj = rows.get_item(r)?;
-            let row_list = row_obj.downcast::<PyList>().map_err(|_| {
-                PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                    "write_rows(): each row must be a list",
-                )
-            })?;
-            let n_cols = row_list.len();
-            let mut row_vals = Vec::with_capacity(n_cols);
-            for c in 0..n_cols {
-                let val = row_list.get_item(c)?;
-                row_vals.push(classify(&val)?);
-            }
-            let is_header = write_header && r == 0;
-            classified_rows.push((row_vals, is_header));
-        }
-
-        // Write all pre-classified values in a tight Rust loop.
+        // Single pass: borrow the worksheet once, then for each row read
+        // its values via direct index access (rows.get_item(r) +
+        // row_list.get_item(c), O(1) each) and write them immediately.
+        // Using direct indexing rather than downcast::<PyList>() + .iter()
+        // still avoids the per-row iterator allocation the naive approach
+        // would add.
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref
             .inner
@@ -1447,10 +1433,20 @@ impl Worksheet {
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
 
-        for (row_num, (row_vals, is_header)) in (start_row..).zip(classified_rows.iter()) {
-            let fmt = if *is_header { head_fmt } else { data_fmt };
-            for (c, cv) in row_vals.iter().enumerate() {
-                write_value(sheet, row_num, start_col + c as u16, cv, fmt)
+        for (row_num, r) in (start_row..).zip(0..n_rows) {
+            let row_obj = rows.get_item(r)?;
+            let row_list = row_obj.downcast::<PyList>().map_err(|_| {
+                PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                    "write_rows(): each row must be a list",
+                )
+            })?;
+            let is_header = write_header && r == 0;
+            let fmt = if is_header { head_fmt } else { data_fmt };
+            let n_cols = row_list.len();
+            for c in 0..n_cols {
+                let val = row_list.get_item(c)?;
+                let cv = classify(&val)?;
+                write_value(sheet, row_num, start_col + c as u16, &cv, fmt)
                     .map_err(xlsx_err_to_pyerr)?;
             }
         }
