@@ -190,6 +190,16 @@ class Worksheet:
         cellXf rather than the column-level format losing to the cell's
         own format under OOXML precedence. Raises ValueError if a key
         doesn't match any column name, before any row is written.
+
+        Null values are always skipped -- never written as a formatted
+        blank cell -- regardless of whether their column has a
+        column_formats entry or an automatic date/datetime format. A
+        null stays a genuinely absent value, not a styled empty cell.
+        (Contrast with write()/write_row()/etc, where an explicit
+        None paired with a format IS written as a formatted blank
+        cell -- that's a different, deliberate API for a different use
+        case: an intentionally empty-but-styled cell versus an absent
+        dataframe value.)
         """
         ...
     def write_formula(self, row: int, col: int, formula: str, format: Optional[Format] = None) -> None: ...
