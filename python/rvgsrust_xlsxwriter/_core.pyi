@@ -226,12 +226,14 @@ class Worksheet:
     def set_name(self, name: str) -> None: ...
     def set_tab_color(self, color: str) -> None: ...
     def set_header(self, text: str) -> None:
-        """Text only, not validated or interpreted here -- passed
-        straight through to rust_xlsxwriter. Use &L/&C/&R to align text
-        to the left/center/right section, and placeholders like
-        &[Page], &[Pages], &[File], &[Tab], &[Date] for dynamic values.
-        Excel's 256-character limit (including control characters) on
-        the combined string isn't checked at write time; an oversized
+        """Not validated here. Use &L/&C/&R to align text to the
+        left/center/right section. &[Page]/&[Pages]/&[Tab] placeholders
+        work but are normalized by rust_xlsxwriter to the older
+        single-letter codes (&P/&N/&A respectively) before writing --
+        both forms are valid Excel codes and render identically, this
+        crate just doesn't preserve which spelling was given. Excel's
+        256-character limit (including control characters) on the
+        combined string isn't checked at write time; an oversized
         string is silently truncated when Excel opens the file.
         See https://rustxlsxwriter.github.io/worksheet/headers.html
         """
