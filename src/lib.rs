@@ -2244,9 +2244,13 @@ impl Worksheet {
     // string is silently truncated by Excel when the file is opened,
     // not rejected at write time. See
     // https://rustxlsxwriter.github.io/worksheet/headers.html for the
-    // &L/&C/&R section-alignment and &[Page]/&[Pages]/&[File]/&[Tab]/
-    // &[Date] placeholder syntax -- this binding doesn't validate or
-    // interpret that string, it's passed straight through.
+    // &L/&C/&R section-alignment codes. This binding doesn't validate
+    // the string, but it isn't a raw pass-through either: rust_xlsxwriter
+    // normalizes Excel's newer &[Page]/&[Pages]/&[Tab] bracket syntax to
+    // the older single-letter codes (&P/&N/&A) before writing, confirmed
+    // against actual output rather than assumed -- both forms are valid
+    // Excel codes and render identically once opened, this crate just
+    // doesn't preserve which spelling was given.
     fn set_header(&self, py: Python<'_>, text: &str) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.set_header(text);
