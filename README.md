@@ -767,7 +767,8 @@ python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 | **v0.2** | ✅ Bulk `write_records()` / `write_rows()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables; charts (phases 1-3); conditional formatting; sparklines; page setup; extended Arrow types |
 | **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
 | **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `write_dataframe(column_formats=...)` -- a true per-cell merge, so a border survives on a date column alongside its own number format, not the column-scoped workaround this shipped with first; `annotations` no longer leaks into the module namespace |
-| **v0.3** | 🚧 Data validation (dropdown lists, cell rules); row/column outline grouping. `save_to_buffer()` and header/footer text shipped ahead of the rest of this batch. |
+| **v0.2.3** | ✅ Patch release: `Workbook.save_to_buffer() -> bytes`; `Worksheet.set_header()`/`set_footer()` (text only, images still need an `Image` pyclass); `write_rows()` no longer double-materializes the dataset before writing |
+| **v0.3** | 🚧 Data validation (dropdown lists, cell rules); row/column outline grouping |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
