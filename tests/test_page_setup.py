@@ -245,15 +245,18 @@ def test_set_header_and_footer_basic():
     assert "Confidential" in sheet
 
 
-def test_set_header_placeholders_pass_through_unmodified():
-    # &[Page]/&[Pages]/&[File]/&[Tab] are Excel placeholders this binding
-    # doesn't interpret -- they should survive verbatim (XML-escaped) so
-    # Excel expands them when the file is opened.
+def test_set_header_bracket_placeholders_normalized_to_single_letter_codes():
+    # rust_xlsxwriter normalizes Excel's newer &[Page]/&[Pages]/&[Tab]
+    # bracket syntax to the older single-letter codes (&P/&N/&A) rather
+    # than passing them through verbatim -- confirmed against actual CI
+    # output, not assumed. Both syntaxes are valid Excel header/footer
+    # codes and render identically once opened; this binding doesn't
+    # add or change that translation, it's inherited from the
+    # underlying crate.
     sheet, _ = _xml(
         lambda ws: ws.set_header("&LPage &[Page] of &[Pages]&RSheet: &[Tab]")
     )
-    assert "Page &amp;[Page] of &amp;[Pages]" in sheet
-    assert "Sheet: &amp;[Tab]" in sheet
+    assert "&amp;LPage &amp;P of &amp;N&amp;RSheet: &amp;A" in sheet
 
 
 def test_set_footer_only_does_not_require_header():
