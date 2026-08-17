@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-08-16
+
+Patch release, no breaking changes. One new feature, one perf/correctness
+fix, one new API surface.
+
+### Added
+
+- **`Workbook.save_to_buffer() -> bytes`.** Serializes the workbook to
+  bytes instead of writing to a path -- useful for a web response or
+  in-memory pipeline with no temp-file round trip. Mirrors `close()`
+  exactly: same reentrancy guard, GIL released during the save for the
+  same reason (identical serialize+deflate cost).
+- **`Worksheet.set_header(text)` / `set_footer(text)`.** Thin wrappers
+  over `rust_xlsxwriter`'s infallible header/footer setters. Not
+  validated here; note that `&[Page]`/`&[Pages]`/`&[Tab]` bracket-style
+  placeholders are normalized by the underlying crate to the older
+  single-letter codes (`&P`/`&N`/`&A`) before writing -- both spellings
+  are valid Excel codes and render identically, the file on disk just
+  won't preserve which one was typed. Header/footer *images* still need
+  an `Image` pyclass and remain unimplemented.
+
+### Fixed
+
+- **`write_rows()` no longer holds the dataset in memory twice.** It
+  previously classified every row into a `Vec<(Vec<CellValue>, bool)>`
+  before writing anything, then wrote it in a second pass -- doubling
+  peak memory for the whole call, and doing the opposite of what
+  `write_records()`'s own comment argues for. Now interleaves classify
+  and write in a single pass, matching `write_records()`.
+
+  This is also a small, deliberate behavior change: the old two-pass
+  version had an incidental all-or-nothing guarantee on error (nothing
+  written if a row failed to classify). The interleaved version doesn't
+  have that -- rows before a failure are already on the sheet, same as
+  `write_records()` already behaves, and now the same as each other. No
+  existing code depended on the old atomicity; the new behavior is
+  covered by a test rather than left implicit.
+
 ## [0.2.2] - 2026-08-15
 
 Patch release, no breaking changes. Started as a fix for one API
