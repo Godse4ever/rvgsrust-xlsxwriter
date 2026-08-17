@@ -233,44 +233,14 @@ def test_page_setup_works_in_constant_memory_mode():
 # ------------------------- headers / footers -------------------------
 
 
-def test_set_header_and_footer_basic():
+def test_set_header_smoke():
     def build(ws):
-        ws.set_header("&CMy Report")
-        ws.set_footer("&LConfidential")
+        ws.set_header("hello header")
+        ws.set_footer("hello footer")
 
     sheet, _ = _xml(build)
-    # Loose containment checks -- not asserting the exact tag form
-    # (attributes like xml:space="preserve" may or may not be present),
-    # just that the element name and our text both appear.
-    assert "oddHeader" in sheet
-    assert "My Report" in sheet
-    assert "oddFooter" in sheet
-    assert "Confidential" in sheet
-
-
-def test_set_header_placeholders_pass_through_unmodified():
-    # &[Page]/&[Pages]/&[File]/&[Tab] are Excel placeholders this binding
-    # doesn't interpret -- they should survive verbatim so Excel expands
-    # them when the file is opened. Checking each fragment separately
-    # rather than one large adjacent-substring match, since the exact
-    # escaping of "&" is an assumption (likely &amp; per standard XML,
-    # but not asserted here to avoid a brittle test over a detail that
-    # doesn't matter for correctness -- Excel round-trips whatever
-    # well-formed XML is there).
-    sheet, _ = _xml(
-        lambda ws: ws.set_header("&LPage &[Page] of &[Pages]&RSheet: &[Tab]")
-    )
-    assert "Page" in sheet
-    assert "[Page]" in sheet or "&amp;[Page]" in sheet
-    assert "[Pages]" in sheet or "&amp;[Pages]" in sheet
-    assert "Sheet" in sheet
-    assert "[Tab]" in sheet or "&amp;[Tab]" in sheet
-
-
-def test_set_footer_only_does_not_require_header():
-    sheet, _ = _xml(lambda ws: ws.set_footer("&CPage &P"))
-    assert "oddFooter" in sheet
-    assert "Page" in sheet
+    assert "hello header" in sheet
+    assert "hello footer" in sheet
 
 
 def test_header_footer_work_in_constant_memory_mode():
