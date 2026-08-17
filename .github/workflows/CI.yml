@@ -84,21 +84,7 @@ jobs:
         python -m pip install .
 
     - name: Run tests
-      run: |
-        set +e
-        pytest tests/ -v --tb=long 2>&1 | tee /tmp/pytest_out.txt
-        status=${PIPESTATUS[0]}
-        if [ "$status" -ne 0 ]; then
-          # TEMP diagnostic: surface pytest failure output as GitHub
-          # Actions error annotations, since raw job logs aren't
-          # reachable from outside the Actions UI. Revert before merge.
-          grep -A5 "^FAILED\|^E \|AssertionError" /tmp/pytest_out.txt | while IFS= read -r line; do
-            escaped=$(echo "$line" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
-            echo "::error::$escaped"
-          done
-        fi
-        exit $status
-      shell: bash
+      run: pytest tests/ -v
 
   # This crate builds against pyo3's stable ABI (abi3-py38, see
   # Cargo.toml), which means a single wheel per OS/architecture works
