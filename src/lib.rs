@@ -2237,6 +2237,34 @@ impl Worksheet {
         })
     }
 
+    // set_header()/set_footer() are infallible in rust_xlsxwriter (they
+    // return &mut Worksheet for chaining, not Result) -- Excel's 256
+    // character limit on the combined header/footer string, including
+    // control characters, isn't checked here or upstream; an oversized
+    // string is silently truncated by Excel when the file is opened,
+    // not rejected at write time. See
+    // https://rustxlsxwriter.github.io/worksheet/headers.html for the
+    // &L/&C/&R section-alignment codes. This binding doesn't validate
+    // the string, but it isn't a raw pass-through either: rust_xlsxwriter
+    // normalizes Excel's newer &[Page]/&[Pages]/&[Tab] bracket syntax to
+    // the older single-letter codes (&P/&N/&A) before writing, confirmed
+    // against actual output rather than assumed -- both forms are valid
+    // Excel codes and render identically once opened, this crate just
+    // doesn't preserve which spelling was given.
+    fn set_header(&self, py: Python<'_>, text: &str) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_header(text);
+            Ok(())
+        })
+    }
+
+    fn set_footer(&self, py: Python<'_>, text: &str) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_footer(text);
+            Ok(())
+        })
+    }
+
     fn hide(&self, py: Python<'_>) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.set_hidden(true);

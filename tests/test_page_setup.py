@@ -228,3 +228,58 @@ def test_page_setup_works_in_constant_memory_mode():
     finally:
         if os.path.exists(path):
             os.remove(path)
+
+
+# ------------------------- headers / footers -------------------------
+
+
+def test_set_header_and_footer_basic():
+    def build(ws):
+        ws.set_header("&CMy Report")
+        ws.set_footer("&LConfidential")
+
+    sheet, _ = _xml(build)
+    assert "<oddHeader>" in sheet
+    assert "My Report" in sheet
+    assert "<oddFooter>" in sheet
+    assert "Confidential" in sheet
+
+
+def test_set_header_bracket_placeholders_normalized_to_single_letter_codes():
+    # rust_xlsxwriter normalizes Excel's newer &[Page]/&[Pages]/&[Tab]
+    # bracket syntax to the older single-letter codes (&P/&N/&A) rather
+    # than passing them through verbatim -- confirmed against actual CI
+    # output, not assumed. Both syntaxes are valid Excel header/footer
+    # codes and render identically once opened; this binding doesn't
+    # add or change that translation, it's inherited from the
+    # underlying crate.
+    sheet, _ = _xml(
+        lambda ws: ws.set_header("&LPage &[Page] of &[Pages]&RSheet: &[Tab]")
+    )
+    assert "&amp;LPage &amp;P of &amp;N&amp;RSheet: &amp;A" in sheet
+
+
+def test_set_footer_only_does_not_require_header():
+    sheet, _ = _xml(lambda ws: ws.set_footer("&CPage &P"))
+    assert "<oddFooter>" in sheet
+    assert "<oddHeader>" not in sheet
+
+
+def test_header_footer_work_in_constant_memory_mode():
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet(constant_memory=True)
+        ws.write(0, 0, 1)
+        ws.set_header("&CHeader text")
+        ws.set_footer("&CFooter text")
+        wb.close(path)
+        with zipfile.ZipFile(path) as z:
+            sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        assert "Header text" in sheet
+        assert "Footer text" in sheet
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
