@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-08-17
+
+Patch release, no breaking changes. One bug fix, found through an external
+evaluation against real SPSS survey exports.
+
+### Fixed
+
+- **`write_dataframe(..., column_formats={...})` no longer materializes a
+  cell for every null.** A null value in a column with a `column_formats`
+  entry was being written as a formatted blank cell (`write_blank()`)
+  instead of being skipped, because it reached the same code path used
+  by `write()`/`write_row()`/etc for an explicit `None` + format --
+  which is a different, deliberate case (a caller asking for an
+  intentionally empty but styled cell) from an absent dataframe value.
+  On sparse wide data -- the normal shape for survey exports, where
+  most variables are not asked of most respondents -- this multiplied
+  file size and write time by the sparsity ratio. Measured on a real
+  1,261 x 76,480 export: **29x file size (17.0 MB → 495.8 MB), 84x
+  write time (~10.1s → 847.4s)**, verified via cell counts (16,000/16,000
+  cells "written" in a row with 115 real values).
+
+  Also fixes the same bug for nullable date/datetime columns even
+  without `column_formats` at all -- those columns get an automatic
+  date-format entry internally, which triggered the identical
+  materialization path.
+
+  Nulls are now always skipped in `write_dataframe()`, regardless of
+  column format. `write()`/`write_row()`/`write_records()`/etc are
+  unaffected: an explicit `None` paired with a format there still
+  produces a formatted blank cell, as before.
+
 ## [0.2.3] - 2026-08-16
 
 Patch release, no breaking changes. One new feature, one perf/correctness

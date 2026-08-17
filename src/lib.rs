@@ -1839,6 +1839,32 @@ impl Worksheet {
             for r in 0..batch.num_rows() {
                 for (c, col) in columns.iter().enumerate() {
                     let cv = arrow_cell_value(col, r);
+                    // A null Arrow value stays genuinely absent from the
+                    // sheet, even when this column has a column_formats
+                    // entry. Before this check existed, a null in a
+                    // formatted column reached write_value() with
+                    // Some(fmt), which matches its Blank+Some(fmt) arm
+                    // and calls write_blank() -- materializing a cell
+                    // whose only purpose was to carry the format. That
+                    // arm is correct and stays as-is for the single-cell
+                    // APIs (write(), write_row(), write_records(), ...),
+                    // where an explicit None paired with a format is the
+                    // caller asking for a formatted blank cell on
+                    // purpose. A null in a dataframe column is a
+                    // different thing -- an absent value, not a request
+                    // for a styled blank -- so the skip is scoped to
+                    // this loop rather than to write_value() itself.
+                    //
+                    // On sparse wide data (the normal shape for survey
+                    // exports, where most variables are not asked of
+                    // most respondents) skipping nulls here is not a
+                    // minor saving: a 76,480-column sheet with ~115
+                    // populated cells per row was materializing all
+                    // 16,000 cells per row on the grid sheets, at 29x
+                    // the file size and 84x the write time.
+                    if matches!(cv, CellValue::Blank) {
+                        continue;
+                    }
                     let col_num = start_col + c as u16;
                     write_value(sheet, row_cursor, col_num, &cv, col_fmts[c])
                         .map_err(|e| arrow_write_err(&cv, &field_names[c], r, e))?;

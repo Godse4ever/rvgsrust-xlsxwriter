@@ -580,3 +580,121 @@ def test_write_dataframe_column_formats_none_is_unchanged():
         bytes_with_explicit_none = f.read()
 
     assert bytes_without_kwarg == bytes_with_explicit_none
+
+
+# ---------------------------------------------------------------------
+# Regression: column_formats must not materialize a cell for every null.
+#
+# Before this fix, write_value()'s Blank+Some(fmt) arm (write_blank(),
+# used to give an explicitly-formatted empty cell its style) was reached
+# for every Arrow null in a formatted column, not just for explicit
+# None+format calls from write()/write_row()/etc where that behavior is
+# intended. On sparse wide data -- the normal shape for survey exports,
+# where most variables are not asked of most respondents -- this
+# multiplied file size and write time by the sparsity ratio. Measured on
+# a real 76,480-column export: 29x file size, 84x write time.
+# ---------------------------------------------------------------------
+
+def _cell_count_in_row(path, sheet_name, row):
+    """Count <c ...> elements belonging to a specific row in raw sheet
+    XML. Deliberately not using openpyxl here: this needs to see
+    exactly what got written, including cells openpyxl might treat as
+    equivalent to "not present" -- the bug this guards against is about
+    whether write_blank() was called at all, not about what a
+    higher-level reader reports.
+    """
+    import zipfile
+    import re
+
+    with zipfile.ZipFile(path) as z:
+        xml = z.read(f"xl/worksheets/{sheet_name}.xml").decode("utf-8")
+    m = re.search(rf'<row r="{row}"[^>]*>(.*?)</row>', xml, re.DOTALL)
+    if not m:
+        return 0
+    return len(re.findall(r"<c[ />]", m.group(1)))
+
+
+@requires_pyarrow
+def test_write_dataframe_column_formats_skips_null_cells():
+    """The core regression test: a sparse frame (57 of 60 columns null)
+    with column_formats set on every column must write only the
+    populated cells in the data row, not one cell per column. Mirrors
+    the reported reproduction exactly: 3 populated columns out of 60.
+    """
+    columns = {"a": pa.array([1], type=pa.int64()),
+               "b": pa.array([3], type=pa.int64()),
+               "c": pa.array(["x"], type=pa.string())}
+    for i in range(57):
+        columns[f"n{i}"] = pa.array([None], type=pa.int64())
+    table = pa.table(columns)
+
+    border_fmt_by_col = {}
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    for name in table.column_names:
+        f = wb.add_format()
+        f.set_border("thin")
+        border_fmt_by_col[name] = f
+    ws.write_dataframe(0, 0, table, write_header=True, column_formats=border_fmt_by_col)
+    wb.close(TEST_FILE)
+
+    # Row 2 (1-indexed) is the data row -- row 1 is the header, which is
+    # unaffected by this bug (headers are always fully populated).
+    n_cells = _cell_count_in_row(TEST_FILE, "sheet1", 2)
+    assert n_cells == 3, (
+        f"expected 3 populated cells in the data row (a, b, c), got "
+        f"{n_cells} -- nulls are being materialized to carry the format"
+    )
+
+
+@requires_pyarrow
+def test_write_dataframe_column_formats_populated_cells_still_get_format():
+    """The fix must not throw the baby out with the bathwater: cells
+    that ARE populated in a column with a column_formats entry must
+    still carry that format. Only nulls should be skipped.
+    """
+    table = pa.table({
+        "a": pa.array([1, None], type=pa.int64()),
+    })
+    fmt = None
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_border("thin")
+    ws.write_dataframe(0, 0, table, write_header=True, column_formats={"a": fmt})
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    # Row 2: populated value, must have the border.
+    assert sheet.cell(row=2, column=1).border.top.style == "thin"
+    # Row 3: null, must be genuinely absent -- not a styled blank cell.
+    n_cells_row3 = _cell_count_in_row(TEST_FILE, "sheet1", 3)
+    assert n_cells_row3 == 0, (
+        f"row 3's null value should not be written at all, found "
+        f"{n_cells_row3} cell(s)"
+    )
+
+
+@requires_pyarrow
+def test_write_dataframe_nullable_date_column_without_column_formats_still_skips_nulls():
+    """Broader than the reported repro: col_fmts_owned auto-applies a
+    date number format to date/datetime columns even when the caller
+    never passes column_formats at all, so this bug was also reachable
+    through any nullable date column on its own. Same fix, same test
+    shape, no column_formats argument at all.
+    """
+    import datetime
+
+    table = pa.table({
+        "d": pa.array([datetime.date(2026, 1, 1), None], type=pa.date32()),
+    })
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_dataframe(0, 0, table, write_header=True)
+    wb.close(TEST_FILE)
+
+    n_cells_row3 = _cell_count_in_row(TEST_FILE, "sheet1", 3)
+    assert n_cells_row3 == 0, (
+        f"null date value should not be written, found {n_cells_row3} cell(s)"
+    )
+
