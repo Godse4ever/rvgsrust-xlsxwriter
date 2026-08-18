@@ -16,7 +16,7 @@
 | Feature | `xlsxwriter` (Python) | `rustpy-xlsxwriter` | `rvgsrust-xlsxwriter` |
 |---------|----------------------|---------------------|----------------------|
 | Speed (100k rows) | 1× (baseline) | — | **6–8× faster** ⚡ |
-| **GIL released during `save()`** | ❌ blocks | ❌ blocks | ✅ **Yes** (~20ms stall vs ~1,300ms on a wide workload) |
+| **GIL released during `save()`** | ❌ blocks | ❌ blocks | ✅ **Yes** (~7–48ms stall vs ~1,270–5,980ms on a wide workload) |
 | **Cell Merging** | ✅ Yes | ❌ No | ✅ **Yes** |
 | **Full Format API** | ✅ Yes | ⚠️ Limited | ✅ **Complete** |
 | **Borders (all sides)** | ✅ Yes | ⚠️ Basic | ✅ **All sides + colors** |
@@ -35,7 +35,7 @@
 
 **We win on completeness.** Both `rustpy-xlsxwriter` and `rvgsrust-xlsxwriter` use the same Rust core, but we expose *every* feature so you never have to fall back to Python.
 
-The **6–8×** figure is measured against pure-Python `xlsxwriter` at 100,000 rows × 8 columns (tall, narrow shape) — see [Performance & Benchmarks](#performance--benchmarks) for full numbers and methodology. Against another Rust-backed writer with the same `rust_xlsxwriter` core (`rustpy-xlsxwriter`), independent testing on a wide workload (76,480 columns × 1,261 rows) measured a more modest **~12% faster** overall save time. Where this library won decisively on that same wide workload was responsiveness during `save()`: a background thread polling every 5ms saw a worst-case stall of **~20ms**, versus **~1,300ms** for the comparison library — the GIL is released during save, so a GUI or async app stays responsive instead of freezing. That's arguably a stronger selling point than raw throughput for desktop-app use cases, even though it's less prominent in the numbers above.
+The **6–8×** figure is measured against pure-Python `xlsxwriter` at 100,000 rows × 8 columns (tall, narrow shape) — see [Performance & Benchmarks](#performance--benchmarks) for full numbers and methodology. Against another Rust-backed writer with the same `rust_xlsxwriter` core (`rustpy-xlsxwriter`), an independent evaluation on a wide workload (76,480 columns × 1,261 rows, 14 sheets) measured roughly **2× faster on total write time and ~3× faster on the save phase specifically**. Where this library won decisively on that same wide workload was responsiveness during `save()`: a background thread polling every 5ms saw a worst-case stall of **7–48ms** across runs, versus **1,270–5,980ms** for the comparison library — the GIL is released during save, so a GUI or async app stays responsive instead of freezing. That's arguably a stronger selling point than raw throughput for desktop-app use cases, even though it's less prominent in the numbers above. Machine load moved absolute timings by 3–4× across runs on identical work in that evaluation; the ratios above held up better than the absolutes, which is why they're given as ranges/ratios rather than single numbers.
 
 ---
 
@@ -403,6 +403,7 @@ money.set_num_format("#,##0.00")
 
 ws.set_column_format(2, money)              # whole column
 ws.set_column_range_format(3, 5, money)     # columns D-F
+ws.set_column_range_width(3, 5, 14.0)       # width across the same range
 ws.set_row_format(0, money)                 # whole row
 ws.set_cell_format(0, 0, money)             # single cell
 ws.set_range_format(1, 0, 10, 4, money)     # a rectangular range
@@ -411,6 +412,30 @@ ws.set_range_format(1, 0, 10, 4, money)     # a rectangular range
 Column and row formats apply to cells that don't carry a format of their
 own, which makes them the way to reformat data written by
 `write_dataframe`.
+
+### Applying a format across many columns
+
+Putting a border (or any format) on a wide data grid has four routes, with
+very different costs:
+
+| API | Cost | Coverage |
+|---|---|---|
+| `set_column_range_format(first, last, fmt)` | Column-level style, negligible | Applies only where the cell has no format of its own — cells with a date or custom number format keep their own and show no border |
+| `write_dataframe(..., column_formats={...})` | Merged into each written cell | Full, including number-formatted columns. Nulls are always skipped, never materialized as formatted blank cells |
+| `set_range_format(r1, c1, r2, c2, fmt)` | Per cell | Full, but a 25,000×76,000 range is ~1.9 billion cells — not viable |
+| `set_cell_format(row, col, fmt)` | Per cell | Full, for targeted use only |
+
+Practical guidance:
+
+- Uniform styling across a grid, no number-formatted columns →
+  `set_column_range_format`. Cheapest by a wide margin.
+- Grids containing date, datetime, or custom-numeric columns →
+  `column_formats` on `write_dataframe`, because OOXML gives a cell's own
+  format precedence over the column format — a border applied only at
+  column level will be silently missing on exactly those columns.
+- Setting a uniform width across many columns → `set_column_range_width`,
+  not a `set_column_width` loop. On a wide export the loop cost several
+  seconds purely in FFI overhead.
 
 ## Page setup and printing
 
@@ -757,6 +782,94 @@ pip install xlsxwriter openpyxl pandas pyarrow polars
 python benchmarks/run_benchmarks.py --runs 7 --warmup 2
 ```
 
+### What the numbers depend on
+
+Throughput is dominated by cell count and by how sparse the data is, not by
+row count alone. The 100k×8 benchmark above and a wide-workload evaluation
+(76,480 columns × 1,261 rows, 14 sheets) tell different stories:
+
+| Comparison | Shape | Result |
+|---|---|---|
+| vs. pure-Python `xlsxwriter` | 100,000 rows × 8 cols | 6–8× faster |
+| vs. another Rust-backed writer with zero-copy Arrow (`rustpy-xlsxwriter`) | 1,261 rows × 76,480 cols, 14 sheets | ~2× faster on total write, ~3× on the save phase |
+
+If you're moving from pure-Python `xlsxwriter`, expect a large win. If you're
+moving from another `rust_xlsxwriter` binding, expect a more modest one on
+throughput — the bigger differences are GIL behaviour and memory, below.
+Machine load varied absolute timings by 3–4× on identical work in that
+evaluation; treat ratios as the stable signal and absolute seconds as
+machine-dependent.
+
+### `save()` releases the GIL
+
+Long writes don't block other Python threads. Measured on the same
+1,261 × 76,480 export across 14 sheets, a background thread polling at 5ms
+saw a worst-case stall of **7–48ms** across runs, against **1,270–5,980ms**
+for a comparable Rust-backed writer that holds the GIL for the duration.
+
+In practice this is the difference between a desktop GUI staying responsive
+during a multi-second export and freezing solid for it. If you're writing
+large workbooks from a Qt/Tk/wx application, or from a request handler that
+also serves other work, this matters more than raw throughput.
+
+### When `constant_memory` helps
+
+`constant_memory=True` flushes rows to disk as they're written instead of
+buffering the whole worksheet, so the saving scales with **row count**, not
+column count:
+
+| Rows | Columns | Peak, default | Peak, `constant_memory=True` |
+|---|---|---|---|
+| ~1,300 | 76,480 | 2,151 MB | 2,131 MB (no measurable gain) |
+| ~25,000 | 76,480 | 9,365 MB | 6,912 MB (**26% lower**) |
+
+Rules of thumb:
+
+- **Tall data (many rows): use it.** The row buffer is the dominant cost.
+- **Wide but short data: it won't help much.** The per-row buffer was never
+  the bottleneck.
+- It also measured marginally *faster* (save phase ~8% quicker) in that
+  evaluation, so there's little downside where the constraint applies.
+- The constraint: rows must be written in non-decreasing order — see below.
+
+The writer is often not the largest allocation in the pipeline, either: in
+the 25,000-row case above, the source dataframe alone accounted for roughly
+2,800 MB of peak memory before the writer was even called.
+
+### `constant_memory` fails loudly, not silently
+
+`rust_xlsxwriter` itself does not error when rows are written out of order
+in constant-memory mode — it produces a corrupt or incomplete `.xlsx`. This
+binding adds an explicit check and raises `ValueError` naming the row
+involved, and the workbook still closes cleanly afterward.
+
+If you're producing files that go to clients or external systems, this is
+the difference between an exception in your logs and a broken deliverable
+nobody notices until the recipient opens it.
+
+### A note on very wide workbooks
+
+Survey and panel exports are routinely thousands of columns wide and
+sparse — most variables are not asked of most respondents. Two
+consequences:
+
+- Excel's hard limit is 16,384 columns per worksheet, so anything wider
+  must be split across sheets or files by the caller.
+- Sparse data means most cells are genuinely absent from the XML. Any API
+  that materializes a cell per column — to attach a format, for instance —
+  multiplies both file size and write time by the sparsity ratio. `null`
+  values are always skipped rather than written as formatted blank cells
+  in `write_dataframe()`, specifically to avoid this (see
+  [Applying a format across many columns](#applying-a-format-across-many-columns)).
+
+If you're working at this shape, measure with your own data before
+adopting an API — row-count-based benchmarks won't predict your results.
+
+Output size is also consistently smaller than the comparison writer's on
+identical data in that evaluation: 16.8 MB vs 18.3 MB, roughly 8%. Cause
+not investigated on our end, so treat this as an observation rather than a
+deliberate design win.
+
 ---
 
 ## Roadmap
@@ -796,8 +909,11 @@ These are current, deliberate gaps rather than oversights:
 - **Precision.** Excel cells hold an f64, so integers above 2^53 lose
   precision. This is a format limitation, not an implementation one.
 - **`constant_memory=True`** requires rows to be written in
-  non-decreasing order. This layer raises `ValueError` on violation;
-  `rust_xlsxwriter` itself would silently emit a corrupt file.
+  non-decreasing order, and raises `ValueError` naming the offending row
+  on violation rather than silently emitting a corrupt file (which is
+  what `rust_xlsxwriter` itself would do) — see
+  [`constant_memory` fails loudly, not silently](#constant_memory-fails-loudly-not-silently)
+  for why this is deliberate rather than just defensive.
 - **Python 3.8.** `requires-python` still declares `>=3.8`, but CI tests
   3.9 upward; the `pandas>=2.0` extra already requires 3.9+.
 
