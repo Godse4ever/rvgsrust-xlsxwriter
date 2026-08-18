@@ -510,6 +510,40 @@ def test_define_name_invalid_char_raises():
         wb.define_name("Bad Name", "Sheet1!$A$1")
 
 
+# ---------------------------------------------------------------------
+# Regression: rust_xlsxwriter 0.98.2 fixed define_name() with an empty
+# sheet or variable name creating an invalid Excel file instead of
+# erroring (see the upgrade notes in Cargo.toml). Neither case was
+# covered before the 0.98.2 upgrade -- the existing invalid-name tests
+# above cover a bad *character*, not an *empty* name. Tolerant of either
+# fixed behaviour (a clean error, or a successfully written and
+# genuinely valid file) since the exact fix approach upstream isn't
+# known from the changelog text alone -- what's ruled out either way is
+# the old bug: succeeding while producing a file openpyxl can't load.
+# ---------------------------------------------------------------------
+
+def test_define_name_empty_variable_name_does_not_corrupt_file():
+    wb = Workbook()
+    wb.add_worksheet()
+    try:
+        wb.define_name("", "Sheet1!$A$1")
+        wb.close(TEST_FILE)
+        _load()  # must not raise if it got this far
+    except ValueError:
+        pass  # also an acceptable fixed behaviour
+
+
+def test_define_name_empty_sheet_prefix_does_not_corrupt_file():
+    wb = Workbook()
+    wb.add_worksheet()
+    try:
+        wb.define_name("!LocalName", "Sheet1!$A$1")
+        wb.close(TEST_FILE)
+        _load()  # must not raise if it got this far
+    except ValueError:
+        pass  # also an acceptable fixed behaviour
+
+
 def test_table_basic():
     wb = Workbook()
     ws = wb.add_worksheet()
@@ -950,6 +984,41 @@ def test_insert_image_missing_file_raises():
     ws = wb.add_worksheet()
     with pytest.raises(OSError, match="not found"):
         ws.insert_image(0, 0, "/tmp/does_not_exist_xyz.png")
+
+
+# ---------------------------------------------------------------------
+# Regression: rust_xlsxwriter 0.98.2 fixed a panic when reading image
+# dimensions from a truncated PNG/JPEG, and from a BMP with a height of
+# i32::MIN (see the upgrade notes in Cargo.toml). This binding builds
+# with panic = "unwind" (not "abort"), so even pre-fix this was never a
+# process-crash risk -- PyO3 catches the panic at the FFI boundary and
+# it surfaces as a Python exception. But it would have surfaced as an
+# opaque PanicException rather than the clean ValueError/OSError
+# xlsx_err_to_pyerr() already produces for every other image error
+# (like the missing-file case above), so this pins down the clean-error
+# path specifically, not just "doesn't crash".
+# ---------------------------------------------------------------------
+
+def test_insert_image_truncated_png_raises_clean_error_not_panic():
+    # A real PNG signature and IHDR chunk header, then nothing -- valid
+    # enough to be recognised as a PNG, truncated before there's enough
+    # data to read the declared dimensions from.
+    truncated_png = bytes.fromhex(
+        "89504e470d0a1a0a"  # PNG signature
+        "0000000d49484452"  # IHDR chunk length + type
+        # (deliberately stops here, mid-IHDR)
+    )
+    path = os.path.join(tempfile.gettempdir(), "rvgsrust_truncated_test.png")
+    with open(path, "wb") as f:
+        f.write(truncated_png)
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        with pytest.raises((ValueError, OSError)):
+            ws.insert_image(0, 0, path)
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
 
 
 def test_write_rows_basic():
