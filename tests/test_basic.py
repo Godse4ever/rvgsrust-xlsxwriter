@@ -8,6 +8,7 @@ existed and was a valid, but essentially empty, workbook) -- a
 file-existence-only test suite does not catch that class of bug.
 """
 import os
+import tempfile
 import pytest
 import openpyxl
 from rvgsrust_xlsxwriter import Workbook
