@@ -922,7 +922,9 @@ These are current, deliberate gaps rather than oversights:
 ## API Parity
 
 [MISSING.md](MISSING.md) audits the exposed Python API against
-rust_xlsxwriter 0.96 and lists what is not yet wrapped, with upstream
+rust_xlsxwriter 0.96 source (this project now depends on 0.98.2; the
+audit itself hasn't been re-run against the newer source, see
+MISSING.md's own note) and lists what is not yet wrapped, with upstream
 `file:line` references, a suggested Python API shape, and a priority for
 each. Sparklines, cell/row/column/range formats, page setup and print
 settings, and per-side border naming are all at full parity now -- an
