@@ -8,6 +8,7 @@ import os
 import tempfile
 import zipfile
 
+import openpyxl
 import pytest
 
 from rvgsrust_xlsxwriter import Workbook
@@ -282,4 +283,42 @@ def test_header_footer_work_in_constant_memory_mode():
     finally:
         if os.path.exists(path):
             os.remove(path)
+
+
+# ---------------------------------------------------------------------
+# Regression: rust_xlsxwriter 0.97.1 fixed an XML element-ordering bug
+# where set_tab_color() + set_print_fit_to_pages() on the same worksheet
+# produced an invalid Excel file (see the upgrade notes in Cargo.toml).
+# No test in this suite exercised that combination before the 0.98.2
+# upgrade, so this pins it down explicitly rather than trusting the
+# upstream fix blindly.
+# ---------------------------------------------------------------------
+
+def test_tab_color_and_print_fit_to_pages_together_produce_valid_xml():
+    import xml.etree.ElementTree as ET
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        ws.write(0, 0, 1)
+        ws.set_tab_color("#FF0000")
+        ws.set_print_fit_to_pages(1, 1)
+        wb.close(path)
+
+        with zipfile.ZipFile(path) as z:
+            xml_bytes = z.read("xl/worksheets/sheet1.xml")
+        # A malformed element ordering is still well-formed XML most of
+        # the time -- the bug was Excel rejecting the file, not XML
+        # parsing failing -- so parsing alone isn't a strong enough
+        # check. Also confirm openpyxl (a real, independent consumer of
+        # the file) can load it without complaint.
+        ET.fromstring(xml_bytes)
+        sheet = openpyxl.load_workbook(path).active
+        assert sheet["A1"].value == 1
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
 
