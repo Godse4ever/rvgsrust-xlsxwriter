@@ -1,12 +1,17 @@
-# API parity gaps vs rust_xlsxwriter 0.96
+# API parity gaps vs rust_xlsxwriter
 
 Only open items below. Anything closed has been removed from this file
 rather than marked done, so this stays a to-do list, not a changelog —
 see [CHANGELOG.md](CHANGELOG.md) for what shipped.
 
-All `file:line` references are to
+All `file:line` references below were read from
 [`v0.96.0`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.96.0/src)
-and were read from the source, not from docs.rs.
+source, not from docs.rs. **This project now depends on 0.98.2**
+(upgraded from 0.96 — see `Cargo.toml` and `CHANGELOG.md` for what that
+involved); the line numbers below have not been individually
+re-verified against 0.98.2 and may have shifted. Treat them as
+approximate pointers into the right file, not exact current
+coordinates, until someone re-audits this list against the new pin.
 
 Priorities are a judgement call about request frequency, weighted toward
 this project's actual use — survey and market-research reporting, where

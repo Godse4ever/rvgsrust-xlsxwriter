@@ -2,7 +2,7 @@
 name = "rvgsrust-xlsxwriter"
 version = "0.2.3"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 description = "Python bindings for rust_xlsxwriter -- a Rust-powered XLSX writer"
 repository = "https://github.com/Godse4ever/rvgsrust-xlsxwriter"
@@ -14,7 +14,8 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 
-# rust_xlsxwriter 0.96, with:
+# rust_xlsxwriter 0.98.2 (upgraded from 0.96 -- see below for what changed
+# and why 0.97.x was never installed as an intermediate step), with:
 # - zlib: compression backend
 # - zmij: ~10% faster numeric-write backend (drop-in, no API change)
 # - constant_memory: enables Workbook.add_worksheet(constant_memory=True)
@@ -35,47 +36,100 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 #   check exists for direct write()/write_row()/merge_range()/etc calls
 #   that might not maintain that invariant on their own.
 #
-# MSRV note: rust-version is 1.85, not 1.83. Verified empirically in CI,
-# not inferred: with no Cargo.lock committed, transitive dependencies
-# resolve to latest-compatible, and indexmap 2.14.0 (pulled in via the
-# arrow stack) declares edition2024. Cargo 1.83 cannot parse that
-# manifest at all ("feature `edition2024` is required"), so the build
-# fails during resolution rather than compilation. edition2024 was
-# stabilised in Rust 1.85, which is therefore the real floor.
+# 0.96 -> 0.98.2 upgrade notes (read from the real upstream CHANGELOG.md
+# at each version tag, not taken on faith from any secondhand summary):
+#
+# - MSRV: 0.97.0 bumped its own zip dependency to v8.3, which requires
+#   rustc 1.88.0. This is a real floor from that specific release, not
+#   an estimate -- rust-version above is bumped to match. 0.97.x itself
+#   was never installed as an intermediate step; this Cargo.toml jumped
+#   straight from 0.96 to 0.98.2, so 0.97.0's MSRV bump is inherited
+#   but 0.97.0's own code was never built against by this project.
+#
+# - Bug relevant to this project, fixed in 0.97.1: calling
+#   Worksheet::set_tab_color() and Worksheet::set_print_fit_to_pages()
+#   on the same worksheet produced an invalid Excel file due to an XML
+#   element ordering issue -- both are exposed here (set_tab_color(),
+#   set_print_fit_to_pages()) and nothing in this project's own test
+#   suite exercised that combination before this upgrade, so this was
+#   a real, previously-unverified risk for any caller using both. Now
+#   covered by a regression test.
+#
+# - Bug relevant to this project, fixed in 0.98.1: sparklines and a
+#   conditional-format data bar on the same worksheet caused an XML
+#   error. Both features are exposed here and, same as above, no test
+#   combined them before this upgrade. Now covered by a regression
+#   test.
+#
+# - Fixed in 0.98.2, relevant to this project's exposed API:
+#     * Worksheet::define_name() with an empty sheet or variable name
+#       created an invalid Excel file rather than erroring. define_name()
+#       is exposed here with no validation of its own, passing the
+#       caller's string straight through -- now covered by a regression
+#       test expecting a clean error instead.
+#     * A truncated PNG/JPEG image, or a BMP with a height of i32::MIN,
+#       caused a panic while reading image dimensions. insert_image()
+#       here takes an arbitrary caller-supplied file path straight into
+#       rust_xlsxwriter::Image::new(). Because this crate builds with
+#       panic = "unwind" (see the [profile.release] comment below), a
+#       pre-0.98.2 panic here would have been caught by PyO3 at the FFI
+#       boundary and surfaced as a Python exception rather than crashing
+#       the process -- so this was never a process-crash risk for
+#       callers of this binding, just an opaque PanicException instead
+#       of the clean ValueError xlsx_err_to_pyerr() already produces for
+#       every other XlsxError. Now covered by a regression test
+#       confirming the clean-error path.
+#
+# - `ryu` feature: not enabled, and this upgrade doesn't change that.
+#   0.95.0 already deprecated `ryu` in favour of `zmij` (a faster
+#   drop-in replacement by the same author, same interface), and this
+#   project already has `zmij` enabled above. Nothing to reconsider.
+#
+# - `enhanced_autofit` feature: considered, not enabled. It improves
+#   Worksheet::autofit() accuracy for formatted numbers/dates (e.g.
+#   "$1,000,000.00" sizing correctly instead of using the unformatted
+#   width) via an additional `ssfmt` dependency. autofit() is exposed
+#   here, so this would be a real, user-visible quality improvement --
+#   but it's a pure enhancement, not a bug fix or something this
+#   project's users have reported an issue with, and it adds a new
+#   transitive dependency. Left as a candidate for its own follow-up
+#   rather than bundled into a version-bump PR.
+#
+# - `rust_decimal` feature: considered, not enabled. It would let
+#   Worksheet::write() accept a rust_decimal::Decimal directly. This
+#   project's classify() function (src/lib.rs) has no handling for
+#   Python's decimal.Decimal today -- such a value currently falls
+#   through to classify()'s str() fallback, becoming a text cell, not a
+#   numeric one. Enabling the Cargo feature alone would do nothing
+#   without also adding Decimal detection and conversion on the Python
+#   value side, which is new work beyond a version bump. Worth a
+#   MISSING.md entry of its own rather than folding into this upgrade.
+#
+# MSRV history: rust-version was 1.85, not 1.83, before this upgrade.
+# Verified empirically in CI at the time, not inferred: with no
+# Cargo.lock committed, transitive dependencies resolved to
+# latest-compatible, and indexmap 2.14.0 (pulled in via the arrow
+# stack) declares edition2024. Cargo 1.83 cannot parse that manifest at
+# all ("feature `edition2024` is required"), so the build failed during
+# resolution rather than compilation. edition2024 was stabilised in
+# Rust 1.85, which was therefore the real floor at that time -- now
+# superseded by the 1.88.0 floor above, which comes directly from
+# rust_xlsxwriter 0.97.0's own zip bump rather than from a transitive
+# dependency this project doesn't control.
 #
 # Because dependencies float, this floor can rise again on a transitive
 # bump. The msrv job in CI exists to make that visible rather than
 # letting the declared value quietly become fiction, which is what had
-# already happened with 1.83.
+# already happened once before with 1.83.
 #
 # Toolchain note: this exact pin could not be compiled in the sandbox
 # this was developed in (rustc 1.75, apt-installed) -- confirmed via
-# actual build attempts, not assumption: rust_xlsxwriter 0.96 requires
-# `zip = "7.2"` exactly, and zip 7.2.0's own MSRV is rustc 1.83;
-# independently, 0.96's own worksheet.rs also hits a hard compiler
-# error (E0716) under rustc 1.75 regardless of the zip issue. Neither
-# is a problem with this project's code -- every API signature this
-# project calls was diffed directly against 0.96's source and found
-# identical to the previously-working 0.75 pin. Needs rustc 1.83+ to
-# build.
-#
-# CONFIRMED WORKING on real hardware: `maturin develop --release`
-# succeeded on macOS (4-core, conda env, rustc 1.83+) building this
-# exact pin from a clean `cargo clean` state, no source changes, no
-# indexmap/half pins needed (those sandbox-specific workarounds were
-# deliberately not added here -- confirmed that was the right call).
-# Smoke-tested (Workbook/add_worksheet/write/close) successfully.
-#
-# RESOLVED (was: "Table::set_alt_text()/set_alt_text_title() have
-# never been compiled, only read"). Both were re-checked directly
-# against the published rust_xlsxwriter 0.96.0 source: they exist at
-# table.rs:1185 and table.rs:1200 with exactly the consuming-builder
-# signature src/lib.rs assumes --
-#   pub fn set_alt_text(mut self, alt_text: impl Into<String>) -> Table
-# The same audit mechanically cross-checked every upstream method this
-# crate calls (208 distinct names) against 0.96's `pub fn` set; all are
-# present. No known API gaps remain against this pin.
-rust_xlsxwriter = { version = "0.96", features = ["zlib", "zmij", "constant_memory"] }
+# actual build attempts, not assumption. Every API signature this
+# project calls against 0.98.2 needs the same direct diff-against-source
+# verification the 0.96 pin got; that verification could not be run
+# locally for the same toolchain reason, so this upgrade is validated
+# by CI (which has the real toolchain), not by a local build.
+rust_xlsxwriter = { version = "0.98.2", features = ["zlib", "zmij", "constant_memory"] }
 
 # Native Arrow zero-copy DataFrame support (write_dataframe()). Reads
 # via the Arrow PyCapsule Interface (__arrow_c_stream__) -- no per-cell

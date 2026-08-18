@@ -36,6 +36,45 @@ evaluation against real SPSS survey exports.
   unaffected: an explicit `None` paired with a format there still
   produces a formatted blank cell, as before.
 
+### Changed
+
+- **Upgraded `rust_xlsxwriter` 0.96 → 0.98.2** (0.97.x was never
+  installed as an intermediate step). MSRV raised **1.85 → 1.88**,
+  required by 0.97.0's own `zip` dependency bump — not a choice this
+  project made, inherited directly from upstream. See the detailed
+  upgrade notes in `Cargo.toml` for what was checked at each version
+  and why.
+
+  Two upstream correctness bugs, both silently producing an *invalid*
+  Excel file (not an error) rather than corrupting on a code path this
+  project already tests: `set_tab_color()` + `set_print_fit_to_pages()`
+  together (fixed in 0.97.1), and a sparkline plus a conditional-format
+  data bar on the same worksheet (fixed in 0.98.1). Neither combination
+  was covered by an existing test, so this upgrade adds one for each.
+
+  Two panic-safety fixes in 0.98.2, relevant to this project's exposed
+  API: a truncated PNG/JPEG, or a BMP with a height of `i32::MIN`,
+  previously panicked while reading image dimensions in
+  `insert_image()`. Because this crate builds with `panic = "unwind"`
+  (not `"abort"`), this was never a process-crash risk — PyO3 already
+  catches it at the FFI boundary and surfaces it as a Python exception
+  — but it was an opaque `PanicException` instead of the clean
+  `ValueError`/`OSError` every other image error already produces.
+  Also fixed: `define_name()` with an empty sheet or variable name
+  created an invalid file instead of erroring; `define_name()` passes
+  its arguments straight through with no validation of its own, so
+  this was a real, previously-unverified gap.
+
+  `ryu` was already superseded by `zmij` (already enabled) as of
+  0.95.0 — nothing to reconsider there. `enhanced_autofit` and
+  `rust_decimal` were both considered and left disabled: the former is
+  a pure quality enhancement with a new transitive dependency and no
+  reported issue driving it; the latter would need explicit
+  `decimal.Decimal` handling added to this project's own value
+  classifier before the Cargo feature would do anything, which is new
+  work beyond a version bump. Both are candidates for their own
+  follow-up.
+
 ## [0.2.3] - 2026-08-16
 
 Patch release, no breaking changes. One new feature, one perf/correctness

@@ -292,3 +292,43 @@ def test_full_option_sweep():
         ws.add_sparkline_group(0, 5, 4, 5, sp)
 
     assert "x14:sparklineGroup" in _sheet_xml(build)
+
+
+# ---------------------------------------------------------------------
+# Regression: rust_xlsxwriter 0.98.1 fixed an XML error that occurred
+# when a sparkline and a conditional-format data bar were both present
+# on the same worksheet (see the upgrade notes in Cargo.toml). No test
+# in this suite combined the two before the 0.98.2 upgrade.
+# ---------------------------------------------------------------------
+
+def test_sparkline_and_conditional_format_databar_together_produce_valid_file():
+    import openpyxl
+    from rvgsrust_xlsxwriter import ConditionalFormatDataBar
+
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        for r in range(5):
+            for c in range(5):
+                ws.write(r, c, (r + 1) * (c + 1))
+
+        sp = Sparkline()
+        sp.set_range("Sheet1!A1:E1")
+        ws.add_sparkline(0, 5, sp)
+
+        cf = ConditionalFormatDataBar()
+        cf.set_fill_color("#638EC6")
+        ws.add_conditional_format(0, 0, 4, 4, cf)
+
+        wb.close(path)
+
+        # The bug produced an XML error, not necessarily a write-time
+        # exception -- confirm the resulting file is actually valid by
+        # having an independent consumer (openpyxl) load it.
+        sheet = openpyxl.load_workbook(path).active
+        assert sheet["A1"].value == 1
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
