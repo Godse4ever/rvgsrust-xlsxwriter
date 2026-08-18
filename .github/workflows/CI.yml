@@ -95,15 +95,30 @@ jobs:
   # maturin-action so the resulting .whl is manylinux-compliant
   # (avoids GLIBC_2.18+ symbol errors that occur when building
   # directly on ubuntu-latest).  Windows and macOS build normally.
-  # Cargo.toml declares rust-version = "1.83" (rust_xlsxwriter 0.96 pulls
-  # zip 7.2, whose own MSRV is 1.83). Nothing verified that claim, so a
-  # dependency bump could silently raise the real MSRV. cargo check with a
-  # pinned 1.83 toolchain fails loudly if that happens.
+  #
+  # This job verifies Cargo.toml's declared rust-version is real,
+  # rather than trusting it -- a dependency bump (this project's own,
+  # or an upstream crate's) can silently raise the true floor. The
+  # toolchain version is read from Cargo.toml at run time instead of
+  # hardcoded here, because the hardcoded version drifted out of sync
+  # with the declared rust-version twice before this: once during the
+  # 1.83->1.85 bump, and again during 1.85->1.88 (rust_xlsxwriter
+  # 0.97.0's zip dependency bump) -- both times this job kept testing
+  # an old, already-superseded floor instead of the current one, which
+  # defeats the point of having it. Reading the value dynamically means
+  # the next version bump can't silently do the same thing a third time.
   msrv:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@1.85.0
+    - name: Read declared MSRV from Cargo.toml
+      id: msrv
+      run: |
+        version=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"([0-9.]+)".*/\1/')
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.msrv.outputs.version }}
     - name: Check against declared MSRV
       run: cargo check --locked || cargo check
 
