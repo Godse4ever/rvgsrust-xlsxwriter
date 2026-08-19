@@ -1,17 +1,21 @@
-# API parity gaps vs rust_xlsxwriter
+# API parity gaps vs rust_xlsxwriter 0.98.2
 
 Only open items below. Anything closed has been removed from this file
 rather than marked done, so this stays a to-do list, not a changelog —
 see [CHANGELOG.md](CHANGELOG.md) for what shipped.
 
-All `file:line` references below were read from
-[`v0.96.0`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.96.0/src)
-source, not from docs.rs. **This project now depends on 0.98.2**
-(upgraded from 0.96 — see `Cargo.toml` and `CHANGELOG.md` for what that
-involved); the line numbers below have not been individually
-re-verified against 0.98.2 and may have shifted. Treat them as
-approximate pointers into the right file, not exact current
-coordinates, until someone re-audits this list against the new pin.
+All `file:line` references below were read from source. Originally
+captured against
+[`v0.96.0`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.96.0/src);
+re-checked line-by-line against
+[`v0.98.2`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.98.2/src)
+after this project's 0.96→0.98.2 upgrade (all 50 references across
+`chart.rs`, `conditional_format.rs`, `data_validation.rs`, `format.rs`,
+`workbook.rs`, `worksheet.rs`) — every one still points to the exact
+same function at the exact same line, unchanged across both version
+bumps. The 0.97.0/0.98.0 "Added" changelog entries were dependency
+version bumps only (`zip`, `polars`), not new public API, so nothing
+in this list closed on its own between 0.96 and 0.98.2 either.
 
 Priorities are a judgement call about request frequency, weighted toward
 this project's actual use — survey and market-research reporting, where
