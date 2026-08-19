@@ -75,6 +75,30 @@ evaluation against real SPSS survey exports.
   work beyond a version bump. Both are candidates for their own
   follow-up.
 
+### Added
+
+- **`Format` is now at full parity with upstream, except
+  `set_font_scheme()`** (deliberately not exposed — upstream's own doc
+  comment calls it "rarely, if ever, required," and it describes a
+  font's role in the workbook theme rather than a cell property, an
+  odd fit for this API). New: `set_quote_prefix()`, `set_hyperlink()`,
+  `set_checkbox()`, `set_font_family()`, `set_font_charset()`,
+  `set_font_script()`, `set_reading_direction()` (validated against
+  0/1/2 with a clean `ValueError` — upstream itself only prints a
+  warning to stderr and silently no-ops on an invalid value, which
+  would be invisible from Python), and `unset_bold()`/`unset_italic()`/
+  `unset_font_strikethrough()`/`unset_text_wrap()`/`unset_shrink()`/
+  `unset_hidden()`/`unset_quote_prefix()`/`unset_checkbox()`/
+  `unset_hyperlink_style()`.
+- **`Worksheet.set_range_format_with_border(r1, c1, r2, c2, cell_format,
+  border_format)`.** Applies interior styling and a border around the
+  outside of a range in one call, handling the up-to-9 distinct
+  per-position format combinations (corners, edges, interior)
+  internally instead of the caller tracking them by hand.
+- **`Worksheet.clear_cell_format(row, col)`.** Clears a cell's format
+  while leaving its value untouched. A no-op on an unformatted or
+  nonexistent cell, not an error.
+
 ## [0.2.3] - 2026-08-16
 
 Patch release, no breaking changes. One new feature, one perf/correctness

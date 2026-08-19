@@ -206,3 +206,87 @@ def test_format_methods_reject_non_format():
     ):
         with pytest.raises(TypeError):
             call()
+
+
+# ------------------- set_range_format_with_border -------------------
+
+
+def test_range_format_with_border_applies_cell_and_border_formats():
+    def build(ws):
+        cell_fmt = Format()
+        cell_fmt.set_background_color("#FFFF00")
+        border_fmt = Format()
+        border_fmt.set_border("thin")
+        for r in range(3):
+            for c in range(3):
+                ws.write(r, c, r * 3 + c)
+        ws.set_range_format_with_border(0, 0, 2, 2, cell_fmt, border_fmt)
+
+    sheet, _, styles = _build(build)
+    assert sheet["A1"].value == 0
+    assert sheet["C3"].value == 8
+    # Both the fill (cell_format) and a border (border_format) should
+    # show up somewhere in styles.xml -- rust_xlsxwriter builds up to
+    # 9 distinct per-position style combinations internally, so this
+    # doesn't assert an exact count, just that both properties landed.
+    assert "FFFF00" in styles
+    assert "<left" in styles or "<right" in styles or "<top" in styles
+
+
+def test_range_format_with_border_rejects_reversed_range():
+    def build(ws):
+        cell_fmt = Format()
+        border_fmt = Format()
+        border_fmt.set_border("thin")
+        ws.set_range_format_with_border(5, 5, 0, 0, cell_fmt, border_fmt)
+
+    with pytest.raises(ValueError):
+        _build(build)
+
+
+def test_range_format_with_border_rejects_non_format():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    valid_fmt = Format()
+    with pytest.raises(TypeError):
+        ws.set_range_format_with_border(0, 0, 1, 1, "not a format", valid_fmt)
+    with pytest.raises(TypeError):
+        ws.set_range_format_with_border(0, 0, 1, 1, valid_fmt, "not a format")
+
+
+# ---------------------------- clear_cell_format ----------------------------
+
+
+def test_clear_cell_format_removes_formatting_keeps_value():
+    def build(ws):
+        fmt = Format()
+        fmt.set_bold()
+        ws.write(0, 0, "styled", fmt)
+        ws.write(0, 1, "also styled", fmt)
+        ws.clear_cell_format(0, 0)
+
+    sheet, _, _ = _build(build)
+    # Value survives the format clear.
+    assert sheet["A1"].value == "styled"
+    assert sheet["B1"].value == "also styled"
+    # A1's bold is gone; B1's remains, proving clear_cell_format()
+    # targeted only the specified cell.
+    assert not sheet["A1"].font.bold
+    assert sheet["B1"].font.bold
+
+
+def test_clear_cell_format_on_unformatted_cell_is_noop():
+    def build(ws):
+        ws.write(0, 0, "plain")
+        ws.clear_cell_format(0, 0)  # must not raise
+
+    sheet, _, _ = _build(build)
+    assert sheet["A1"].value == "plain"
+
+
+def test_clear_cell_format_on_nonexistent_cell_is_noop():
+    def build(ws):
+        ws.write(0, 0, "x")
+        ws.clear_cell_format(50, 50)  # never written, must not raise
+
+    _build(build)

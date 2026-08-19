@@ -24,29 +24,14 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 ---
 
-## 1. Format — 6 gaps, all Low priority
+## 1. Worksheet
 
-| Feature | Upstream | Suggested Python API | Priority |
-|---|---|---|---|
-| Quote prefix | `format.rs:2343` | `set_quote_prefix()` | Low |
-| Hyperlink style | `format.rs:2217` | `set_hyperlink()` | Low |
-| Checkbox format | `format.rs:2355` | `set_checkbox()` | Low |
-| Font family / charset / scheme / script | `format.rs:1226` | `set_font_family(n)` etc. | Low |
-| Reading direction | `format.rs:1647` | `set_reading_direction(n)` | Low |
-| `unset_*` inverses | `format.rs:2364` | `unset_bold()`, `unset_italic()`, `unset_text_wrap()`, `unset_shrink()`, `unset_hidden()`, `unset_quote_prefix()` | Low |
+### 1a. Cell/row/column/range formats — closed
 
----
+`set_range_format_with_border()` and `clear_cell_format()` are
+implemented.
 
-## 2. Worksheet
-
-### 2a. Cell/row/column/range formats — 2 gaps left
-
-| Feature | Upstream | Suggested Python API | Priority |
-|---|---|---|---|
-| Range format with a border | `worksheet.rs:10549` | `set_range_format_with_border(r1, c1, r2, c2, format, border)` | Medium |
-| Clear a cell's format | `worksheet.rs:10776` | `clear_cell_format(row, col)` | Low |
-
-### 2b. Headers and footers — text done, images/scale remain
+### 1b. Headers and footers — text done, images/scale remain
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -55,7 +40,7 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 `set_header(text)` / `set_footer(text)` are implemented.
 
-### 2c. Row and column grouping — Medium-High
+### 1c. Row and column grouping — Medium-High
 
 `group_rows(first, last)` (`worksheet.rs:6929`),
 `group_columns(first, last)` (`7278`), the `*_collapsed` variants, and
@@ -63,7 +48,7 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 Outline grouping is how collapsible sections in a report are built.
 
-### 2d. Data validation — High
+### 1d. Data validation — High
 
 `add_data_validation(r1, c1, r2, c2, validation)` at
 `worksheet.rs:9388`, plus the whole `DataValidation` type
@@ -75,7 +60,7 @@ the conditional formats — string-valued rule kinds validated with a
 requested Excel-writer features across every language binding
 — including openpyxl and pandas.
 
-### 2e. Notes, filters, views, protection, images — Medium
+### 1e. Notes, filters, views, protection, images — Medium
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -95,7 +80,7 @@ requested Excel-writer features across every language binding
 
 ---
 
-## 3. Workbook — 6 gaps
+## 2. Workbook — 6 gaps
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -108,7 +93,7 @@ requested Excel-writer features across every language binding
 
 ---
 
-## 4. Charts — ~60 gaps
+## 3. Charts — ~60 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
 labels). What remains:
@@ -138,7 +123,7 @@ labels). What remains:
 
 ---
 
-## 5. Conditional formats — 2 gaps
+## 4. Conditional formats — 2 gaps
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -185,4 +170,4 @@ Ranked by value per unit of effort:
 4. **Chart error bars and secondary axes.**
 5. Everything else.
 
-Headers/footers (text) shipped ahead of this list.
+Headers/footers (text) and the Format/range-format gaps shipped ahead of this list.

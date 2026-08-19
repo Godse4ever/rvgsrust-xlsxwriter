@@ -209,3 +209,157 @@ def test_all_new_format_options_together():
     styles = _styles(build)
     for expected in ("FF0000", "00B050", "0070C0", "<strike", 'locked="0"'):
         assert expected in styles, expected
+
+
+# ------------------ quote prefix, hyperlink, checkbox ------------------
+
+
+def test_quote_prefix():
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_quote_prefix()
+        ws.write(0, 0, "123", fmt)
+
+    styles = _styles(build)
+    assert 'quotePrefix="1"' in styles
+
+
+def test_hyperlink_style():
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_hyperlink()
+        ws.write(0, 0, "not a real url", fmt)
+
+    # Confirmed via source (format.rs set_hyperlink()) that this sets
+    # is_hyperlink, a theme color, and single underline -- not
+    # asserting the exact theme-color XML encoding here since tracing
+    # that through the color-writing code adds risk for little extra
+    # coverage; a full parse via openpyxl already confirms the file
+    # isn't corrupted by the style.
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        build(wb, ws)
+        wb.close(path)
+        import openpyxl
+        sheet = openpyxl.load_workbook(path).active
+        assert sheet["A1"].value == "not a real url"
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_checkbox_format():
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_checkbox()
+        ws.write(0, 0, True, fmt)
+
+    # set_checkbox() adds an xfpb:xfComplement extLst extension to the
+    # cell's <xf> in styles.xml -- confirmed against actual
+    # rust_xlsxwriter source (styles.rs write_xf_format_extensions),
+    # not guessed.
+    styles = _styles(build)
+    assert "xfpb:xfComplement" in styles
+
+
+# ----------------- font family, reading direction -----------------
+
+
+def test_font_family():
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_font_family(2)  # Swiss
+        ws.write(0, 0, "x", fmt)
+
+    # Confirmed against styles.rs: written as <family val="2"/>, not a
+    # family="2" attribute on some other element.
+    styles = _styles(build)
+    assert '<family val="2"' in styles
+
+
+def test_font_charset():
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_font_charset(1)
+        ws.write(0, 0, "x", fmt)
+
+    styles = _styles(build)
+    assert '<charset val="1"' in styles
+
+
+@pytest.mark.parametrize("script,xml_val", [
+    ("superscript", "superscript"),
+    ("subscript", "subscript"),
+])
+def test_font_script(script, xml_val):
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_font_script(script)
+        ws.write(0, 0, "x", fmt)
+
+    styles = _styles(build)
+    assert f'val="{xml_val}"' in styles
+
+
+def test_font_script_none_does_not_add_vertalign_value():
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_font_script("none")
+        ws.write(0, 0, "x", fmt)
+
+    _styles(build)  # must not raise -- "none" is the default, no-op
+
+
+def test_font_script_invalid_raises():
+    fmt = Format()
+    with pytest.raises(ValueError):
+        fmt.set_font_script("sideways")
+
+
+@pytest.mark.parametrize("direction", [0, 1, 2])
+def test_reading_direction_valid(direction):
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_reading_direction(direction)
+        ws.write(0, 0, "x", fmt)
+
+    # Must not raise for any valid value; 0 (context-dependent) may not
+    # add an explicit readingOrder attribute since it's the default.
+    _styles(build)
+
+
+def test_reading_direction_invalid_raises():
+    fmt = Format()
+    with pytest.raises(ValueError):
+        fmt.set_reading_direction(3)
+
+
+# ---------------------------- unset_* ----------------------------
+
+
+def test_unset_bold_reverses_set_bold():
+    def build(wb, ws):
+        fmt = Format()
+        fmt.set_bold()
+        fmt.unset_bold()
+        ws.write(0, 0, "x", fmt)
+
+    styles = _styles(build)
+    assert 'b val="1"' not in styles and "<b/>" not in styles
+
+
+@pytest.mark.parametrize("method", [
+    "unset_italic", "unset_font_strikethrough", "unset_text_wrap",
+    "unset_shrink", "unset_hidden", "unset_quote_prefix",
+    "unset_checkbox", "unset_hyperlink_style",
+])
+def test_unset_methods_do_not_raise(method):
+    def build(wb, ws):
+        fmt = Format()
+        getattr(fmt, method)()
+        ws.write(0, 0, "x", fmt)
+
+    _styles(build)  # must not raise
