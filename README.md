@@ -814,14 +814,17 @@ row count alone. The 100k×8 benchmark above and a wide-workload evaluation
 | Comparison | Shape | Result |
 |---|---|---|
 | vs. pure-Python `xlsxwriter` | 100,000 rows × 8 cols | 6–8× faster |
-| vs. another Rust-backed writer with zero-copy Arrow (`rustpy-xlsxwriter`) | 1,261 rows × 76,480 cols, 14 sheets | ~2× faster on total write, ~3× on the save phase |
+| vs. another Rust-backed writer with zero-copy Arrow (`rustpy-xlsxwriter`) | wide export, same shape both sides | ~1.4× faster on total write time (latest measured run: 7.0s → 5.1s) |
 
 If you're moving from pure-Python `xlsxwriter`, expect a large win. If you're
 moving from another `rust_xlsxwriter` binding, expect a more modest one on
 throughput — the bigger differences are GIL behaviour and memory, below.
-Machine load varied absolute timings by 3–4× on identical work in that
-evaluation; treat ratios as the stable signal and absolute seconds as
-machine-dependent.
+Machine load moves absolute timings and even the ratio itself run to run —
+an earlier pass on the same comparison measured ~2× rather than ~1.4× on
+total write time for the same kind of workload. Treat the ratio as
+directionally right (meaningfully faster, not dramatically faster) rather
+than a number to hold this library to exactly; the output size and GIL
+numbers below have been more stable across runs.
 
 ### `save()` releases the GIL
 
@@ -829,6 +832,8 @@ Long writes don't block other Python threads. Measured on the same
 1,261 × 76,480 export across 14 sheets, a background thread polling at 5ms
 saw a worst-case stall of **7–48ms** across runs, against **1,270–5,980ms**
 for a comparable Rust-backed writer that holds the GIL for the duration.
+The most recent measured run landed at 15ms vs 1,364ms — squarely inside
+that range, not an outlier.
 
 In practice this is the difference between a desktop GUI staying responsive
 during a multi-second export and freezing solid for it. If you're writing
@@ -839,25 +844,36 @@ also serves other work, this matters more than raw throughput.
 
 `constant_memory=True` flushes rows to disk as they're written instead of
 buffering the whole worksheet, so the saving scales with **row count**, not
-column count:
+column count. The table below is total process peak memory -- the writer
+is one allocator among several in a real pipeline (dataframe, Arrow
+buffers, the writer itself), so this understates what `constant_memory`
+does to the writer's own footprint specifically:
 
-| Rows | Columns | Peak, default | Peak, `constant_memory=True` |
-|---|---|---|---|
-| ~1,300 | 76,480 | 2,151 MB | 2,131 MB (no measurable gain) |
-| ~25,000 | 76,480 | 9,365 MB | 6,912 MB (**26% lower**) |
+| Rows | Peak, default | Peak, `constant_memory=True` |
+|---|---|---|
+| ~1,300 | 2,151 MB | 2,131 MB (no measurable gain) |
+| ~25,220 | 7,613 MB | 6,837 MB (**10% lower**) |
+
+Latest measured run: **10% off total process peak** (table above), but
+**16% off the writer's own memory footprint** specifically once the
+other allocators are factored out -- no absolute figure for that one,
+just the percentage. An earlier, cruder pass had reported 26% without
+that distinction, measuring something closer to the total-peak number
+above but not quite the same benchmark; treat 10%/16% as the current,
+more precise reading rather than reconciling it against the older 26%.
 
 Rules of thumb:
 
 - **Tall data (many rows): use it.** The row buffer is the dominant cost.
 - **Wide but short data: it won't help much.** The per-row buffer was never
   the bottleneck.
-- It also measured marginally *faster* (save phase ~8% quicker) in that
-  evaluation, so there's little downside where the constraint applies.
 - The constraint: rows must be written in non-decreasing order — see below.
 
 The writer is often not the largest allocation in the pipeline, either: in
-the 25,000-row case above, the source dataframe alone accounted for roughly
-2,800 MB of peak memory before the writer was even called.
+the ~25,000-row case above, the source dataframe itself accounts for a
+substantial share of peak memory before the writer is even called --
+part of why the *total* process peak drops by less (10%) than the
+writer's own footprint does (16%).
 
 ### `constant_memory` fails loudly, not silently
 
