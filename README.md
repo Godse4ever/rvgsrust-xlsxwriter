@@ -184,6 +184,16 @@ fmt.set_num_format("$#,##0.00")
 fmt.set_num_format("0.00%")
 fmt.set_num_format("yyyy-mm-dd")
 
+# Less common, but all there: quote prefix, hyperlink style, checkboxes,
+# font family/charset/script, reading direction -- and every set_*()
+# above has an unset_*() inverse.
+fmt.set_quote_prefix()             # force text display, e.g. "007"
+fmt.set_hyperlink()                # Excel's built-in hyperlink look
+fmt.set_checkbox()                 # for a boolean cell
+fmt.set_font_script("superscript") # "none", "superscript", "subscript"
+fmt.set_reading_direction(1)       # 0=context, 1=left-to-right, 2=right-to-left
+fmt.unset_bold()                   # reverse any set_*() above
+
 # All setters return self, so they chain:
 wb.add_format().set_bold().set_font_size(12).set_background_color("#4472C4")
 ```
@@ -407,6 +417,14 @@ ws.set_column_range_width(3, 5, 14.0)       # width across the same range
 ws.set_row_format(0, money)                 # whole row
 ws.set_cell_format(0, 0, money)             # single cell
 ws.set_range_format(1, 0, 10, 4, money)     # a rectangular range
+ws.clear_cell_format(0, 0)                  # remove a cell's format, keep its value
+
+# Border around the outside of a range, with interior styling too --
+# builds the up-to-9 per-position format combinations (corners, edges,
+# interior) internally instead of you tracking them by hand.
+border = Format()
+border.set_border("thin")
+ws.set_range_format_with_border(1, 0, 10, 4, money, border)
 ```
 
 Column and row formats apply to cells that don't carry a format of their
@@ -415,13 +433,14 @@ own, which makes them the way to reformat data written by
 
 ### Applying a format across many columns
 
-Putting a border (or any format) on a wide data grid has four routes, with
+Putting a border (or any format) on a wide data grid has five routes, with
 very different costs:
 
 | API | Cost | Coverage |
 |---|---|---|
 | `set_column_range_format(first, last, fmt)` | Column-level style, negligible | Applies only where the cell has no format of its own — cells with a date or custom number format keep their own and show no border |
 | `write_dataframe(..., column_formats={...})` | Merged into each written cell | Full, including number-formatted columns. Nulls are always skipped, never materialized as formatted blank cells |
+| `set_range_format_with_border(r1, c1, r2, c2, cell_fmt, border_fmt)` | Per cell, built internally | Full -- purpose-built for "fill/style the range and put a border around the outside" in one call |
 | `set_range_format(r1, c1, r2, c2, fmt)` | Per cell | Full, but a 25,000×76,000 range is ~1.9 billion cells — not viable |
 | `set_cell_format(row, col, fmt)` | Per cell | Full, for targeted use only |
 
@@ -436,6 +455,10 @@ Practical guidance:
 - Setting a uniform width across many columns → `set_column_range_width`,
   not a `set_column_width` loop. On a wide export the loop cost several
   seconds purely in FFI overhead.
+- A single border wrapped around a filled range (a summary table, a
+  legend box) → `set_range_format_with_border`. It's the one built
+  specifically for that shape, and it does the corner/edge/interior
+  format bookkeeping so you don't have to.
 
 ## Page setup and printing
 
@@ -881,6 +904,7 @@ deliberate design win.
 | **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
 | **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `write_dataframe(column_formats=...)` -- a true per-cell merge, so a border survives on a date column alongside its own number format, not the column-scoped workaround this shipped with first; `annotations` no longer leaks into the module namespace |
 | **v0.2.3** | ✅ Patch release: `Workbook.save_to_buffer() -> bytes`; `Worksheet.set_header()`/`set_footer()` (text only, images still need an `Image` pyclass); `write_rows()` no longer double-materializes the dataset before writing |
+| **v0.2.4** | ✅ Patch release: `write_dataframe()` no longer materializes a formatted blank cell for every null when `column_formats` is used (was up to 84x slower / 29x larger on sparse wide data); upgraded `rust_xlsxwriter` 0.96 -> 0.98.2 (MSRV 1.85 -> 1.88); `Format` at full parity except `set_font_scheme()` (`set_quote_prefix`, `set_hyperlink`, `set_checkbox`, `set_font_family/charset/script`, `set_reading_direction`, and matching `unset_*` inverses); `set_range_format_with_border()` and `clear_cell_format()` on `Worksheet` |
 | **v0.3** | 🚧 Data validation (dropdown lists, cell rules); row/column outline grouping |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
@@ -938,10 +962,9 @@ The largest remaining gaps are data validation and row/column outline
 grouping on `Worksheet` (header/footer text images -- `set_header_image`/
 `set_footer_image` -- still need an `Image` pyclass first); error bars,
 secondary axes and a handful of formatting options on `Chart`; and icon
-sets on conditional formats. `Format` has ~6 low-priority gaps left
-(quote prefix, hyperlink style, checkbox format, font family/charset,
-reading direction, `unset_*` inverses) -- see MISSING.md's "Suggested
-order" for the full ranked list.
+sets on conditional formats. `Format` is at full parity now except
+`set_font_scheme()`, deliberately not exposed -- see MISSING.md's
+"Suggested order" for the full ranked list.
 
 ## Performance TODO
 

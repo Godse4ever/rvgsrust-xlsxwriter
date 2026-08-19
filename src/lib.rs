@@ -143,6 +143,17 @@ fn parse_border(border: &str) -> PyResult<FormatBorder> {
     }
 }
 
+fn parse_font_script(script: &str) -> PyResult<rust_xlsxwriter::FormatScript> {
+    match script.to_lowercase().as_str() {
+        "none" => Ok(rust_xlsxwriter::FormatScript::None),
+        "superscript" => Ok(rust_xlsxwriter::FormatScript::Superscript),
+        "subscript" => Ok(rust_xlsxwriter::FormatScript::Subscript),
+        _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Unknown font script '{script}'. Expected one of: none, superscript, subscript"
+        ))),
+    }
+}
+
 // ============================================
 // CELL VALUE CLASSIFICATION
 // ============================================
@@ -769,6 +780,145 @@ impl Format {
 
     fn set_font_strikethrough(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
         slf.update(|f| f.set_font_strikethrough());
+        slf
+    }
+
+    /// Sets the "quote prefix" (leading apostrophe) property, which tells
+    /// Excel to treat a value as text even if it looks numeric -- e.g. a
+    /// cell showing "123" as left-aligned text instead of a right-aligned
+    /// number. Infallible in rust_xlsxwriter.
+    fn set_quote_prefix(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_quote_prefix());
+        slf
+    }
+
+    /// Sets the hyperlink text style (blue, underlined). Normally applied
+    /// automatically by write_url()/insert_hyperlink() when no format is
+    /// given; this exposes it for a caller building a custom Format that
+    /// should look like a hyperlink without going through those methods.
+    fn set_hyperlink(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_hyperlink());
+        slf
+    }
+
+    /// Sets the checkbox display property for a cell containing a
+    /// boolean value. Most callers want
+    /// Worksheet.insert_checkbox() instead, which is simpler for the
+    /// common case; this is here for building the format directly.
+    fn set_checkbox(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_checkbox());
+        slf
+    }
+
+    /// Sets the font family (1=Roman, 2=Swiss, 3=Modern, 4=Script,
+    /// 5=Decorative; 0=not applicable). Rarely needed -- font_name
+    /// already selects the actual typeface; this only affects the
+    /// fallback family Excel substitutes if that exact font isn't
+    /// installed on the machine opening the file.
+    fn set_font_family(mut slf: PyRefMut<'_, Self>, font_family: u8) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_font_family(font_family));
+        slf
+    }
+
+    /// Sets the font character set (rarely needed outside legacy/CJK
+    /// interop scenarios -- most callers never touch this).
+    fn set_font_charset(mut slf: PyRefMut<'_, Self>, font_charset: u8) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.set_font_charset(font_charset));
+        slf
+    }
+
+    /// Sets superscript/subscript rendering: "none" (default),
+    /// "superscript", or "subscript". Useful for chemical formulas,
+    /// footnote markers, etc. set_font_scheme() (theme font role:
+    /// body/headings/none) is intentionally not exposed -- upstream's
+    /// own doc comment calls it "rarely, if ever, required when using
+    /// Excel", and it's an odd fit for a format-building API since it
+    /// describes a font's role in the workbook's theme rather than a
+    /// property of the specific cell being formatted.
+    fn set_font_script<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: &str,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let parsed = parse_font_script(script)?;
+        slf.update(|f| f.set_font_script(parsed));
+        Ok(slf)
+    }
+
+    /// Sets text reading direction: 0 = context-dependent (default),
+    /// 1 = left-to-right, 2 = right-to-left. rust_xlsxwriter itself
+    /// silently no-ops and prints a warning to stderr on an out-of-range
+    /// value rather than erroring -- a stderr eprintln is invisible to a
+    /// Python caller and the silent no-op would look like the call
+    /// succeeded, so this binding validates first and raises a clean
+    /// ValueError instead of forwarding an input upstream would swallow.
+    fn set_reading_direction<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        reading_direction: u8,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        if reading_direction > 2 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "set_reading_direction(): expected 0 (context), 1 (left-to-right), \
+                 or 2 (right-to-left), got {reading_direction}"
+            )));
+        }
+        slf.update(|f| f.set_reading_direction(reading_direction));
+        Ok(slf)
+    }
+
+    // unset_*() inverses. All infallible consuming builders in
+    // rust_xlsxwriter, same shape as the set_*() methods above. Covers
+    // every unset_*() upstream exposes on Format, not just the ones
+    // MISSING.md named, for symmetry with the set_*() methods this
+    // binding already has (checkbox, hyperlink, strikethrough included
+    // since their set_*() counterparts are already exposed above).
+    fn unset_bold(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_bold());
+        slf
+    }
+
+    fn unset_italic(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_italic());
+        slf
+    }
+
+    fn unset_font_strikethrough(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_font_strikethrough());
+        slf
+    }
+
+    fn unset_text_wrap(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_text_wrap());
+        slf
+    }
+
+    fn unset_shrink(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_shrink());
+        slf
+    }
+
+    fn unset_hidden(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_hidden());
+        slf
+    }
+
+    fn unset_quote_prefix(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_quote_prefix());
+        slf
+    }
+
+    fn unset_checkbox(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_checkbox());
+        slf
+    }
+
+    // Note: rust_xlsxwriter's own unset_hyperlink_style() sets
+    // is_hyperlink = true, not false -- reads like an upstream bug in
+    // its own source (worth reporting, not worth silently "fixing" by
+    // diverging from what upstream actually does; a caller who diffs
+    // behaviour against the Rust crate directly should see the same
+    // thing this binding does).
+    fn unset_hyperlink_style(mut slf: PyRefMut<'_, Self>) -> PyRefMut<'_, Self> {
+        slf.update(|f| f.unset_hyperlink_style());
         slf
     }
 
@@ -2052,6 +2202,48 @@ impl Worksheet {
         let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
         self.with_sheet(py, |sheet| {
             sheet.set_range_format(r1, c1, r2, c2, fmt)?;
+            Ok(())
+        })
+    }
+
+    /// Like set_range_format(), but also builds a border around the
+    /// outside of the range -- up to 9 different per-cell format
+    /// combinations (4 corners x 2 sides, 4 edges x 1 side, interior
+    /// with none) constructed and applied internally by rust_xlsxwriter,
+    /// which is exactly the bookkeeping a caller would otherwise have to
+    /// do by hand to put a single border around a rectangular range.
+    /// cell_format supplies the interior styling (fill, number format,
+    /// etc); border_format supplies the border style/color that gets
+    /// distributed around the edge.
+    fn set_range_format_with_border(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        cell_format: &Format,
+        border_format: &Format,
+    ) -> PyResult<()> {
+        self.check_row_order_range(first_row, last_row)?;
+        let cell_fmt = &cell_format.inner;
+        let border_fmt = &border_format.inner;
+        let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
+        self.with_sheet(py, |sheet| {
+            sheet.set_range_format_with_border(r1, c1, r2, c2, cell_fmt, border_fmt)?;
+            Ok(())
+        })
+    }
+
+    /// Clears the format previously applied to a cell (via any of the
+    /// write_with_format()-style methods, set_cell_format(), etc),
+    /// leaving the cell's value untouched. Infallible in
+    /// rust_xlsxwriter -- clearing a cell that was never formatted, or
+    /// that doesn't exist yet, is a no-op rather than an error.
+    fn clear_cell_format(&self, py: Python<'_>, row: u32, col: u16) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            sheet.clear_cell_format(row, col);
             Ok(())
         })
     }
