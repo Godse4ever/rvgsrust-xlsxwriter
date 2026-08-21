@@ -536,7 +536,9 @@ class DataValidation:
         ...
     def set_error_style(self, style: DVErrorStyle) -> None: ...
     def set_multi_range(self, range: str) -> None:
-        """Adds non-contiguous ranges to the same rule, e.g. 'A1:A10,C1:C10'."""
+        """Replaces the range given to add_data_validation() entirely
+        with a set of non-contiguous cells, e.g. 'A1:A10,C1:C10' --
+        include every range you want validated in this one call."""
         ...
 
 class ConditionalFormatCell:
