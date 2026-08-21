@@ -228,10 +228,15 @@ def test_set_error_style_invalid_raises():
 def test_multi_range():
     def build(ws):
         for i in range(5):
+            ws.write(i, 0, i)  # column A
             ws.write(i, 2, i)  # column C too
         dv = DataValidation()
         dv.allow_whole_number("greater_than", 0)
-        dv.set_multi_range("C1:C5")
+        # set_multi_range() REPLACES the range given to
+        # add_data_validation() entirely (confirmed against
+        # worksheet.rs: cell_range.clone_from(), not an append) -- so
+        # every range that should be validated has to be listed here.
+        dv.set_multi_range("A1:A5,C1:C5")
         ws.add_data_validation(0, 0, 4, 0, dv)
 
     _, dvs = _apply(build)
@@ -245,6 +250,11 @@ def test_multi_range():
 
 
 def test_data_validation_works_in_constant_memory_mode():
+    # Deliberately applies the validation AFTER all the writes it
+    # covers -- this must work without any special ordering, because
+    # add_data_validation() doesn't touch the row buffer constant_memory
+    # streams to disk (see the Rust-side comment on add_data_validation
+    # for what's actually verified here, not assumed).
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
         path = tf.name
     try:
@@ -260,6 +270,31 @@ def test_data_validation_works_in_constant_memory_mode():
         dvs = list(sheet.data_validations.dataValidation)
         assert len(dvs) == 1
         assert dvs[0].type == "whole"
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_data_validation_does_not_advance_row_order_guard():
+    # Calling add_data_validation() must not itself move the
+    # constant_memory row-order high-water mark -- a write to an
+    # earlier row than the validation's range, made afterward, must
+    # still succeed. This is the actual behavioural difference from
+    # set_cell_format()/set_range_format(), which do advance it.
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet(constant_memory=True)
+        ws.write(0, 0, "before")
+        dv = DataValidation()
+        dv.allow_whole_number("between", 0, 100)
+        ws.add_data_validation(0, 0, 9, 0, dv)  # covers rows 0-9
+        ws.write(1, 0, "still fine")  # row 1, must not raise
+        wb.close(path)
+        sheet = openpyxl.load_workbook(path).active
+        assert sheet["A1"].value == "before"
+        assert sheet["A2"].value == "still fine"
     finally:
         if os.path.exists(path):
             os.remove(path)
