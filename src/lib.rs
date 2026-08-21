@@ -2063,8 +2063,21 @@ impl Worksheet {
     }
 
     /// The range argument here is the primary validated range; call
-    /// DataValidation.set_multi_range() beforehand to add non-contiguous
-    /// ranges to the same rule.
+    /// DataValidation.set_multi_range() beforehand to validate a
+    /// different (or additional) set of cells instead -- that call
+    /// replaces this range entirely rather than adding to it.
+    ///
+    /// Deliberately does NOT call check_row_order_range(): unlike
+    /// write()/set_cell_format()/etc, a data validation rule is stored
+    /// in its own independent collection (self.data_validations,
+    /// confirmed against worksheet.rs) and written as a standalone
+    /// <dataValidations> block built from plain row/col numbers, not
+    /// looked up from the per-row content buffer constant_memory
+    /// streams to disk. There's nothing for the row-order guard to
+    /// protect here, and requiring it would incorrectly block calling
+    /// this before, after, or interleaved with the writes to the same
+    /// range in constant_memory mode, none of which are actually
+    /// unsafe.
     fn add_data_validation(
         &self,
         py: Python<'_>,
@@ -2074,7 +2087,6 @@ impl Worksheet {
         last_col: u16,
         validation: &DataValidation,
     ) -> PyResult<()> {
-        self.check_row_order_range(first_row, last_row)?;
         let dv = validation.inner.clone();
         let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
         self.with_sheet(py, |sheet| {
@@ -3357,9 +3369,14 @@ impl DataValidation {
         Ok(())
     }
 
-    /// Applies the same validation to additional, non-contiguous
-    /// ranges, e.g. "A1:A10,C1:C10", on top of the range given to
-    /// Worksheet.add_data_validation().
+    /// Sets the validated range to a set of non-contiguous cells, e.g.
+    /// "A1:A10,C1:C10" -- this REPLACES the range given to
+    /// Worksheet.add_data_validation() entirely, confirmed against
+    /// worksheet.rs's write_data_validation() (cell_range.clone_from(),
+    /// not an append). Include every range you want validated in this
+    /// one string; the range passed to add_data_validation() still
+    /// matters for the dimension/order checks, but not for what
+    /// actually ends up in the file's sqref once this is set.
     fn set_multi_range(&mut self, range: &str) {
         self.inner = self.inner.clone().set_multi_range(range);
     }
