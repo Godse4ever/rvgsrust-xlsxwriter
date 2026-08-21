@@ -3185,7 +3185,11 @@ fn parse_dv_error_style(style: &str) -> PyResult<DataValidationErrorStyle> {
         "stop" => Ok(DataValidationErrorStyle::Stop),
         "warning" => Ok(DataValidationErrorStyle::Warning),
         "information" => Ok(DataValidationErrorStyle::Information),
-        other => Err(dv_type_err("error style", other, "stop, warning, information")),
+        other => Err(dv_type_err(
+            "error style",
+            other,
+            "stop, warning, information",
+        )),
     }
 }
 
@@ -3208,21 +3212,36 @@ impl DataValidation {
     /// between, not_between. value2 is required for between/not_between,
     /// ignored otherwise.
     #[pyo3(signature = (rule_type, value, value2=None))]
-    fn allow_whole_number(&mut self, rule_type: &str, value: i32, value2: Option<i32>) -> PyResult<()> {
+    fn allow_whole_number(
+        &mut self,
+        rule_type: &str,
+        value: i32,
+        value2: Option<i32>,
+    ) -> PyResult<()> {
         let rule = parse_dv_rule_i32(rule_type, value, value2)?;
         self.inner = self.inner.clone().allow_whole_number(rule);
         Ok(())
     }
 
     #[pyo3(signature = (rule_type, value, value2=None))]
-    fn allow_decimal_number(&mut self, rule_type: &str, value: f64, value2: Option<f64>) -> PyResult<()> {
+    fn allow_decimal_number(
+        &mut self,
+        rule_type: &str,
+        value: f64,
+        value2: Option<f64>,
+    ) -> PyResult<()> {
         let rule = parse_dv_rule_f64(rule_type, value, value2)?;
         self.inner = self.inner.clone().allow_decimal_number(rule);
         Ok(())
     }
 
     #[pyo3(signature = (rule_type, value, value2=None))]
-    fn allow_text_length(&mut self, rule_type: &str, value: u32, value2: Option<u32>) -> PyResult<()> {
+    fn allow_text_length(
+        &mut self,
+        rule_type: &str,
+        value: u32,
+        value2: Option<u32>,
+    ) -> PyResult<()> {
         let rule = parse_dv_rule_u32(rule_type, value, value2)?;
         self.inner = self.inner.clone().allow_text_length(rule);
         Ok(())
