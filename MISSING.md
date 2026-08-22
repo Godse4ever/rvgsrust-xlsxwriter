@@ -48,17 +48,29 @@ implemented.
 
 Outline grouping is how collapsible sections in a report are built.
 
-### 1d. Data validation — High
+### 1d. Data validation — mostly closed, two pieces remain
 
-`add_data_validation(r1, c1, r2, c2, validation)` at
-`worksheet.rs:9388`, plus the whole `DataValidation` type
-(`data_validation.rs:203`).
+`DataValidation` pyclass and `Worksheet.add_data_validation()` are
+implemented: whole-number/decimal-number/text-length range rules (all
+8 comparison types), string dropdown lists (`allow_list_strings`,
+`allow_list_formula`), custom formula rules, `allow_any_value`, and
+every input/error-message and behaviour setting.
 
-Suggested shape: a `DataValidation` pyclass following the same pattern as
-the conditional formats — string-valued rule kinds validated with a
-`ValueError` listing accepted values. Dropdown lists are one of the most
-requested Excel-writer features across every language binding
-— including openpyxl and pandas.
+Not implemented:
+
+| Feature | Upstream | Suggested Python API | Priority |
+|---|---|---|---|
+| Date/time range rules | `data_validation.rs` `allow_date`/`allow_time` | `allow_date(rule_type, value, value2=None)`, `allow_time(...)` | Medium |
+| Cell-reference formula variants | `allow_*_formula()` on whole_number/decimal_number/text_length/date/time | `allow_whole_number_formula(rule_type, formula, formula2=None)` etc. | Low |
+
+`allow_date`/`allow_time` need an `ExcelDateTime` construction path
+from a Python `date`/`time`/`datetime` object, which none of the
+numeric/string/formula rules already implemented require — that's
+why they were left for a follow-up rather than blocking the rest of
+this feature. The formula variants swap a literal value for a cell
+reference in the same 8 comparison rules; lower priority since a
+`allow_custom()` formula already covers the same ground less
+conveniently.
 
 ### 1e. Notes, filters, views, protection, images — Medium
 
@@ -164,10 +176,12 @@ writing worksheet XML ourselves. Worth reporting upstream.
 
 Ranked by value per unit of effort:
 
-1. **Data validation** — needs a new pyclass, but high demand.
-2. **Row and column grouping.**
-3. **Conditional format icon sets.**
-4. **Chart error bars and secondary axes.**
-5. Everything else.
+1. **Row and column grouping.**
+2. **Conditional format icon sets.**
+3. **Chart error bars and secondary axes.**
+4. Everything else.
 
-Headers/footers (text) and the Format/range-format gaps shipped ahead of this list.
+Headers/footers (text), the Format/range-format gaps, and the core of
+data validation (dropdowns, numeric/text-length rules, custom formulas)
+shipped ahead of this list. Date/time validation rules and the
+formula-reference variants remain -- see 1d above.
