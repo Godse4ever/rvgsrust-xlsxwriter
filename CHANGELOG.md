@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-08-19
+
+Patch release, no breaking changes. Adds data validation.
+
+### Added
+
+- **`DataValidation` and `Worksheet.add_data_validation()`.** Dropdown
+  lists (`allow_list_strings()` from a fixed string list, capped at
+  Excel's 255-character limit and raising a clean `ValueError` if
+  exceeded; `allow_list_formula()` from a cell range, no such limit),
+  numeric and text-length range rules (`allow_whole_number()`,
+  `allow_decimal_number()`, `allow_text_length()`, all 8 comparison
+  types: equal/not-equal/greater/greater-or-equal/less/less-or-equal/
+  between/not-between), `allow_custom()` for an arbitrary formula rule,
+  `allow_any_value()` to clear a rule while keeping messages, and every
+  input/error-message and behaviour setting
+  (`ignore_blank`/`show_dropdown`/`show_input_message`/
+  `set_input_title`/`set_input_message`/`show_error_message`/
+  `set_error_title`/`set_error_message`/`set_error_style`/
+  `set_multi_range`).
+
+  Not implemented: `allow_date()`/`allow_time()` range rules (need an
+  `ExcelDateTime` construction path from a Python date/time that none
+  of the other rules require) and the cell-reference formula variants
+  of the numeric/text-length/date/time rules. Dropdown lists -- the
+  single most-requested feature this closes -- don't depend on either,
+  so shipping without them was a reasonable line to draw. Both are
+  candidates for a follow-up; see MISSING.md.
+
+  `add_data_validation()` deliberately does not use the
+  `constant_memory` row-order guard that `set_cell_format()`/
+  `set_range_format()`/`add_conditional_format()` use: a data
+  validation rule is stored in its own independent collection and
+  written as a standalone XML block built from row/col numbers, not
+  looked up from the per-row buffer `constant_memory` streams to disk,
+  so there's nothing for that guard to protect. It can be called
+  before, after, or interleaved with writes to the same range.
+
 ## [0.2.4] - 2026-08-19
 
 Patch release, no breaking changes. One bug fix, found through an external
