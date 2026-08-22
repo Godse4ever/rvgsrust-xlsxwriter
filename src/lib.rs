@@ -1445,6 +1445,36 @@ impl Worksheet {
         Ok(())
     }
 
+    // Same first_row check as check_row_order(), but never advances the
+    // high-water mark. Used by group_rows()/group_rows_collapsed(),
+    // which -- confirmed against worksheet.rs's write_constant_row(),
+    // which looks up changed_rows at the moment a row is actually
+    // flushed -- do need to happen before their rows are flushed, but
+    // do NOT themselves flush anything. check_row_order_range() would
+    // be wrong here: it advances the mark to the range's *last* row
+    // even though nothing has actually been written yet, which
+    // incorrectly blocks two real, legitimate patterns -- grouping a
+    // nested sub-range after its containing range (group_rows(0, 9)
+    // then group_rows(1, 5), the normal way nested outlines are built)
+    // and writing an earlier, not-yet-covered row after a grouping
+    // call for a later range. The mark should only advance when a row
+    // is actually consumed by a write, which check_row_order() (called
+    // separately, by write()/write_row()/etc) already handles.
+    fn check_row_order_readonly(&self, first_row: u32) -> PyResult<()> {
+        if self.constant_memory {
+            let min_row = self.min_allowed_row.get();
+            if first_row < min_row {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Cannot group row {first_row}: this worksheet was created with \
+                     constant_memory=True, and row {min_row} has already been \
+                     written. Grouping must happen before the rows it covers are \
+                     written."
+                )));
+            }
+        }
+        Ok(())
+    }
+
     // Raises the high-water mark after a write whose extent was not known
     // in advance. write_dataframe() streams batches from the Arrow producer
     // rather than collecting them, so the total row count is unavailable
@@ -2479,6 +2509,84 @@ impl Worksheet {
 
     fn freeze_panes(&self, py: Python<'_>, row: u32, col: u16) -> PyResult<()> {
         self.with_sheet(py, |sheet| sheet.set_freeze_panes(row, col).map(|_| ()))
+    }
+
+    // group_rows()/group_rows_collapsed() set an outline-level attribute
+    // on each row's own <row> element -- per-row XML content that must
+    // exist in changed_rows before that row is flushed (confirmed
+    // against worksheet.rs's write_constant_row(), which looks up
+    // changed_rows at flush time), so they use the read-only
+    // check_row_order_readonly() guard: reject grouping an already-
+    // flushed row, without advancing the mark the way an actual write
+    // would (see that method's comment for why check_row_order_range()
+    // is wrong here -- it would break nested grouping and block
+    // subsequent writes to earlier, ungrouped rows). group_columns()
+    // and group_symbols_above/to_left() don't touch per-row content at
+    // all (columns are a separate <cols> section, symbols-position is a
+    // worksheet-level flag), so neither needs any guard -- same
+    // reasoning as set_column_width() and set_tab_color() below.
+    fn group_rows(&self, py: Python<'_>, first_row: u32, last_row: u32) -> PyResult<()> {
+        self.check_row_order_readonly(first_row)?;
+        self.with_sheet(py, |sheet| {
+            sheet.group_rows(first_row, last_row)?;
+            Ok(())
+        })
+    }
+
+    /// Same as group_rows(), but the group starts collapsed. The row
+    /// immediately after last_row becomes the summary/toggle row --
+    /// confirmed against worksheet.rs's group_rows_collapsed(), which
+    /// sets the collapsed property on last_row + 1, not on last_row
+    /// itself.
+    fn group_rows_collapsed(&self, py: Python<'_>, first_row: u32, last_row: u32) -> PyResult<()> {
+        self.check_row_order_readonly(first_row)?;
+        self.with_sheet(py, |sheet| {
+            sheet.group_rows_collapsed(first_row, last_row)?;
+            Ok(())
+        })
+    }
+
+    fn group_columns(&self, py: Python<'_>, first_col: u16, last_col: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.group_columns(first_col, last_col)?;
+            Ok(())
+        })
+    }
+
+    /// Same as group_columns(), but the group starts collapsed. The
+    /// column immediately after last_col becomes the summary/toggle
+    /// column, same pattern as group_rows_collapsed().
+    fn group_columns_collapsed(
+        &self,
+        py: Python<'_>,
+        first_col: u16,
+        last_col: u16,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.group_columns_collapsed(first_col, last_col)?;
+            Ok(())
+        })
+    }
+
+    /// Places the [+]/[-] row outline toggle above each group instead of
+    /// below (Excel's default). A worksheet-level display setting, not
+    /// per-group -- call once, it affects every group_rows() on the
+    /// sheet.
+    fn group_symbols_above(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.group_symbols_above(enable);
+            Ok(())
+        })
+    }
+
+    /// Places the [+]/[-] column outline toggle to the left of each
+    /// group instead of the right (Excel's default). Worksheet-level,
+    /// same as group_symbols_above().
+    fn group_symbols_to_left(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.group_symbols_to_left(enable);
+            Ok(())
+        })
     }
 
     fn set_tab_color(&self, py: Python<'_>, color: &str) -> PyResult<()> {
