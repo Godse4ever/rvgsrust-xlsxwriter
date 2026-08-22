@@ -569,6 +569,59 @@ from the scale or bar definition itself rather than from a format record.
 
 Icon sets are not exposed yet.
 
+## Data Validation
+
+```python
+from rvgsrust_xlsxwriter import DataValidation
+
+wb = Workbook()
+ws = wb.add_worksheet()
+
+# Dropdown from a fixed list -- the most common case
+status = DataValidation()
+status.allow_list_strings(["Pending", "In Progress", "Done"])
+status.show_input_message(True)
+status.set_input_title("Status")
+status.set_input_message("Pick one from the list")
+ws.add_data_validation(0, 0, 99, 0, status)
+
+# Dropdown sourced from a range written elsewhere -- no 255-char limit,
+# unlike allow_list_strings()
+ws.write_column(0, 5, ["Small", "Medium", "Large"])
+size = DataValidation()
+size.allow_list_formula("F1:F3")
+ws.add_data_validation(0, 1, 99, 1, size)
+
+# Numeric range, with an error dialog on invalid input
+rating = DataValidation()
+rating.allow_whole_number("between", 1, 5)
+rating.show_error_message(True)
+rating.set_error_title("Invalid rating")
+rating.set_error_message("Enter a number from 1 to 5")
+rating.set_error_style("stop")  # "stop", "warning", or "information"
+ws.add_data_validation(0, 2, 99, 2, rating)
+
+# Arbitrary formula rule
+cross_check = DataValidation()
+cross_check.allow_custom("=A1<>\"\"")
+ws.add_data_validation(0, 3, 99, 3, cross_check)
+```
+
+`allow_whole_number`, `allow_decimal_number`, and `allow_text_length`
+all take the same 8 comparison types: `equal_to`, `not_equal_to`,
+`greater_than`, `greater_than_or_equal_to`, `less_than`,
+`less_than_or_equal_to`, `between`, `not_between` (the last two take a
+second value). `set_multi_range(range)` replaces the range given to
+`add_data_validation()` entirely rather than adding to it -- put every
+range you want validated into that one call. `allow_any_value()` clears
+a rule while keeping the input/error messages, useful for a validation
+that's purely informational.
+
+Not yet implemented: `allow_date`/`allow_time` range rules, and the
+cell-reference formula variants of the numeric/text-length/date/time
+rules (comparing against a cell instead of a literal value) -- see
+MISSING.md.
+
 ## Sparklines
 
 ```python
@@ -921,7 +974,8 @@ deliberate design win.
 | **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `write_dataframe(column_formats=...)` -- a true per-cell merge, so a border survives on a date column alongside its own number format, not the column-scoped workaround this shipped with first; `annotations` no longer leaks into the module namespace |
 | **v0.2.3** | ✅ Patch release: `Workbook.save_to_buffer() -> bytes`; `Worksheet.set_header()`/`set_footer()` (text only, images still need an `Image` pyclass); `write_rows()` no longer double-materializes the dataset before writing |
 | **v0.2.4** | ✅ Patch release: `write_dataframe()` no longer materializes a formatted blank cell for every null when `column_formats` is used (was up to 84x slower / 29x larger on sparse wide data); upgraded `rust_xlsxwriter` 0.96 -> 0.98.2 (MSRV 1.85 -> 1.88); `Format` at full parity except `set_font_scheme()` (`set_quote_prefix`, `set_hyperlink`, `set_checkbox`, `set_font_family/charset/script`, `set_reading_direction`, and matching `unset_*` inverses); `set_range_format_with_border()` and `clear_cell_format()` on `Worksheet` |
-| **v0.3** | 🚧 Data validation (dropdown lists, cell rules); row/column outline grouping |
+| **v0.2.5** | ✅ Patch release: `DataValidation` and `Worksheet.add_data_validation()` -- dropdown lists (from a string list or a cell range), whole-number/decimal-number/text-length range rules, custom formula rules, and every input/error-message setting. Date/time rules and cell-reference formula variants still open. |
+| **v0.3** | 🚧 Row/column outline grouping; date/time data validation rules |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
@@ -974,11 +1028,13 @@ naming itself (`set_top_border` vs upstream's `set_border_top`) has
 since been reconciled: both spellings work, the reversed ones kept for
 compatibility.
 
-The largest remaining gaps are data validation and row/column outline
-grouping on `Worksheet` (header/footer text images -- `set_header_image`/
-`set_footer_image` -- still need an `Image` pyclass first); error bars,
-secondary axes and a handful of formatting options on `Chart`; and icon
-sets on conditional formats. `Format` is at full parity now except
+The largest remaining gaps are row/column outline grouping on
+`Worksheet` (header/footer text images -- `set_header_image`/
+`set_footer_image` -- still need an `Image` pyclass first); date/time
+data validation rules and the cell-reference formula variants of the
+numeric/text-length/date/time rules; error bars, secondary axes and a
+handful of formatting options on `Chart`; and icon sets on conditional
+formats. `Format` is at full parity now except
 `set_font_scheme()`, deliberately not exposed -- see MISSING.md's
 "Suggested order" for the full ranked list.
 

@@ -19,6 +19,7 @@ from ._core import (
     ConditionalFormatFormula as ConditionalFormatFormula,
     ConditionalFormatText as ConditionalFormatText,
     ConditionalFormatTop as ConditionalFormatTop,
+    DataValidation as DataValidation,
     Format as Format,
     Sparkline as Sparkline,
     Table as Table,

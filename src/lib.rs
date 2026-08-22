@@ -11,8 +11,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyCapsule, PyDict, PyDictMethods, PyList, PyListMethods, PyString};
 use pyo3::PyRefMut;
 use rust_xlsxwriter::{
-    Color, ExcelDateTime, Format as RustFormat, FormatAlign, FormatBorder, FormatPattern,
-    Table as RustTable, TableColumn as RustTableColumn, TableFunction, TableStyle,
+    Color, DataValidation as RustDataValidation, DataValidationErrorStyle,
+    DataValidationRule as DVRule, ExcelDateTime, Format as RustFormat, FormatAlign, FormatBorder,
+    FormatPattern, Table as RustTable, TableColumn as RustTableColumn, TableFunction, TableStyle,
     Workbook as RustWorkbook, Worksheet as RustWorksheet,
 };
 use std::borrow::Cow;
@@ -2061,6 +2062,39 @@ impl Worksheet {
         })
     }
 
+    /// The range argument here is the primary validated range; call
+    /// DataValidation.set_multi_range() beforehand to validate a
+    /// different (or additional) set of cells instead -- that call
+    /// replaces this range entirely rather than adding to it.
+    ///
+    /// Deliberately does NOT call check_row_order_range(): unlike
+    /// write()/set_cell_format()/etc, a data validation rule is stored
+    /// in its own independent collection (self.data_validations,
+    /// confirmed against worksheet.rs) and written as a standalone
+    /// <dataValidations> block built from plain row/col numbers, not
+    /// looked up from the per-row content buffer constant_memory
+    /// streams to disk. There's nothing for the row-order guard to
+    /// protect here, and requiring it would incorrectly block calling
+    /// this before, after, or interleaved with the writes to the same
+    /// range in constant_memory mode, none of which are actually
+    /// unsafe.
+    fn add_data_validation(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        validation: &DataValidation,
+    ) -> PyResult<()> {
+        let dv = validation.inner.clone();
+        let (r1, c1, r2, c2) = (first_row, first_col, last_row, last_col);
+        self.with_sheet(py, |sheet| {
+            sheet.add_data_validation(r1, c1, r2, c2, &dv)?;
+            Ok(())
+        })
+    }
+
     // Adds a single sparkline to one cell.
     fn add_sparkline(
         &self,
@@ -3061,6 +3095,293 @@ impl Workbook {
 // ============================================
 // MODULE INITIALIZATION
 // ============================================
+// ============================================
+// DATA VALIDATION
+// ============================================
+// Deliberately smaller than upstream's full surface for this first cut:
+// implemented are whole-number/decimal-number/text-length range rules,
+// string dropdown lists, a cell-range-reference dropdown, a custom
+// formula rule, "allow any value", and every input/error-message and
+// behaviour setting. NOT implemented, and left for a follow-up:
+// allow_date()/allow_time() (need an ExcelDateTime construction path
+// from a Python date/time, not just a numeric/string value like
+// everything else here) and the allow_*_formula() variants that compare
+// against a cell reference instead of a literal (whole_number/
+// decimal_number/text_length/date/time each have one). Dropdown lists --
+// the single most-requested feature this closes -- don't depend on
+// either, so shipping without them is a reasonable line to draw rather
+// than blocking the whole feature on the date/time plumbing.
+fn dv_type_err(kind: &str, got: &str, expected: &str) -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+        "Unknown {kind} '{got}'. Expected one of: {expected}"
+    ))
+}
+
+const DV_RULE_KINDS: &str = "equal_to, not_equal_to, greater_than, \
+    greater_than_or_equal_to, less_than, less_than_or_equal_to, between, not_between";
+
+fn parse_dv_rule_i32(rule_type: &str, v1: i32, v2: Option<i32>) -> PyResult<DVRule<i32>> {
+    match rule_type.to_lowercase().as_str() {
+        "equal_to" => Ok(DVRule::EqualTo(v1)),
+        "not_equal_to" => Ok(DVRule::NotEqualTo(v1)),
+        "greater_than" => Ok(DVRule::GreaterThan(v1)),
+        "greater_than_or_equal_to" => Ok(DVRule::GreaterThanOrEqualTo(v1)),
+        "less_than" => Ok(DVRule::LessThan(v1)),
+        "less_than_or_equal_to" => Ok(DVRule::LessThanOrEqualTo(v1)),
+        "between" | "not_between" => {
+            let v2 = v2.ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "'{rule_type}' requires a second value"
+                ))
+            })?;
+            if rule_type == "between" {
+                Ok(DVRule::Between(v1, v2))
+            } else {
+                Ok(DVRule::NotBetween(v1, v2))
+            }
+        }
+        other => Err(dv_type_err("rule type", other, DV_RULE_KINDS)),
+    }
+}
+
+fn parse_dv_rule_f64(rule_type: &str, v1: f64, v2: Option<f64>) -> PyResult<DVRule<f64>> {
+    match rule_type.to_lowercase().as_str() {
+        "equal_to" => Ok(DVRule::EqualTo(v1)),
+        "not_equal_to" => Ok(DVRule::NotEqualTo(v1)),
+        "greater_than" => Ok(DVRule::GreaterThan(v1)),
+        "greater_than_or_equal_to" => Ok(DVRule::GreaterThanOrEqualTo(v1)),
+        "less_than" => Ok(DVRule::LessThan(v1)),
+        "less_than_or_equal_to" => Ok(DVRule::LessThanOrEqualTo(v1)),
+        "between" | "not_between" => {
+            let v2 = v2.ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "'{rule_type}' requires a second value"
+                ))
+            })?;
+            if rule_type == "between" {
+                Ok(DVRule::Between(v1, v2))
+            } else {
+                Ok(DVRule::NotBetween(v1, v2))
+            }
+        }
+        other => Err(dv_type_err("rule type", other, DV_RULE_KINDS)),
+    }
+}
+
+fn parse_dv_rule_u32(rule_type: &str, v1: u32, v2: Option<u32>) -> PyResult<DVRule<u32>> {
+    match rule_type.to_lowercase().as_str() {
+        "equal_to" => Ok(DVRule::EqualTo(v1)),
+        "not_equal_to" => Ok(DVRule::NotEqualTo(v1)),
+        "greater_than" => Ok(DVRule::GreaterThan(v1)),
+        "greater_than_or_equal_to" => Ok(DVRule::GreaterThanOrEqualTo(v1)),
+        "less_than" => Ok(DVRule::LessThan(v1)),
+        "less_than_or_equal_to" => Ok(DVRule::LessThanOrEqualTo(v1)),
+        "between" | "not_between" => {
+            let v2 = v2.ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "'{rule_type}' requires a second value"
+                ))
+            })?;
+            if rule_type == "between" {
+                Ok(DVRule::Between(v1, v2))
+            } else {
+                Ok(DVRule::NotBetween(v1, v2))
+            }
+        }
+        other => Err(dv_type_err("rule type", other, DV_RULE_KINDS)),
+    }
+}
+
+fn parse_dv_error_style(style: &str) -> PyResult<DataValidationErrorStyle> {
+    match style.to_lowercase().as_str() {
+        "stop" => Ok(DataValidationErrorStyle::Stop),
+        "warning" => Ok(DataValidationErrorStyle::Warning),
+        "information" => Ok(DataValidationErrorStyle::Information),
+        other => Err(dv_type_err(
+            "error style",
+            other,
+            "stop, warning, information",
+        )),
+    }
+}
+
+#[pyclass]
+struct DataValidation {
+    inner: RustDataValidation,
+}
+
+#[pymethods]
+impl DataValidation {
+    #[new]
+    fn new() -> Self {
+        DataValidation {
+            inner: RustDataValidation::new(),
+        }
+    }
+
+    /// rule_type: one of equal_to, not_equal_to, greater_than,
+    /// greater_than_or_equal_to, less_than, less_than_or_equal_to,
+    /// between, not_between. value2 is required for between/not_between,
+    /// ignored otherwise.
+    #[pyo3(signature = (rule_type, value, value2=None))]
+    fn allow_whole_number(
+        &mut self,
+        rule_type: &str,
+        value: i32,
+        value2: Option<i32>,
+    ) -> PyResult<()> {
+        let rule = parse_dv_rule_i32(rule_type, value, value2)?;
+        self.inner = self.inner.clone().allow_whole_number(rule);
+        Ok(())
+    }
+
+    #[pyo3(signature = (rule_type, value, value2=None))]
+    fn allow_decimal_number(
+        &mut self,
+        rule_type: &str,
+        value: f64,
+        value2: Option<f64>,
+    ) -> PyResult<()> {
+        let rule = parse_dv_rule_f64(rule_type, value, value2)?;
+        self.inner = self.inner.clone().allow_decimal_number(rule);
+        Ok(())
+    }
+
+    #[pyo3(signature = (rule_type, value, value2=None))]
+    fn allow_text_length(
+        &mut self,
+        rule_type: &str,
+        value: u32,
+        value2: Option<u32>,
+    ) -> PyResult<()> {
+        let rule = parse_dv_rule_u32(rule_type, value, value2)?;
+        self.inner = self.inner.clone().allow_text_length(rule);
+        Ok(())
+    }
+
+    /// A dropdown restricted to the given strings, written directly into
+    /// the validation rule (not into worksheet cells). Excel's limit:
+    /// the strings joined with commas must be <= 255 characters total,
+    /// checked by rust_xlsxwriter itself and raised as a clean
+    /// ValueError here, not by this binding.
+    fn allow_list_strings(&mut self, list: Vec<String>) -> PyResult<()> {
+        self.inner = self
+            .inner
+            .clone()
+            .allow_list_strings(&list)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    /// A dropdown sourced from a cell range already written elsewhere in
+    /// the workbook, e.g. "F2:F4" or "Sheet2!$A$1:$A$10". Unlike
+    /// allow_list_strings(), there's no 255-character limit here since
+    /// the list itself isn't embedded in the rule.
+    fn allow_list_formula(&mut self, formula: &str) -> PyResult<()> {
+        self.inner = self.inner.clone().allow_list_formula(formula.into());
+        Ok(())
+    }
+
+    /// An arbitrary formula rule, e.g. "=A1>B1". No validation of the
+    /// formula's syntax happens here or upstream -- an invalid formula
+    /// will show as a broken validation in Excel, not raise on write.
+    fn allow_custom(&mut self, formula: &str) -> PyResult<()> {
+        self.inner = self.inner.clone().allow_custom(formula.into());
+        Ok(())
+    }
+
+    /// Clears any rule set by a previous allow_*() call. Useful for
+    /// keeping the input/error messages and behaviour flags on a
+    /// validation while removing the restriction itself.
+    fn allow_any_value(&mut self) {
+        self.inner = self.inner.clone().allow_any_value();
+    }
+
+    fn ignore_blank(&mut self, enable: bool) {
+        self.inner = self.inner.clone().ignore_blank(enable);
+    }
+
+    /// Only meaningful for list-type validations (allow_list_strings/
+    /// allow_list_formula) -- shows or hides the dropdown arrow. The
+    /// restriction itself still applies either way; this only affects
+    /// whether Excel shows a convenient picker for it.
+    fn show_dropdown(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_dropdown(enable);
+    }
+
+    fn show_input_message(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_input_message(enable);
+    }
+
+    /// Max 32 characters -- checked by rust_xlsxwriter, raised as a
+    /// clean ValueError here.
+    fn set_input_title(&mut self, text: &str) -> PyResult<()> {
+        self.inner = self
+            .inner
+            .clone()
+            .set_input_title(text)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    /// Max 255 characters, newlines allowed to split across lines --
+    /// checked by rust_xlsxwriter, raised as a clean ValueError here.
+    fn set_input_message(&mut self, text: &str) -> PyResult<()> {
+        self.inner = self
+            .inner
+            .clone()
+            .set_input_message(text)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    fn show_error_message(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_error_message(enable);
+    }
+
+    /// Max 32 characters -- checked by rust_xlsxwriter, raised as a
+    /// clean ValueError here.
+    fn set_error_title(&mut self, text: &str) -> PyResult<()> {
+        self.inner = self
+            .inner
+            .clone()
+            .set_error_title(text)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    /// Max 255 characters -- checked by rust_xlsxwriter, raised as a
+    /// clean ValueError here.
+    fn set_error_message(&mut self, text: &str) -> PyResult<()> {
+        self.inner = self
+            .inner
+            .clone()
+            .set_error_message(text)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    /// "stop" (default), "warning", or "information" -- which Excel
+    /// dialog icon/behaviour shows on invalid input.
+    fn set_error_style(&mut self, style: &str) -> PyResult<()> {
+        let parsed = parse_dv_error_style(style)?;
+        self.inner = self.inner.clone().set_error_style(parsed);
+        Ok(())
+    }
+
+    /// Sets the validated range to a set of non-contiguous cells, e.g.
+    /// "A1:A10,C1:C10" -- this REPLACES the range given to
+    /// Worksheet.add_data_validation() entirely, confirmed against
+    /// worksheet.rs's write_data_validation() (cell_range.clone_from(),
+    /// not an append). Include every range you want validated in this
+    /// one string; the range passed to add_data_validation() still
+    /// matters for the dimension/order checks, but not for what
+    /// actually ends up in the file's sqref once this is set.
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+}
+
 // ============================================
 // CONDITIONAL FORMATTING
 // ============================================
@@ -5084,6 +5405,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Format>()?;
     m.add_class::<Table>()?;
     m.add_class::<TableColumn>()?;
+    m.add_class::<DataValidation>()?;
     m.add_class::<ConditionalFormatCell>()?;
     m.add_class::<ConditionalFormatBlank>()?;
     m.add_class::<ConditionalFormatDuplicate>()?;
