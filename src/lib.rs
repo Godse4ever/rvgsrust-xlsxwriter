@@ -1446,20 +1446,25 @@ impl Worksheet {
     }
 
     // Same first_row check as check_row_order(), but never advances the
-    // high-water mark. Used by group_rows()/group_rows_collapsed(),
-    // which -- confirmed against worksheet.rs's write_constant_row(),
-    // which looks up changed_rows at the moment a row is actually
-    // flushed -- do need to happen before their rows are flushed, but
-    // do NOT themselves flush anything. check_row_order_range() would
-    // be wrong here: it advances the mark to the range's *last* row
-    // even though nothing has actually been written yet, which
-    // incorrectly blocks two real, legitimate patterns -- grouping a
-    // nested sub-range after its containing range (group_rows(0, 9)
-    // then group_rows(1, 5), the normal way nested outlines are built)
-    // and writing an earlier, not-yet-covered row after a grouping
-    // call for a later range. The mark should only advance when a row
-    // is actually consumed by a write, which check_row_order() (called
-    // separately, by write()/write_row()/etc) already handles.
+    // high-water mark. Used by group_rows()/group_rows_collapsed() as a
+    // defensive ordering guard: rejects grouping a row range that
+    // includes a row already written, on the general principle that
+    // retroactively modifying an already-flushed row's metadata isn't
+    // safe. (Verified separately, and documented on group_rows() itself,
+    // that constant_memory mode currently doesn't apply per-row grouping
+    // to the streamed output at all regardless of ordering -- this guard
+    // is not what that limitation is about; it protects against writing
+    // backwards, same category of hazard as check_row_order_range().)
+    // check_row_order_range() would be the wrong choice here: it
+    // advances the mark to the range's *last* row even though nothing
+    // has actually been written yet, which incorrectly blocks two real,
+    // legitimate patterns -- grouping a nested sub-range after its
+    // containing range (group_rows(0, 9) then group_rows(1, 5), the
+    // normal way nested outlines are built) and writing an earlier,
+    // not-yet-covered row after a grouping call for a later range. The
+    // mark should only advance when a row is actually consumed by a
+    // write, which check_row_order() (called separately, by
+    // write()/write_row()/etc) already handles.
     fn check_row_order_readonly(&self, first_row: u32) -> PyResult<()> {
         if self.constant_memory {
             let min_row = self.min_allowed_row.get();
@@ -2511,20 +2516,38 @@ impl Worksheet {
         self.with_sheet(py, |sheet| sheet.set_freeze_panes(row, col).map(|_| ()))
     }
 
-    // group_rows()/group_rows_collapsed() set an outline-level attribute
-    // on each row's own <row> element -- per-row XML content that must
-    // exist in changed_rows before that row is flushed (confirmed
-    // against worksheet.rs's write_constant_row(), which looks up
-    // changed_rows at flush time), so they use the read-only
-    // check_row_order_readonly() guard: reject grouping an already-
-    // flushed row, without advancing the mark the way an actual write
-    // would (see that method's comment for why check_row_order_range()
-    // is wrong here -- it would break nested grouping and block
-    // subsequent writes to earlier, ungrouped rows). group_columns()
-    // and group_symbols_above/to_left() don't touch per-row content at
-    // all (columns are a separate <cols> section, symbols-position is a
-    // worksheet-level flag), so neither needs any guard -- same
-    // reasoning as set_column_width() and set_tab_color() below.
+    // KNOWN LIMITATION, verified against actual output rather than
+    // assumed: in constant_memory mode, individual <row> elements do
+    // NOT get an outlineLevel attribute at all -- only
+    // <sheetFormatPr outlineLevelRow="N"/> (the sheet-wide maximum
+    // level) is written. This appears to be a constant_memory
+    // streaming limitation in rust_xlsxwriter itself: per-row content
+    // is flushed as each row is written, and grouping metadata isn't
+    // picked up into that per-row output the way it is in the default
+    // (buffered) mode. group_rows() still succeeds and still records
+    // the correct max level, so it isn't rejected outright -- but the
+    // visual per-row grouping in Excel will not actually appear when
+    // constant_memory=True is used. Not worked around here (would mean
+    // writing worksheet XML directly); worth reporting upstream.
+    //
+    // The row-order guard below (check_row_order_readonly(), not the
+    // mutating check_row_order_range() that set_range_format()/
+    // set_cell_format()/add_conditional_format() use) is kept
+    // regardless: it protects the specific case of grouping a row
+    // range that includes rows already written, which is a real
+    // ordering hazard independent of the limitation above, and it
+    // deliberately doesn't advance the high-water mark the way an
+    // actual write would -- see that method's own comment for why
+    // check_row_order_range() would incorrectly break the normal
+    // nested-outline pattern (outer range grouped first, then inner)
+    // and block subsequent writes to earlier, ungrouped rows.
+    //
+    // group_columns()/group_columns_collapsed()/group_symbols_above/
+    // group_symbols_to_left() don't touch per-row content at all
+    // (columns are a separate <cols> section, symbols-position is a
+    // worksheet-level flag), so none of this applies to them -- no
+    // guard needed and no constant_memory limitation, same as
+    // set_column_width()/set_tab_color() below.
     fn group_rows(&self, py: Python<'_>, first_row: u32, last_row: u32) -> PyResult<()> {
         self.check_row_order_readonly(first_row)?;
         self.with_sheet(py, |sheet| {
