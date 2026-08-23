@@ -40,13 +40,22 @@ implemented.
 
 `set_header(text)` / `set_footer(text)` are implemented.
 
-### 1c. Row and column grouping — Medium-High
+### 1c. Row and column grouping — closed
 
-`group_rows(first, last)` (`worksheet.rs:6929`),
-`group_columns(first, last)` (`7278`), the `*_collapsed` variants, and
-`group_symbols_above(bool)` / `group_symbols_to_left(bool)`.
+`group_rows`/`group_rows_collapsed`/`group_columns`/
+`group_columns_collapsed`/`group_symbols_above`/`group_symbols_to_left`
+are implemented.
 
-Outline grouping is how collapsible sections in a report are built.
+**Known limitation, verified against actual output:** in
+`constant_memory=True` mode, individual `<row>` elements never get an
+`outlineLevel` attribute -- only the sheet-wide `outlineLevelRow`
+maximum is written. `group_rows()` still succeeds and doesn't raise,
+but the per-row visual grouping in Excel won't appear when
+`constant_memory=True` is used. Appears to be an upstream
+`constant_memory` streaming limitation, not fixable from this binding
+without writing worksheet XML directly. `group_columns()` is
+unaffected (columns are a separate `<cols>` section, outside the
+row-streaming mechanism).
 
 ### 1d. Data validation — mostly closed, two pieces remain
 
@@ -176,12 +185,11 @@ writing worksheet XML ourselves. Worth reporting upstream.
 
 Ranked by value per unit of effort:
 
-1. **Row and column grouping.**
-2. **Conditional format icon sets.**
-3. **Chart error bars and secondary axes.**
-4. Everything else.
+1. **Conditional format icon sets.**
+2. **Chart error bars and secondary axes.**
+3. Everything else.
 
-Headers/footers (text), the Format/range-format gaps, and the core of
-data validation (dropdowns, numeric/text-length rules, custom formulas)
-shipped ahead of this list. Date/time validation rules and the
-formula-reference variants remain -- see 1d above.
+Headers/footers (text), the Format/range-format gaps, the core of
+data validation, and row/column grouping shipped ahead of this list.
+Date/time validation rules, the data-validation formula variants, and
+the constant_memory grouping limitation remain -- see 1c and 1d above.
