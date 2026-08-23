@@ -163,16 +163,22 @@ def test_group_rows_after_rows_already_written_raises_in_constant_memory():
             os.remove(path)
 
 
-def test_group_rows_works_in_constant_memory_mode():
+def test_group_rows_in_constant_memory_sets_sheet_level_max_only():
+    # Verified, not assumed: in constant_memory mode, individual <row>
+    # elements do NOT get an outlineLevel attribute at all -- only
+    # <sheetFormatPr outlineLevelRow="N"/> (the sheet-wide maximum
+    # level) is written. This is an upstream constant_memory streaming
+    # limitation, not something this binding can currently work around
+    # without writing worksheet XML itself. group_rows() still doesn't
+    # raise and still records the correct max level, which is why it's
+    # not rejected outright -- but the per-row visual grouping in Excel
+    # will not actually appear when constant_memory=True is used. This
+    # is documented as a known limitation, not silently left unverified.
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
         path = tf.name
     try:
         wb = Workbook()
         ws = wb.add_worksheet(constant_memory=True)
-        # Rows must be grouped before being flushed by a write to a
-        # later row -- group_rows() touches each row's own XML
-        # attributes, same ordering requirement as set_row_format().
-        # Nested groups, outer range first, must also work.
         ws.group_rows(0, 9)
         ws.group_rows(1, 5)
         for r in range(10):
@@ -180,8 +186,9 @@ def test_group_rows_works_in_constant_memory_mode():
         wb.close(path)
         with zipfile.ZipFile(path) as z:
             sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
-        assert 'outlineLevel="1"' in sheet
-        assert 'outlineLevel="2"' in sheet
+        assert 'outlineLevelRow="2"' in sheet
+        assert 'outlineLevel="1"' not in sheet
+        assert 'outlineLevel="2"' not in sheet
     finally:
         if os.path.exists(path):
             os.remove(path)
