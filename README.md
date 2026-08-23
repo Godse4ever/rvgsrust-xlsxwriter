@@ -622,6 +622,39 @@ cell-reference formula variants of the numeric/text-length/date/time
 rules (comparing against a cell instead of a literal value) -- see
 MISSING.md.
 
+## Row and Column Grouping
+
+Collapsible outline sections, the kind used for expandable summary
+reports:
+
+```python
+ws.write(0, 0, "Region")
+ws.write(1, 0, "  North")
+ws.write(2, 0, "  South")
+ws.write(3, 0, "Total")
+
+ws.group_rows(1, 2)              # rows 1-2 collapse under row 3
+ws.group_symbols_above(True)     # [+] toggle above the group, not below
+
+ws.group_columns(1, 3)           # same idea for columns
+ws.group_symbols_to_left(True)   # toggle to the left, not the right
+```
+
+`group_rows_collapsed`/`group_columns_collapsed` start the group
+already collapsed. Groups can nest up to Excel's 7-level limit --
+group the outer range first, then the inner range, the normal way
+multi-level outlines are built.
+
+**Known limitation:** when a worksheet is created with
+`constant_memory=True`, `group_rows()`/`group_rows_collapsed()` don't
+apply per-row grouping to the output -- verified against actual
+output, not assumed. The call succeeds and the sheet records the
+correct maximum outline level, but Excel won't show the per-row
+collapse/expand behavior. This appears to be a `constant_memory`
+streaming limitation upstream, not something fixable from this
+binding without writing worksheet XML directly. `group_columns()` is
+unaffected, since columns aren't part of the row-streaming mechanism.
+
 ## Sparklines
 
 ```python
@@ -975,7 +1008,8 @@ deliberate design win.
 | **v0.2.3** | ✅ Patch release: `Workbook.save_to_buffer() -> bytes`; `Worksheet.set_header()`/`set_footer()` (text only, images still need an `Image` pyclass); `write_rows()` no longer double-materializes the dataset before writing |
 | **v0.2.4** | ✅ Patch release: `write_dataframe()` no longer materializes a formatted blank cell for every null when `column_formats` is used (was up to 84x slower / 29x larger on sparse wide data); upgraded `rust_xlsxwriter` 0.96 -> 0.98.2 (MSRV 1.85 -> 1.88); `Format` at full parity except `set_font_scheme()` (`set_quote_prefix`, `set_hyperlink`, `set_checkbox`, `set_font_family/charset/script`, `set_reading_direction`, and matching `unset_*` inverses); `set_range_format_with_border()` and `clear_cell_format()` on `Worksheet` |
 | **v0.2.5** | ✅ Patch release: `DataValidation` and `Worksheet.add_data_validation()` -- dropdown lists (from a string list or a cell range), whole-number/decimal-number/text-length range rules, custom formula rules, and every input/error-message setting. Date/time rules and cell-reference formula variants still open. |
-| **v0.3** | 🚧 Row/column outline grouping; date/time data validation rules |
+| **v0.2.6** | ✅ Patch release: row/column outline grouping (`group_rows`/`group_columns`/`*_collapsed`/`group_symbols_above`/`group_symbols_to_left`). Known limitation: `group_rows()` doesn't apply per-row grouping when `constant_memory=True` -- see README's Known Limitations. |
+| **v0.3** | 🚧 Date/time data validation rules; conditional format icon sets |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
@@ -1007,7 +1041,10 @@ These are current, deliberate gaps rather than oversights:
   on violation rather than silently emitting a corrupt file (which is
   what `rust_xlsxwriter` itself would do) — see
   [`constant_memory` fails loudly, not silently](#constant_memory-fails-loudly-not-silently)
-  for why this is deliberate rather than just defensive.
+  for why this is deliberate rather than just defensive. Separately,
+  `group_rows()`/`group_rows_collapsed()` don't apply per-row grouping
+  at all under `constant_memory=True` — see
+  [Row and Column Grouping](#row-and-column-grouping).
 - **Python 3.8.** `requires-python` still declares `>=3.8`, but CI tests
   3.9 upward; the `pandas>=2.0` extra already requires 3.9+.
 
@@ -1028,15 +1065,14 @@ naming itself (`set_top_border` vs upstream's `set_border_top`) has
 since been reconciled: both spellings work, the reversed ones kept for
 compatibility.
 
-The largest remaining gaps are row/column outline grouping on
-`Worksheet` (header/footer text images -- `set_header_image`/
-`set_footer_image` -- still need an `Image` pyclass first); date/time
-data validation rules and the cell-reference formula variants of the
-numeric/text-length/date/time rules; error bars, secondary axes and a
-handful of formatting options on `Chart`; and icon sets on conditional
-formats. `Format` is at full parity now except
-`set_font_scheme()`, deliberately not exposed -- see MISSING.md's
-"Suggested order" for the full ranked list.
+The largest remaining gaps are header/footer text images on
+`Worksheet` (`set_header_image`/`set_footer_image` -- still need an
+`Image` pyclass first); date/time data validation rules and the
+cell-reference formula variants of the numeric/text-length/date/time
+rules; error bars, secondary axes and a handful of formatting options
+on `Chart`; and icon sets on conditional formats. `Format` is at full
+parity now except `set_font_scheme()`, deliberately not exposed -- see
+MISSING.md's "Suggested order" for the full ranked list.
 
 ## Performance TODO
 

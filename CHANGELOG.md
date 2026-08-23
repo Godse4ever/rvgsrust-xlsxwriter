@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-08-19
+
+Patch release, no breaking changes. Adds row/column outline grouping.
+
+### Added
+
+- **`Worksheet.group_rows()`/`group_rows_collapsed()`/`group_columns()`/
+  `group_columns_collapsed()`/`group_symbols_above()`/
+  `group_symbols_to_left()`.** Collapsible outline sections for
+  expandable summary reports. Groups nest up to Excel's 7-level limit.
+
+  **Known limitation:** under `constant_memory=True`,
+  `group_rows()`/`group_rows_collapsed()` don't apply per-row grouping
+  to the output at all -- verified against actual output, not assumed.
+  The call succeeds and the sheet records the correct maximum outline
+  level in `sheetFormatPr`, but individual `<row>` elements never get
+  an `outlineLevel` attribute, so Excel won't show the per-row
+  collapse/expand behavior. Appears to be a `constant_memory` streaming
+  limitation in `rust_xlsxwriter` itself, not fixable from this binding
+  without writing worksheet XML directly. `group_columns()` is
+  unaffected -- columns are a separate `<cols>` section, outside the
+  row-streaming mechanism.
+
+  Also added: `check_row_order_readonly()`, a new internal ordering
+  guard for `group_rows()`/`group_rows_collapsed()` that checks a range
+  hasn't already been written without advancing the `constant_memory`
+  high-water mark the way `check_row_order_range()` (used by
+  `set_range_format()`/`set_cell_format()`/`add_conditional_format()`)
+  does -- the latter would incorrectly reject the normal way nested
+  outlines are built (group the outer range, then the inner range) and
+  block subsequent writes to earlier, ungrouped rows.
+
 ## [0.2.5] - 2026-08-19
 
 Patch release, no breaking changes. Adds data validation.
