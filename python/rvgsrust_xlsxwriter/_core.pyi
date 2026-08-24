@@ -71,6 +71,14 @@ TableFunction = Literal[
 # underscores) as a custom formula, rather than raising.
 TableFunctionArg = Union[TableFunction, str]
 CfRuleType = Literal["automatic", "lowest", "min", "highest", "max", "number", "percent", "percentile", "formula"]
+IconSetType = Literal[
+    "three_arrows", "three_arrows_gray", "three_flags", "three_traffic_lights",
+    "three_traffic_lights_with_rim", "three_signs", "three_symbols_circled",
+    "three_symbols", "three_stars", "three_triangles",
+    "four_arrows", "four_arrows_gray", "four_red_to_black", "four_histograms",
+    "four_traffic_lights",
+    "five_arrows", "five_arrows_gray", "five_histograms", "five_quadrants", "five_boxes",
+]
 CfTopRule = Literal["top", "bottom", "top_percent", "bottom_percent"]
 CfTextRule = Literal["contains", "does_not_contain", "begins_with", "ends_with"]
 CfDateRule = Literal[
@@ -650,3 +658,36 @@ class ConditionalFormatDataBar:
     def use_classic_style(self, enable: bool) -> "ConditionalFormatDataBar": ...
     def set_multi_range(self, range: str) -> "ConditionalFormatDataBar": ...
     def set_stop_if_true(self, enable: bool) -> "ConditionalFormatDataBar": ...
+
+class ConditionalFormatCustomIcon:
+    """Overrides one icon/threshold within a ConditionalFormatIconSet.
+    No set_format() -- Excel renders icon sets from the icon/threshold
+    definitions themselves, same as color scales and data bars."""
+    def set_rule(self, rule_type: CfRuleType, value: Union[str, float]) -> "ConditionalFormatCustomIcon":
+        """rule_type='highest' is silently ignored (upstream: 'The highest
+        option cannot be set for the minimum'). percent/percentile values
+        outside 0-100 are also silently ignored, not rejected -- neither
+        raises here since upstream doesn't treat them as errors either."""
+        ...
+    def set_icon_type(self, icon_type: IconSetType, index: int) -> "ConditionalFormatCustomIcon":
+        """index must be within range for icon_type (0-2 for a 3-icon
+        set, 0-3 for 4-icon, 0-4 for 5-icon) or this raises ValueError."""
+        ...
+    def set_no_icon(self, enable: bool) -> "ConditionalFormatCustomIcon": ...
+    def set_greater_than(self, enable: bool) -> "ConditionalFormatCustomIcon": ...
+
+class ConditionalFormatIconSet:
+    def set_icon_type(self, icon_type: IconSetType) -> "ConditionalFormatIconSet":
+        """Defaults to three_traffic_lights if never called. Also sets
+        the default percent thresholds for that icon count -- override
+        individual ones with set_icons()."""
+        ...
+    def reverse_icons(self, enable: bool) -> "ConditionalFormatIconSet": ...
+    def show_icons_only(self, enable: bool) -> "ConditionalFormatIconSet": ...
+    def set_icons(self, icons: list[ConditionalFormatCustomIcon]) -> "ConditionalFormatIconSet":
+        """List length should match the icon count for the current
+        icon_type (3, 4, or 5) -- not enforced, a mismatch produces an
+        inconsistent icon set in Excel rather than raising."""
+        ...
+    def set_multi_range(self, range: str) -> "ConditionalFormatIconSet": ...
+    def set_stop_if_true(self, enable: bool) -> "ConditionalFormatIconSet": ...
