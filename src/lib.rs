@@ -4381,10 +4381,27 @@ struct ConditionalFormatIconSet {
 
 #[pymethods]
 impl ConditionalFormatIconSet {
+    /// rust_xlsxwriter's own ConditionalFormatIconSet::new() leaves its
+    /// internal icons list empty, and add_conditional_format()'s
+    /// validate() requires that list to have exactly 3/4/5 entries
+    /// matching the icon type (confirmed against conditional_format.rs)
+    /// -- so a freshly-constructed icon set fails validation even with
+    /// every setting left at its default, unless set_icon_type() is
+    /// called at least once first (which is what actually populates
+    /// the default icons). That's a real, easy-to-hit gotcha upstream,
+    /// not a deliberate opt-in step -- worked around here by calling
+    /// set_icon_type() with upstream's own default (ThreeTrafficLights)
+    /// immediately, so this binding's default constructor is valid on
+    /// its own, the way a caller would reasonably expect. Doesn't
+    /// change the resulting XML: the icon_type value is identical to
+    /// what an uncalled default would be, so the writer's
+    /// omit-iconSet-attribute-for-the-default-type behaviour is
+    /// unaffected -- only self.icons gets populated.
     #[new]
     fn new() -> Self {
         ConditionalFormatIconSet {
-            inner: rcf::ConditionalFormatIconSet::new(),
+            inner: rcf::ConditionalFormatIconSet::new()
+                .set_icon_type(rcf::ConditionalFormatIconType::ThreeTrafficLights),
         }
     }
 
