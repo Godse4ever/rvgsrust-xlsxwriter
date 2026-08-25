@@ -13,6 +13,8 @@ from ._core import (
     ConditionalFormatBlank as ConditionalFormatBlank,
     ConditionalFormatCell as ConditionalFormatCell,
     ConditionalFormatDataBar as ConditionalFormatDataBar,
+    ConditionalFormatIconSet as ConditionalFormatIconSet,
+    ConditionalFormatCustomIcon as ConditionalFormatCustomIcon,
     ConditionalFormatDate as ConditionalFormatDate,
     ConditionalFormatDuplicate as ConditionalFormatDuplicate,
     ConditionalFormatError as ConditionalFormatError,
