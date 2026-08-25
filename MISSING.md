@@ -144,15 +144,21 @@ labels). What remains:
 
 ---
 
-## 4. Conditional formats — 2 gaps
+## 4. Conditional formats — closed
 
-| Feature | Upstream | Suggested Python API | Priority |
-|---|---|---|---|
-| Icon sets | `conditional_format.rs:5719` | `ConditionalFormatIconSet` pyclass with `set_icon_type(str)` for the 12 styles, `reverse_icons(bool)`, `show_icons_only(bool)` | **Medium-High** |
-| Custom icons | `conditional_format.rs:6351` | `ConditionalFormatCustomIcon` for per-threshold icon and value overrides, via `set_icons([...])` | Medium |
+`ConditionalFormatIconSet` and `ConditionalFormatCustomIcon` are
+implemented: all 20 icon set styles, `reverse_icons`, `show_icons_only`,
+per-icon threshold/type/direction overrides via `set_icons()`.
 
-Icon sets are the one conspicuously missing conditional format — they are
-a first-class Excel feature and visually obvious by their absence.
+Real upstream gotcha, worked around rather than just documented: a
+freshly-constructed `ConditionalFormatIconSet` fails upstream's own
+validation unless `set_icon_type()` has been called at least once
+(`rust_xlsxwriter`'s `new()` leaves its internal icon-rules list empty,
+and `add_conditional_format()` requires it to have exactly 3/4/5
+entries matching the icon type). This binding's constructor calls
+`set_icon_type()` with upstream's own default internally, so a
+freshly-constructed instance is valid on its own without the caller
+needing to know about this.
 
 ---
 
@@ -185,11 +191,13 @@ writing worksheet XML ourselves. Worth reporting upstream.
 
 Ranked by value per unit of effort:
 
-1. **Conditional format icon sets.**
-2. **Chart error bars and secondary axes.**
-3. Everything else.
+1. **Chart error bars and secondary axes.**
+2. Everything else -- the remaining Chart gaps (~19 items), Workbook
+   gaps (6), and Worksheet's notes/filters/views/protection/images
+   bundle (1e).
 
 Headers/footers (text), the Format/range-format gaps, the core of
-data validation, and row/column grouping shipped ahead of this list.
-Date/time validation rules, the data-validation formula variants, and
-the constant_memory grouping limitation remain -- see 1c and 1d above.
+data validation, row/column grouping, and conditional format icon
+sets shipped ahead of this list. Date/time validation rules, the
+data-validation formula variants, and the constant_memory grouping
+limitation remain -- see 1c and 1d above.

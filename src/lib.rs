@@ -2094,6 +2094,7 @@ impl Worksheet {
             AnyCf::Scale2(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
             AnyCf::Scale3(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
             AnyCf::DataBar(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
+            AnyCf::IconSet(v) => sheet.add_conditional_format(r1, c1, r2, c2, v).map(|_| ()),
         })
     }
 
@@ -3571,6 +3572,46 @@ fn parse_cf_type(name: &str) -> PyResult<rcf::ConditionalFormatType> {
     }
 }
 
+// The 20 icon sets rust_xlsxwriter exposes (3/4/5-icon families). String
+// keys are snake_case of the Rust variant name, e.g. ThreeTrafficLights
+// -> "three_traffic_lights", matching this project's convention
+// elsewhere (parse_border, parse_cf_type, etc all lowercase/snake_case
+// the upstream name rather than using Rust's CamelCase in the Python
+// API).
+const ICON_SET_TYPES: &str = "three_arrows, three_arrows_gray, three_flags, \
+    three_traffic_lights, three_traffic_lights_with_rim, three_signs, \
+    three_symbols_circled, three_symbols, three_stars, three_triangles, \
+    four_arrows, four_arrows_gray, four_red_to_black, four_histograms, \
+    four_traffic_lights, five_arrows, five_arrows_gray, five_histograms, \
+    five_quadrants, five_boxes";
+
+fn parse_icon_type(name: &str) -> PyResult<rcf::ConditionalFormatIconType> {
+    use rcf::ConditionalFormatIconType as T;
+    match name.to_ascii_lowercase().as_str() {
+        "three_arrows" => Ok(T::ThreeArrows),
+        "three_arrows_gray" => Ok(T::ThreeArrowsGray),
+        "three_flags" => Ok(T::ThreeFlags),
+        "three_traffic_lights" => Ok(T::ThreeTrafficLights),
+        "three_traffic_lights_with_rim" => Ok(T::ThreeTrafficLightsWithRim),
+        "three_signs" => Ok(T::ThreeSigns),
+        "three_symbols_circled" => Ok(T::ThreeSymbolsCircled),
+        "three_symbols" => Ok(T::ThreeSymbols),
+        "three_stars" => Ok(T::ThreeStars),
+        "three_triangles" => Ok(T::ThreeTriangles),
+        "four_arrows" => Ok(T::FourArrows),
+        "four_arrows_gray" => Ok(T::FourArrowsGray),
+        "four_red_to_black" => Ok(T::FourRedToBlack),
+        "four_histograms" => Ok(T::FourHistograms),
+        "four_traffic_lights" => Ok(T::FourTrafficLights),
+        "five_arrows" => Ok(T::FiveArrows),
+        "five_arrows_gray" => Ok(T::FiveArrowsGray),
+        "five_histograms" => Ok(T::FiveHistograms),
+        "five_quadrants" => Ok(T::FiveQuadrants),
+        "five_boxes" => Ok(T::FiveBoxes),
+        other => Err(cf_type_err("icon set type", other, ICON_SET_TYPES)),
+    }
+}
+
 fn parse_average_rule(name: &str) -> PyResult<rcf::ConditionalFormatAverageRule> {
     use rcf::ConditionalFormatAverageRule as R;
     match name.to_ascii_lowercase().as_str() {
@@ -4240,6 +4281,179 @@ impl ConditionalFormatDataBar {
     }
 }
 
+// -------------------- Icon Set --------------------
+//
+// Two classes, matching upstream's shape: ConditionalFormatCustomIcon
+// overrides a single icon's threshold/type/direction within a set,
+// ConditionalFormatIconSet.set_icons() takes a list of them to override
+// the defaults set_icon_type() assigns. Neither has set_format() --
+// same as color scales and data bars, Excel renders these from the
+// icon/threshold definitions themselves, not from a format record.
+
+#[pyclass]
+struct ConditionalFormatCustomIcon {
+    inner: rcf::ConditionalFormatCustomIcon,
+}
+
+#[pymethods]
+impl ConditionalFormatCustomIcon {
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatCustomIcon {
+            inner: rcf::ConditionalFormatCustomIcon::new(),
+        }
+    }
+
+    /// Sets the threshold at which this icon starts applying. Same
+    /// rule_type strings as set_minimum()/set_maximum() elsewhere:
+    /// automatic, lowest/min, highest/max, number, percent, percentile,
+    /// formula -- though upstream silently ignores rule_type="highest"
+    /// here specifically (not settable per-icon) and clamps
+    /// percent/percentile values outside 0-100 with an eprintln rather
+    /// than an error, so out-of-range values won't raise, they'll just
+    /// not take effect. Not re-validated here since it isn't a hard
+    /// error upstream either -- see set_icon_type() below for a case
+    /// where this binding does add its own validation.
+    fn set_rule(&mut self, rule_type: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_cf_type(rule_type)?;
+        let val = cf_value(value)?;
+        self.inner = self.inner.clone().set_rule(parsed, val);
+        Ok(())
+    }
+
+    /// Overrides this icon's image with one from a different icon set.
+    /// index must be within the icon_type's own icon count (0-2 for a
+    /// 3-icon set, 0-3 for 4-icon, 0-4 for 5-icon) -- upstream checks
+    /// this itself and prints a warning to stderr rather than raising
+    /// on an out-of-range index (invisible from Python), so this
+    /// binding validates first and raises a clean ValueError instead.
+    fn set_icon_type(&mut self, icon_type: &str, index: u8) -> PyResult<()> {
+        let parsed = parse_icon_type(icon_type)?;
+        let max_index: u8 = match parsed {
+            rcf::ConditionalFormatIconType::ThreeArrows
+            | rcf::ConditionalFormatIconType::ThreeArrowsGray
+            | rcf::ConditionalFormatIconType::ThreeFlags
+            | rcf::ConditionalFormatIconType::ThreeTrafficLights
+            | rcf::ConditionalFormatIconType::ThreeTrafficLightsWithRim
+            | rcf::ConditionalFormatIconType::ThreeSigns
+            | rcf::ConditionalFormatIconType::ThreeSymbolsCircled
+            | rcf::ConditionalFormatIconType::ThreeSymbols
+            | rcf::ConditionalFormatIconType::ThreeStars
+            | rcf::ConditionalFormatIconType::ThreeTriangles => 2,
+            rcf::ConditionalFormatIconType::FourArrows
+            | rcf::ConditionalFormatIconType::FourArrowsGray
+            | rcf::ConditionalFormatIconType::FourRedToBlack
+            | rcf::ConditionalFormatIconType::FourHistograms
+            | rcf::ConditionalFormatIconType::FourTrafficLights => 3,
+            rcf::ConditionalFormatIconType::FiveArrows
+            | rcf::ConditionalFormatIconType::FiveArrowsGray
+            | rcf::ConditionalFormatIconType::FiveHistograms
+            | rcf::ConditionalFormatIconType::FiveQuadrants
+            | rcf::ConditionalFormatIconType::FiveBoxes => 4,
+        };
+        if index > max_index {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "set_icon_type(): index {index} is out of range for '{icon_type}', \
+                 which has icons indexed 0-{max_index}"
+            )));
+        }
+        self.inner = self.inner.clone().set_icon_type(parsed, index);
+        Ok(())
+    }
+
+    /// Hides this icon entirely (the cell still gets the conditional
+    /// format's other effects, just no icon for this threshold).
+    fn set_no_icon(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_no_icon(enable);
+    }
+
+    /// Changes this threshold's comparison from ">=" (Excel's default)
+    /// to ">".
+    fn set_greater_than(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_greater_than(enable);
+    }
+}
+
+#[pyclass]
+struct ConditionalFormatIconSet {
+    inner: rcf::ConditionalFormatIconSet,
+}
+
+#[pymethods]
+impl ConditionalFormatIconSet {
+    /// rust_xlsxwriter's own ConditionalFormatIconSet::new() leaves its
+    /// internal icons list empty, and add_conditional_format()'s
+    /// validate() requires that list to have exactly 3/4/5 entries
+    /// matching the icon type (confirmed against conditional_format.rs)
+    /// -- so a freshly-constructed icon set fails validation even with
+    /// every setting left at its default, unless set_icon_type() is
+    /// called at least once first (which is what actually populates
+    /// the default icons). That's a real, easy-to-hit gotcha upstream,
+    /// not a deliberate opt-in step -- worked around here by calling
+    /// set_icon_type() with upstream's own default (ThreeTrafficLights)
+    /// immediately, so this binding's default constructor is valid on
+    /// its own, the way a caller would reasonably expect. Doesn't
+    /// change the resulting XML: the icon_type value is identical to
+    /// what an uncalled default would be, so the writer's
+    /// omit-iconSet-attribute-for-the-default-type behaviour is
+    /// unaffected -- only self.icons gets populated.
+    #[new]
+    fn new() -> Self {
+        ConditionalFormatIconSet {
+            inner: rcf::ConditionalFormatIconSet::new()
+                .set_icon_type(rcf::ConditionalFormatIconType::ThreeTrafficLights),
+        }
+    }
+
+    /// One of: three_arrows, three_arrows_gray, three_flags,
+    /// three_traffic_lights, three_traffic_lights_with_rim, three_signs,
+    /// three_symbols_circled, three_symbols, three_stars,
+    /// three_triangles, four_arrows, four_arrows_gray,
+    /// four_red_to_black, four_histograms, four_traffic_lights,
+    /// five_arrows, five_arrows_gray, five_histograms, five_quadrants,
+    /// five_boxes. Defaults to three_traffic_lights if never called.
+    /// Also sets default 0/33/67 (3-icon), 0/25/50/75 (4-icon), or
+    /// 0/20/40/60/80 (5-icon) percent thresholds -- override individual
+    /// thresholds afterward with set_icons().
+    fn set_icon_type(&mut self, icon_type: &str) -> PyResult<()> {
+        let parsed = parse_icon_type(icon_type)?;
+        self.inner = self.inner.clone().set_icon_type(parsed);
+        Ok(())
+    }
+
+    /// Reverses icon order (lowest value gets the icon normally used
+    /// for the highest, and vice versa). Off by default.
+    fn reverse_icons(&mut self, enable: bool) {
+        self.inner = self.inner.clone().reverse_icons(enable);
+    }
+
+    /// Shows only the icons, hiding the cell's own value. Off by
+    /// default.
+    fn show_icons_only(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_icons_only(enable);
+    }
+
+    /// Overrides individual icons/thresholds from what set_icon_type()
+    /// assigned by default. The list length should match the icon
+    /// count for the current icon_type (3, 4, or 5) -- upstream doesn't
+    /// enforce this itself, so passing the wrong count isn't rejected
+    /// here either, but a mismatched list produces an inconsistent
+    /// icon set in Excel.
+    fn set_icons(&mut self, icons: Vec<PyRef<'_, ConditionalFormatCustomIcon>>) {
+        let inner_icons: Vec<rcf::ConditionalFormatCustomIcon> =
+            icons.iter().map(|i| i.inner.clone()).collect();
+        self.inner = self.inner.clone().set_icons(&inner_icons);
+    }
+
+    fn set_multi_range(&mut self, range: &str) {
+        self.inner = self.inner.clone().set_multi_range(range);
+    }
+
+    fn set_stop_if_true(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_stop_if_true(enable);
+    }
+}
+
 // -------------------- dispatch --------------------
 // Worksheet::add_conditional_format is generic over the ConditionalFormat
 // trait, and a #[pyclass] can't be generic, so the concrete type has to be
@@ -4260,6 +4474,7 @@ enum AnyCf {
     Scale2(rcf::ConditionalFormat2ColorScale),
     Scale3(rcf::ConditionalFormat3ColorScale),
     DataBar(rcf::ConditionalFormatDataBar),
+    IconSet(rcf::ConditionalFormatIconSet),
 }
 
 macro_rules! try_downcast_cf {
@@ -4283,6 +4498,7 @@ fn extract_cf(cf: &Bound<'_, PyAny>) -> PyResult<AnyCf> {
     try_downcast_cf!(cf, ConditionalFormat2ColorScale, Scale2);
     try_downcast_cf!(cf, ConditionalFormat3ColorScale, Scale3);
     try_downcast_cf!(cf, ConditionalFormatDataBar, DataBar);
+    try_downcast_cf!(cf, ConditionalFormatIconSet, IconSet);
     Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
         "add_conditional_format() expects a ConditionalFormat* object",
     ))
@@ -5549,6 +5765,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ConditionalFormat2ColorScale>()?;
     m.add_class::<ConditionalFormat3ColorScale>()?;
     m.add_class::<ConditionalFormatDataBar>()?;
+    m.add_class::<ConditionalFormatIconSet>()?;
+    m.add_class::<ConditionalFormatCustomIcon>()?;
     m.add_class::<Sparkline>()?;
     m.add_class::<Chart>()?;
     m.add_class::<ChartSeries>()?;

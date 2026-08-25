@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-08-19
+
+Patch release, no breaking changes. Adds conditional format icon sets.
+
+### Added
+
+- **`ConditionalFormatIconSet` and `ConditionalFormatCustomIcon`.** All
+  20 icon set styles (`three_arrows` through `five_boxes`),
+  `reverse_icons()`, `show_icons_only()`, and per-icon
+  threshold/type/direction overrides via `set_icons()`.
+
+  Real upstream gotcha, worked around rather than just documented: a
+  freshly-constructed icon set fails `rust_xlsxwriter`'s own validation
+  unless `set_icon_type()` has been called at least once --
+  `ConditionalFormatIconSet::new()` leaves its internal icon-rules list
+  empty, and `add_conditional_format()` requires exactly 3/4/5 entries
+  matching the icon type. This binding's constructor calls
+  `set_icon_type()` with upstream's own default internally, so a
+  freshly-constructed instance is valid on its own -- the way a caller
+  would reasonably expect -- without needing to know about this.
+
+  Also fixed while verifying against source: two icon type names are
+  reversed from what they'd suggest if guessed --
+  `three_symbols`/`three_symbols_circled` map to the OOXML presets
+  `3Symbols2`/`3Symbols` respectively, not the other way around.
+
 ## [0.2.6] - 2026-08-19
 
 Patch release, no breaking changes. Adds row/column outline grouping.

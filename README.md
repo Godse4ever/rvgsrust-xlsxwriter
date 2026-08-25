@@ -566,8 +566,42 @@ is `formula`. Every class also has `set_multi_range(range)` and
 
 Color scales and data bars have no `set_format()`: Excel renders those
 from the scale or bar definition itself rather than from a format record.
+Icon sets are the same way.
 
-Icon sets are not exposed yet.
+### Icon Sets
+
+```python
+from rvgsrust_xlsxwriter import ConditionalFormatIconSet, ConditionalFormatCustomIcon
+
+cf = ConditionalFormatIconSet()
+cf.set_icon_type("three_traffic_lights")   # the default; 20 styles total
+cf.reverse_icons(True)                     # lowest value gets the "highest" icon
+cf.show_icons_only(True)                   # hide the cell's own value
+ws.add_conditional_format(0, 0, 9, 0, cf)
+```
+
+Override individual thresholds/icons/direction with `set_icons()`,
+passing one `ConditionalFormatCustomIcon` per icon in the set (3, 4, or
+5, matching `set_icon_type`):
+
+```python
+icons = [ConditionalFormatCustomIcon() for _ in range(3)]
+icons[0].set_rule("percent", 0)
+icons[1].set_rule("percent", 33)
+icons[2].set_rule("percent", 67)
+icons[2].set_icon_type("five_boxes", 4)   # borrow one icon from a different set
+icons[2].set_greater_than(True)           # ">" instead of Excel's default ">="
+
+cf = ConditionalFormatIconSet()
+cf.set_icons(icons)
+```
+
+`ConditionalFormatIconSet()` is valid on its own with no other calls --
+internally it already calls `set_icon_type("three_traffic_lights")`,
+working around a real `rust_xlsxwriter` gotcha where a freshly
+constructed icon set otherwise fails validation (its default icon-rules
+list starts empty, and Excel requires exactly 3/4/5 entries matching
+the type).
 
 ## Data Validation
 
@@ -1009,7 +1043,8 @@ deliberate design win.
 | **v0.2.4** | ✅ Patch release: `write_dataframe()` no longer materializes a formatted blank cell for every null when `column_formats` is used (was up to 84x slower / 29x larger on sparse wide data); upgraded `rust_xlsxwriter` 0.96 -> 0.98.2 (MSRV 1.85 -> 1.88); `Format` at full parity except `set_font_scheme()` (`set_quote_prefix`, `set_hyperlink`, `set_checkbox`, `set_font_family/charset/script`, `set_reading_direction`, and matching `unset_*` inverses); `set_range_format_with_border()` and `clear_cell_format()` on `Worksheet` |
 | **v0.2.5** | ✅ Patch release: `DataValidation` and `Worksheet.add_data_validation()` -- dropdown lists (from a string list or a cell range), whole-number/decimal-number/text-length range rules, custom formula rules, and every input/error-message setting. Date/time rules and cell-reference formula variants still open. |
 | **v0.2.6** | ✅ Patch release: row/column outline grouping (`group_rows`/`group_columns`/`*_collapsed`/`group_symbols_above`/`group_symbols_to_left`). Known limitation: `group_rows()` doesn't apply per-row grouping when `constant_memory=True` -- see README's Known Limitations. |
-| **v0.3** | 🚧 Date/time data validation rules; conditional format icon sets |
+| **v0.2.7** | ✅ Patch release: `ConditionalFormatIconSet` and `ConditionalFormatCustomIcon` -- all 20 icon set styles, `reverse_icons`, `show_icons_only`, per-icon threshold/type/direction overrides. |
+| **v0.3** | 🚧 Date/time data validation rules; chart error bars and secondary axes |
 | **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
@@ -1069,10 +1104,11 @@ The largest remaining gaps are header/footer text images on
 `Worksheet` (`set_header_image`/`set_footer_image` -- still need an
 `Image` pyclass first); date/time data validation rules and the
 cell-reference formula variants of the numeric/text-length/date/time
-rules; error bars, secondary axes and a handful of formatting options
-on `Chart`; and icon sets on conditional formats. `Format` is at full
-parity now except `set_font_scheme()`, deliberately not exposed -- see
-MISSING.md's "Suggested order" for the full ranked list.
+rules; and error bars, secondary axes and a handful of formatting
+options on `Chart`. `Conditional formats` and `Format` are both at
+full parity now (`Format` except `set_font_scheme()`, deliberately
+not exposed) -- see MISSING.md's "Suggested order" for the full
+ranked list.
 
 ## Performance TODO
 
