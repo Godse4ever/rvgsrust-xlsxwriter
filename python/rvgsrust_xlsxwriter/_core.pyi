@@ -677,10 +677,15 @@ class ConditionalFormatCustomIcon:
     def set_greater_than(self, enable: bool) -> "ConditionalFormatCustomIcon": ...
 
 class ConditionalFormatIconSet:
+    """The constructor already calls set_icon_type("three_traffic_lights")
+    internally, so a freshly-constructed instance is valid on its own
+    without calling any method -- rust_xlsxwriter's own default
+    construction doesn't populate the required per-icon rules, which
+    would otherwise raise a validation error even with every setting
+    left at its default."""
     def set_icon_type(self, icon_type: IconSetType) -> "ConditionalFormatIconSet":
-        """Defaults to three_traffic_lights if never called. Also sets
-        the default percent thresholds for that icon count -- override
-        individual ones with set_icons()."""
+        """Also resets the default percent thresholds for that icon
+        count -- override individual ones with set_icons()."""
         ...
     def reverse_icons(self, enable: bool) -> "ConditionalFormatIconSet": ...
     def show_icons_only(self, enable: bool) -> "ConditionalFormatIconSet": ...
