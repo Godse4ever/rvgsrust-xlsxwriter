@@ -420,6 +420,9 @@ class Chart:
     # num_format/hidden/reverse/major_gridlines/minor_gridlines/font/format;
     # date_axis/text_axis are x-only) mirror each other and are omitted here
     # for brevity -- see README.md's Charts section for the full list.
+    # set_x2_axis_*/set_y2_axis_* mirror the primary axis methods above
+    # (same name/min/max/... set, date_axis/text_axis still x-only) and
+    # only take effect when a series has set_secondary_axis(True).
 
 class ChartSeries:
     def set_values(self, range: str) -> "ChartSeries": ...

@@ -267,6 +267,103 @@ def test_x_axis_date_and_text_axis():
     assert _simple(set_x_axis_text_axis=True)
 
 
+# --------------------------- secondary axes ---------------------------
+
+
+def _with_secondary(chart_calls=None):
+    """Two series (one routed to the secondary axis) + optional chart-level
+    x2/y2 axis calls. Upstream only emits secondary-axis XML when a series
+    has secondary_axis=True (Chart::check_for_secondary_axis()), so a
+    secondary-axis test must route a series there, not just call the
+    chart-level setters."""
+
+    def build(ws):
+        primary = ChartSeries()
+        primary.set_values("Sheet1!$A$1:$A$5")
+
+        secondary = ChartSeries()
+        secondary.set_values("Sheet1!$B$1:$B$5")
+        secondary.set_secondary_axis(True)
+
+        chart = Chart("column")
+        chart.push_series(primary)
+        chart.push_series(secondary)
+        for name, arg in (chart_calls or {}).items():
+            method = getattr(chart, name)
+            if arg is None:
+                method()
+            else:
+                method(arg)
+        ws.insert_chart(0, 3, chart)
+
+    return _build(build)[0]
+
+
+def test_secondary_axis_not_emitted_without_a_secondary_series():
+    """A naive call to set_x2_axis_* without routing any series to the
+    secondary axis must not silently produce secondary-axis XML."""
+    xml = _simple(set_x2_axis_name="Secondary")
+    assert "valAx" in xml
+    assert xml.count("<c:valAx>") == 1
+
+
+def test_secondary_axis_emitted_with_a_secondary_series():
+    xml = _with_secondary()
+    assert xml.count("<c:valAx>") == 2
+
+
+def test_x2_axis_name():
+    assert "Units" in _with_secondary({"set_x2_axis_name": "Units"})
+
+
+def test_y2_axis_name():
+    assert "Revenue" in _with_secondary({"set_y2_axis_name": "Revenue"})
+
+
+def test_y2_axis_min_and_max():
+    xml = _with_secondary({"set_y2_axis_min": 0.0})
+    xml = _with_secondary(
+        {"set_y2_axis_min": 0.0, "set_y2_axis_max": 100.0}
+    )
+    assert xml.count("<c:valAx>") == 2
+
+
+def test_y2_axis_units():
+    xml = _with_secondary(
+        {"set_y2_axis_major_unit": 20.0, "set_y2_axis_minor_unit": 5.0}
+    )
+    assert "20" in xml and "5" in xml
+
+
+def test_x2_axis_log_base():
+    assert '<c:logBase val="10"/>' in _with_secondary({"set_x2_axis_log_base": 10})
+
+
+def test_y2_axis_num_format():
+    assert "#,##0.00" in _with_secondary({"set_y2_axis_num_format": "#,##0.00"})
+
+
+def test_x2_axis_hidden_emits_delete():
+    xml = _with_secondary({"set_x2_axis_hidden": True})
+    assert '<c:delete val="1"/>' in xml
+
+
+def test_x2_axis_reverse_takes_no_argument():
+    assert _with_secondary({"set_x2_axis_reverse": None})
+
+
+def test_x2_axis_gridlines():
+    xml = _with_secondary(
+        {"set_x2_axis_major_gridlines": True, "set_y2_axis_minor_gridlines": True}
+    )
+    assert xml.count("<c:valAx>") == 2
+
+
+def test_x2_axis_date_and_text_axis():
+    assert _with_secondary({"set_x2_axis_date_axis": True})
+    assert _with_secondary({"set_x2_axis_text_axis": True})
+
+
 # ------------------------------ legend ------------------------------
 
 
