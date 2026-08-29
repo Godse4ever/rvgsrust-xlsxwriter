@@ -1049,7 +1049,8 @@ deliberate design win.
 | **v0.2.10** | ✅ Patch release: Worksheet view/visibility -- row/column hidden state and pixel sizing, zoom/selection/top-left-cell/active/first-tab/right-to-left/view mode, `ignore_error`/`ignore_error_range` (9 error types), autofit tuning, NaN/infinity display strings, `clear_cell()`. |
 | **v0.2.11** | ✅ Patch release: Worksheet protection -- `ProtectionOptions` pyclass (15 fields matching upstream defaults), `protect_with_options()`, `unprotect_range()`. |
 | **v0.2.12** | ✅ Patch release: Worksheet image placement -- `insert_image_with_offset()`, `embed_image()`/`embed_image_with_format()`, `insert_image_fit_to_cell()`/`insert_image_fit_to_cell_centered()`, `insert_background_image()`, all taking a plain image path like the existing `insert_image()`. |
-| **v0.3** | 🚧 Date/time data validation rules; Worksheet checkboxes/buttons/shapes, notes, autofilter criteria |
+| **v0.2.13** | ✅ Patch release: checkboxes (`insert_checkbox()`/`insert_checkbox_with_format()`), a new `Button` pyclass (Form Control buttons), and a new `Shape` pyclass (Textbox only -- the only shape type upstream implements; text/sizing, not fill/line/font). |
+| **v0.3** | 🚧 Date/time data validation rules; Worksheet notes, autofilter criteria |
 | **v0.4** | 🚧 Workbook gaps (chartsheets, themes, VBA); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
