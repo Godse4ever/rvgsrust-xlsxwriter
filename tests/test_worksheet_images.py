@@ -62,9 +62,14 @@ def test_insert_image_with_offset_missing_file_raises():
 
 
 def test_embed_image(image_path):
+    # embed_image() ("Place in Cell", Excel 365+ only) uses the rich-value
+    # cell-metadata mechanism, not the classic <drawing>/xdr:sp anchor that
+    # insert_image() and friends use -- the cell itself holds a #VALUE!
+    # fallback (for pre-2023 Excel) plus a vm="N" metadata reference.
     sheet, names = _sheet_xml(lambda ws: ws.embed_image(0, 0, image_path))
     assert any(n.startswith("xl/media/") for n in names)
-    assert "<drawing " in sheet
+    assert "xl/richData/rdrichvalue.xml" in names
+    assert 'vm="1"' in sheet
 
 
 def test_embed_image_with_format(image_path):
@@ -74,6 +79,7 @@ def test_embed_image_with_format(image_path):
 
     sheet, names = _sheet_xml(build)
     assert any(n.startswith("xl/media/") for n in names)
+    assert "xl/richData/rdrichvalue.xml" in names
 
 
 def test_insert_image_fit_to_cell(image_path):
