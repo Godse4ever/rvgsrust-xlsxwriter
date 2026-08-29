@@ -42,7 +42,7 @@ jobs:
         set -e
         cat clippy_output.log
         if [ "$code" != "0" ]; then
-          grep -a -E "^error|-->" clippy_output.log | head -n 40 | while IFS= read -r line; do
+          grep -a -n -E "error(\[|:)|-->|help:" clippy_output.log | head -n 60 | while IFS= read -r line; do
             line="${line//$'\r'/}"
             if [ -n "$line" ]; then
               echo "::error::${line//$'%'/%25}"
