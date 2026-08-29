@@ -114,10 +114,11 @@ conveniently.
 
 ---
 
-## 3. Charts — ~60 gaps
+## 3. Charts — ~59 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
-labels). What remains:
+labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`) shipped in
+PR #28. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -128,7 +129,6 @@ labels). What remains:
 | Data table | `chart.rs:2470` | `ChartDataTable` pyclass (`chart.rs:17269`), via `Chart.set_data_table(table)` | Medium |
 | Combined charts | `chart.rs:1744` | `Chart.combine(other_chart)` | Medium |
 | Chart / plot area formatting | `chart.rs:1530`, `1592` | Flatten as `set_chart_area_format(fmt)` / `set_plot_area_format(fmt)`, since `ChartArea::new` is `pub(crate)` like the axes | Medium |
-| Secondary axes | `chart.rs:1404` | `set_x2_axis_*` / `set_y2_axis_*`, mirroring the existing flattened axis methods. Pairs with the `ChartSeries.set_secondary_axis` we already expose | **Medium-High** |
 | Per-point formatting | `chart.rs:7750` | `ChartPoint` pyclass, via `ChartSeries.set_points([...])` | Medium |
 | Gradient fills | `chart.rs:13980` | `ChartFormat.set_gradient_fill(...)` plus `ChartGradientStop` | Medium |
 | Pattern fills | `chart.rs:13915` | `ChartFormat.set_pattern_fill(...)` | Low |
@@ -191,8 +191,9 @@ writing worksheet XML ourselves. Worth reporting upstream.
 
 Ranked by value per unit of effort:
 
-1. **Chart error bars and secondary axes.**
-2. Everything else -- the remaining Chart gaps (~19 items), Workbook
+1. **Chart error bars.** Secondary axes (the other half of this
+   ranked item) shipped in PR #28.
+2. Everything else -- the remaining Chart gaps (~18 items), Workbook
    gaps (6), and Worksheet's notes/filters/views/protection/images
    bundle (1e).
 

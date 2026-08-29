@@ -5,9 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-08-29
+
+Patch release, no breaking changes. Adds chart secondary axes.
+
+### Added
+
+- **Chart secondary axes.** `set_x2_axis_*`/`set_y2_axis_*`, mirroring
+  the existing `set_x_axis_*`/`set_y_axis_*` setters (`date_axis`/
+  `text_axis` stay x-only, matching the primary axis). Takes effect once
+  a series is routed to the secondary axis via the existing
+  `ChartSeries.set_secondary_axis()` -- calling the setters alone with
+  no series on the secondary axis emits no secondary-axis XML, matching
+  upstream's own `check_for_secondary_axis()` gate.
+
 ## [0.2.7] - 2026-08-19
 
-Patch release, no breaking changes. Adds conditional format icon sets.
+Patch release, no breaking changes. Adds chart secondary axes and
+conditional format icon sets.
 
 ### Added
 
