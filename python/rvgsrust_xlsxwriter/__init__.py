@@ -108,6 +108,7 @@ from rvgsrust_xlsxwriter._core import (
     ChartMarker,
     ChartTrendline,
     ChartDataLabel,
+    ChartErrorBars,
 )
 
 
@@ -200,6 +201,7 @@ __all__ = [
     "ChartMarker",
     "ChartTrendline",
     "ChartDataLabel",
+    "ChartErrorBars",
 ]
 
 # `from __future__ import annotations` above binds the name `annotations`
