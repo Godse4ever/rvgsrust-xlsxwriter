@@ -114,15 +114,14 @@ conveniently.
 
 ---
 
-## 3. Charts — ~59 gaps
+## 3. Charts — ~58 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
-labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`) shipped in
-PR #28. What remains:
+labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
+error bars (`ChartErrorBars`, PR #29) have shipped. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Error bars | `chart.rs:7966` | `ChartErrorBars` pyclass (`chart.rs:17005`), attached via `ChartSeries.set_x_error_bars` / `set_y_error_bars` | **Medium-High** |
 | Up-down bars | `chart.rs:2015` | `Chart.set_up_down_bars()`, `set_up_bar_format(fmt)`, `set_down_bar_format(fmt)` | Medium |
 | Drop lines | `chart.rs:2326` | `Chart.set_drop_lines()`, `set_drop_lines_format(fmt)` | Medium |
 | High-low lines | `chart.rs:2184` | `Chart.set_high_low_lines()`, `set_high_low_lines_format(fmt)` | Medium |
@@ -189,13 +188,21 @@ writing worksheet XML ourselves. Worth reporting upstream.
 
 ## Suggested order
 
-Ranked by value per unit of effort:
+Charts deprioritized to last per explicit direction -- everything
+else (Worksheet 1e, Workbook) goes first regardless of the
+value-per-effort ranking that guided the list before this:
 
-1. **Chart error bars.** Secondary axes (the other half of this
-   ranked item) shipped in PR #28.
-2. Everything else -- the remaining Chart gaps (~18 items), Workbook
-   gaps (6), and Worksheet's notes/filters/views/protection/images
-   bundle (1e).
+1. Worksheet 1e -- notes, filters, views, protection, images. Cell
+   notes and autofilter criteria need new pyclasses (`Note`,
+   `FilterCondition`); the rest are flat setters.
+2. Workbook -- 6 gaps. Chartsheets need a `Chartsheet` pyclass; the
+   rest (themes, default format, VBA, read-only-recommended,
+   tempdir/large-zip) are flat setters.
+3. Charts -- ~58 remaining gaps (data tables, combined charts,
+   gradient/pattern fills, axis label placement/tick marks/date-min-
+   max, manual layout, per-point formatting, up-down/drop/high-low
+   bars, legend entry deletion, object movement/decorative/scaling).
+   Secondary axes (PR #28) and error bars (PR #29) already shipped.
 
 Headers/footers (text), the Format/range-format gaps, the core of
 data validation, row/column grouping, and conditional format icon

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-08-29
+
+Patch release, no breaking changes. Adds chart error bars.
+
+### Added
+
+- **`ChartErrorBars`.** All five upstream types (`set_type_standard_error()`
+  -- the default, `set_type_fixed_value()`, `set_type_percentage()`,
+  `set_type_standard_deviation()`, `set_type_custom(plus_range,
+  minus_range)`), `set_direction()` (both/minus/plus), `set_end_cap()`,
+  and `set_format()` (Excel only honors `ChartFormat.set_line()` on error
+  bars, per upstream's own doc comment). Attached to a series via the new
+  `ChartSeries.set_y_error_bars()`/`set_x_error_bars()`; horizontal bars
+  only render in Excel for Scatter and Bar charts.
+
 ## [0.2.8] - 2026-08-29
 
 Patch release, no breaking changes. Adds chart secondary axes.
