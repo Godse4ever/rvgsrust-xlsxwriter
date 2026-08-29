@@ -1044,8 +1044,9 @@ deliberate design win.
 | **v0.2.5** | ✅ Patch release: `DataValidation` and `Worksheet.add_data_validation()` -- dropdown lists (from a string list or a cell range), whole-number/decimal-number/text-length range rules, custom formula rules, and every input/error-message setting. Date/time rules and cell-reference formula variants still open. |
 | **v0.2.6** | ✅ Patch release: row/column outline grouping (`group_rows`/`group_columns`/`*_collapsed`/`group_symbols_above`/`group_symbols_to_left`). Known limitation: `group_rows()` doesn't apply per-row grouping when `constant_memory=True` -- see README's Known Limitations. |
 | **v0.2.7** | ✅ Patch release: `ConditionalFormatIconSet` and `ConditionalFormatCustomIcon` -- all 20 icon set styles, `reverse_icons`, `show_icons_only`, per-icon threshold/type/direction overrides. |
-| **v0.3** | 🚧 Date/time data validation rules; chart error bars and secondary axes |
-| **v0.4** | 🚧 Conditional format icon sets; chart error bars and secondary axes; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
+| **v0.2.8** | ✅ Patch release: chart secondary axes -- `set_x2_axis_*`/`set_y2_axis_*`, mirroring the existing `x_axis`/`y_axis` setters. Takes effect once a series is routed to the secondary axis via the existing `ChartSeries.set_secondary_axis()`. |
+| **v0.3** | 🚧 Date/time data validation rules; chart error bars |
+| **v0.4** | 🚧 Chart error bars; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
@@ -1055,10 +1056,45 @@ All three phases have landed:
    Scatter + stacked variants) + basic title/legend/axis
 2. ✅ Formatting depth: `ChartFormat`/`ChartFont`, line/font/fill styling
 3. ✅ Decorations: `ChartMarker`, `ChartTrendline`, `ChartDataLabel`
+4. ✅ Secondary axes: `set_x2_axis_*`/`set_y2_axis_*`
 
 Remaining chart work, tracked in [MISSING.md](MISSING.md): error bars,
 data tables, manual layout, and the less common chart types (Radar,
 Stock, Doughnut, Surface).
+
+### Secondary Axes
+
+Route a series to the secondary axis with the existing
+`ChartSeries.set_secondary_axis()`, then style that axis with
+`set_x2_axis_*`/`set_y2_axis_*` (same method set as the primary
+`set_x_axis_*`/`set_y_axis_*`, minus `date_axis`/`text_axis` on the y
+side). The secondary-axis XML is only written once a series actually
+uses it — calling the setters alone has no effect.
+
+```python
+from rvgsrust_xlsxwriter import Workbook, Chart, ChartSeries
+
+wb = Workbook("secondary_axis.xlsx")
+ws = wb.add_worksheet()
+ws.write_column(0, 0, [10, 40, 50, 20, 10, 50])
+ws.write_column(0, 1, [1, 4, 5, 2, 1, 5])
+
+units = ChartSeries()
+units.set_values("Sheet1!$A$1:$A$6")
+
+revenue = ChartSeries()
+revenue.set_values("Sheet1!$B$1:$B$6")
+revenue.set_secondary_axis(True)
+
+chart = Chart("column")
+chart.push_series(units)
+chart.push_series(revenue)
+chart.set_y_axis_name("Units")
+chart.set_y2_axis_name("Revenue ($M)")
+ws.insert_chart(0, 3, chart)
+
+wb.close()
+```
 
 ### Known limitations
 
@@ -1104,9 +1140,9 @@ The largest remaining gaps are header/footer text images on
 `Worksheet` (`set_header_image`/`set_footer_image` -- still need an
 `Image` pyclass first); date/time data validation rules and the
 cell-reference formula variants of the numeric/text-length/date/time
-rules; and error bars, secondary axes and a handful of formatting
-options on `Chart`. `Conditional formats` and `Format` are both at
-full parity now (`Format` except `set_font_scheme()`, deliberately
+rules; and error bars and a handful of formatting options on `Chart`
+(secondary axes closed in v0.2.8). `Conditional formats` and `Format`
+are both at full parity now (`Format` except `set_font_scheme()`, deliberately
 not exposed) -- see MISSING.md's "Suggested order" for the full
 ranked list.
 
