@@ -92,7 +92,11 @@ jobs:
         set -e
         cat pytest_output.log
         if [ "$code" != "0" ]; then
-          tail -c 15000 pytest_output.log | while IFS= read -r line; do
+          {
+            awk '/^=+ short test summary/{f=1} f' pytest_output.log | grep "^FAILED"
+            awk '/^=+ FAILURES =+$/{f=1} /^=+ short test summary/{f=0} f' pytest_output.log \
+              | grep -E "Error|assert|^E " | head -n 30
+          } | head -n 10 | while IFS= read -r line; do
             line="${line//$'\r'/}"
             if [ -n "$line" ]; then
               echo "::error::${line//$'%'/%25}"
