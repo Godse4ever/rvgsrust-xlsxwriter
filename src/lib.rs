@@ -5123,6 +5123,147 @@ impl Chart {
         self.inner.y_axis().set_minor_gridlines(enable);
     }
 
+    // ---- x2 axis (secondary) ----
+    // Only written when at least one series has secondary_axis=True
+    // (ChartSeries.set_secondary_axis) — mirrors upstream's
+    // check_for_secondary_axis(), which is called unconditionally in
+    // Chart::write_chart_type() regardless of these setters being used.
+
+    fn set_x2_axis_name(&mut self, name: &str) {
+        self.inner.x2_axis().set_name(name);
+    }
+
+    fn set_x2_axis_min(&mut self, min: f64) {
+        self.inner.x2_axis().set_min(min);
+    }
+
+    fn set_x2_axis_max(&mut self, max: f64) {
+        self.inner.x2_axis().set_max(max);
+    }
+
+    fn set_x2_axis_major_unit(&mut self, value: f64) {
+        self.inner.x2_axis().set_major_unit(value);
+    }
+
+    fn set_x2_axis_minor_unit(&mut self, value: f64) {
+        self.inner.x2_axis().set_minor_unit(value);
+    }
+
+    fn set_x2_axis_log_base(&mut self, base: u16) {
+        self.inner.x2_axis().set_log_base(base);
+    }
+
+    fn set_x2_axis_num_format(&mut self, num_format: &str) {
+        self.inner.x2_axis().set_num_format(num_format);
+    }
+
+    fn set_x2_axis_hidden(&mut self, enable: bool) {
+        self.inner.x2_axis().set_hidden(enable);
+    }
+
+    // Upstream's set_reverse() takes no argument.
+    fn set_x2_axis_reverse(&mut self) {
+        self.inner.x2_axis().set_reverse();
+    }
+
+    fn set_x2_axis_major_gridlines(&mut self, enable: bool) {
+        self.inner.x2_axis().set_major_gridlines(enable);
+    }
+
+    fn set_x2_axis_minor_gridlines(&mut self, enable: bool) {
+        self.inner.x2_axis().set_minor_gridlines(enable);
+    }
+
+    fn set_x2_axis_date_axis(&mut self, enable: bool) {
+        self.inner.x2_axis().set_date_axis(enable);
+    }
+
+    fn set_x2_axis_text_axis(&mut self, enable: bool) {
+        self.inner.x2_axis().set_text_axis(enable);
+    }
+
+    fn set_x2_axis_font(&mut self, font: &ChartFont) {
+        self.inner.x2_axis().set_font(&font.inner);
+    }
+
+    fn set_x2_axis_name_font(&mut self, font: &ChartFont) {
+        self.inner.x2_axis().set_name_font(&font.inner);
+    }
+
+    fn set_x2_axis_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.x2_axis().set_format(&mut fmt);
+    }
+
+    fn set_x2_axis_name_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.x2_axis().set_name_format(&mut fmt);
+    }
+
+    // ---- y2 axis (secondary) ----
+
+    fn set_y2_axis_name(&mut self, name: &str) {
+        self.inner.y2_axis().set_name(name);
+    }
+
+    fn set_y2_axis_min(&mut self, min: f64) {
+        self.inner.y2_axis().set_min(min);
+    }
+
+    fn set_y2_axis_max(&mut self, max: f64) {
+        self.inner.y2_axis().set_max(max);
+    }
+
+    fn set_y2_axis_major_unit(&mut self, value: f64) {
+        self.inner.y2_axis().set_major_unit(value);
+    }
+
+    fn set_y2_axis_minor_unit(&mut self, value: f64) {
+        self.inner.y2_axis().set_minor_unit(value);
+    }
+
+    fn set_y2_axis_log_base(&mut self, base: u16) {
+        self.inner.y2_axis().set_log_base(base);
+    }
+
+    fn set_y2_axis_num_format(&mut self, num_format: &str) {
+        self.inner.y2_axis().set_num_format(num_format);
+    }
+
+    fn set_y2_axis_hidden(&mut self, enable: bool) {
+        self.inner.y2_axis().set_hidden(enable);
+    }
+
+    fn set_y2_axis_reverse(&mut self) {
+        self.inner.y2_axis().set_reverse();
+    }
+
+    fn set_y2_axis_major_gridlines(&mut self, enable: bool) {
+        self.inner.y2_axis().set_major_gridlines(enable);
+    }
+
+    fn set_y2_axis_minor_gridlines(&mut self, enable: bool) {
+        self.inner.y2_axis().set_minor_gridlines(enable);
+    }
+
+    fn set_y2_axis_font(&mut self, font: &ChartFont) {
+        self.inner.y2_axis().set_font(&font.inner);
+    }
+
+    fn set_y2_axis_name_font(&mut self, font: &ChartFont) {
+        self.inner.y2_axis().set_name_font(&font.inner);
+    }
+
+    fn set_y2_axis_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.y2_axis().set_format(&mut fmt);
+    }
+
+    fn set_y2_axis_name_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.y2_axis().set_name_format(&mut fmt);
+    }
+
     // ---- legend ----
 
     // One of right, left, top, bottom, top_right.
