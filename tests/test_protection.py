@@ -28,10 +28,19 @@ def test_protect_with_options_defaults():
     sheet = _sheet_xml(lambda ws: ws.protect_with_options(ProtectionOptions()))
     assert "<sheetProtection " in sheet
     assert 'sheet="1"' in sheet
-    # Defaults leave select/edit permissive, so none of those attributes
-    # should be written.
+    # select_locked_cells/select_unlocked_cells default to permissive
+    # (True), so those two stay absent. edit_objects/edit_scenarios
+    # default to restrictive (False), so "objects"/"scenarios" DO appear
+    # by default -- covered by test_protect_with_options_allow_edit below.
     assert 'selectLockedCells="1"' not in sheet
     assert 'selectUnlockedCells="1"' not in sheet
+    assert 'objects="1"' in sheet
+    assert 'scenarios="1"' in sheet
+
+
+def test_protect_with_options_allow_edit():
+    options = ProtectionOptions(edit_objects=True, edit_scenarios=True)
+    sheet = _sheet_xml(lambda ws: ws.protect_with_options(options))
     assert 'objects="1"' not in sheet
     assert 'scenarios="1"' not in sheet
 
