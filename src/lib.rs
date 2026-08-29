@@ -3288,6 +3288,77 @@ impl Worksheet {
         })
     }
 
+    // ---- checkboxes, buttons, shapes ----
+
+    #[pyo3(signature = (row, col, value, format=None))]
+    fn insert_checkbox(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        value: bool,
+        format: Option<&Format>,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            match format {
+                Some(f) => sheet.insert_checkbox_with_format(row, col, value, &f.inner),
+                None => sheet.insert_checkbox(row, col, value),
+            }
+            .map(|_| ())
+        })
+    }
+
+    fn insert_button(&self, py: Python<'_>, row: u32, col: u16, button: &Button) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            sheet.insert_button(row, col, &button.inner).map(|_| ())
+        })
+    }
+
+    fn insert_button_with_offset(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        button: &Button,
+        x_offset: u32,
+        y_offset: u32,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            sheet
+                .insert_button_with_offset(row, col, &button.inner, x_offset, y_offset)
+                .map(|_| ())
+        })
+    }
+
+    // Only Textbox shapes are supported upstream -- see the Shape
+    // pyclass below.
+    fn insert_shape(&self, py: Python<'_>, row: u32, col: u16, shape: &Shape) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            sheet.insert_shape(row, col, &shape.inner).map(|_| ())
+        })
+    }
+
+    fn insert_shape_with_offset(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        shape: &Shape,
+        x_offset: u32,
+        y_offset: u32,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            sheet
+                .insert_shape_with_offset(row, col, &shape.inner, x_offset, y_offset)
+                .map(|_| ())
+        })
+    }
+
     fn autofit(&self, py: Python<'_>) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.autofit();
@@ -3671,6 +3742,91 @@ impl ProtectionOptions {
                 contents,
             },
         }
+    }
+}
+
+// -----------------------------------------------------------------------
+// Button
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct Button {
+    inner: rust_xlsxwriter::Button,
+}
+
+#[pymethods]
+impl Button {
+    #[new]
+    fn new() -> Self {
+        Button {
+            inner: rust_xlsxwriter::Button::new(),
+        }
+    }
+
+    // Upstream default caption is "Button 1", "Button 2" etc; caption
+    // over 255 characters is silently ignored by upstream (eprintln!,
+    // no error), not rejected here either.
+    fn set_caption(&mut self, caption: &str) {
+        self.inner = self.inner.clone().set_caption(caption);
+    }
+
+    fn set_macro(&mut self, name: &str) {
+        self.inner = self.inner.clone().set_macro(name);
+    }
+
+    fn set_width(&mut self, width: u32) {
+        self.inner = self.inner.clone().set_width(width);
+    }
+
+    fn set_height(&mut self, height: u32) {
+        self.inner = self.inner.clone().set_height(height);
+    }
+
+    fn set_alt_text(&mut self, alt_text: &str) {
+        self.inner = self.inner.clone().set_alt_text(alt_text);
+    }
+}
+
+// -----------------------------------------------------------------------
+// Shape
+// -----------------------------------------------------------------------
+// MVP: only the Textbox shape type upstream supports (no other Excel
+// shape types are implemented in rust_xlsxwriter itself), and only the
+// plain-text/sizing subset of Shape's own API -- not ShapeFormat/
+// ShapeFont/ShapeText (fill, line, font, text direction/rotation) or
+// set_url()/set_text_link(). A reasonable line to draw for a "Low"
+// priority item; formatting can follow in a later pass if requested.
+
+#[pyclass]
+#[derive(Clone)]
+struct Shape {
+    inner: rust_xlsxwriter::Shape,
+}
+
+#[pymethods]
+impl Shape {
+    #[staticmethod]
+    fn textbox() -> Self {
+        Shape {
+            inner: rust_xlsxwriter::Shape::textbox(),
+        }
+    }
+
+    fn set_text(&mut self, text: &str) {
+        self.inner = self.inner.clone().set_text(text);
+    }
+
+    fn set_width(&mut self, width: u32) {
+        self.inner = self.inner.clone().set_width(width);
+    }
+
+    fn set_height(&mut self, height: u32) {
+        self.inner = self.inner.clone().set_height(height);
+    }
+
+    fn set_alt_text(&mut self, alt_text: &str) {
+        self.inner = self.inner.clone().set_alt_text(alt_text);
     }
 }
 
@@ -6437,6 +6593,8 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TableColumn>()?;
     m.add_class::<DataValidation>()?;
     m.add_class::<ProtectionOptions>()?;
+    m.add_class::<Button>()?;
+    m.add_class::<Shape>()?;
     m.add_class::<ConditionalFormatCell>()?;
     m.add_class::<ConditionalFormatBlank>()?;
     m.add_class::<ConditionalFormatDuplicate>()?;
