@@ -498,16 +498,28 @@ def test_full_option_sweep():
     assert '<c:legendPos val="b"/>' in xml
 
 
+
 # ----------------------------- error bars -----------------------------
+#
+# Real upstream quirk, confirmed against source (chart.rs write_series()
+# vs write_scatter_series()): only Scatter charts write real x AND y
+# error bars with a <c:errDir> telling Excel which axis they're on. Every
+# other chart type goes through the generic write_series() path, which
+# special-cases Bar (only x_error_bars is honored, written with an empty/
+# absent errDir since a Bar chart only has one value axis) and Column
+# (mirror image: only y_error_bars, same empty errDir), and for every
+# other type (Line, Pie, Area, Radar, Doughnut, Stock, ...) only
+# y_error_bars is honored, written with errDir="y". In every one of
+# these non-Scatter cases the "wrong" axis's error bars are silently
+# dropped -- not a binding bug, this is upstream's own behavior.
 
 
-def _with_error_bars(y_error_bars=None, x_error_bars=None, chart_type="bar"):
-    """Bar chart (Excel supports x_error_bars on Scatter/Bar only) with
-    one series carrying the given error bars."""
-
+def _with_error_bars(y_error_bars=None, x_error_bars=None, chart_type="scatter"):
     def build(ws):
         series = ChartSeries()
         series.set_values("Sheet1!$B$1:$B$5")
+        if chart_type == "scatter":
+            series.set_categories("Sheet1!$A$1:$A$5")
         if y_error_bars is not None:
             series.set_y_error_bars(y_error_bars)
         if x_error_bars is not None:
@@ -520,21 +532,31 @@ def _with_error_bars(y_error_bars=None, x_error_bars=None, chart_type="bar"):
 
 
 def test_no_error_bars_by_default():
-    xml = _simple(chart_type="bar")
-    assert "errBars" not in xml
+    assert "errBars" not in _simple()
 
 
-def test_y_error_bars_standard_error_default():
+def test_scatter_y_error_bars_standard_error_default():
     eb = ChartErrorBars()
     xml = _with_error_bars(y_error_bars=eb)
     assert "<c:errBars>" in xml
+    assert '<c:errDir val="y"/>' in xml
     assert '<c:errBarType val="both"/>' in xml
     assert '<c:errValType val="stdErr"/>' in xml
     # StandardError writes no <c:val>.
     assert "<c:val " not in xml
 
 
-def test_y_error_bars_fixed_value():
+def test_scatter_x_and_y_error_bars_together():
+    y_eb = ChartErrorBars()
+    x_eb = ChartErrorBars()
+    x_eb.set_type_percentage(5.0)
+    xml = _with_error_bars(y_error_bars=y_eb, x_error_bars=x_eb, chart_type="scatter")
+    assert xml.count("<c:errBars>") == 2
+    assert '<c:errDir val="x"/>' in xml
+    assert '<c:errDir val="y"/>' in xml
+
+
+def test_scatter_error_bars_fixed_value():
     eb = ChartErrorBars()
     eb.set_type_fixed_value(2.5)
     xml = _with_error_bars(y_error_bars=eb)
@@ -542,7 +564,7 @@ def test_y_error_bars_fixed_value():
     assert '<c:val val="2.5"/>' in xml
 
 
-def test_y_error_bars_percentage():
+def test_scatter_error_bars_percentage():
     eb = ChartErrorBars()
     eb.set_type_percentage(10.0)
     xml = _with_error_bars(y_error_bars=eb)
@@ -550,14 +572,14 @@ def test_y_error_bars_percentage():
     assert '<c:val val="10"/>' in xml
 
 
-def test_y_error_bars_standard_deviation():
+def test_scatter_error_bars_standard_deviation():
     eb = ChartErrorBars()
     eb.set_type_standard_deviation(1.0)
     xml = _with_error_bars(y_error_bars=eb)
     assert '<c:errValType val="stdDev"/>' in xml
 
 
-def test_y_error_bars_custom_range():
+def test_scatter_error_bars_custom_range():
     eb = ChartErrorBars()
     eb.set_type_custom("Sheet1!$C$1:$C$5", "Sheet1!$D$1:$D$5")
     xml = _with_error_bars(y_error_bars=eb)
@@ -566,7 +588,7 @@ def test_y_error_bars_custom_range():
     assert "<c:minus>" in xml
 
 
-def test_error_bars_direction():
+def test_scatter_error_bars_direction():
     eb = ChartErrorBars()
     eb.set_direction("minus")
     xml = _with_error_bars(y_error_bars=eb)
@@ -579,28 +601,38 @@ def test_error_bars_invalid_direction_raises():
         eb.set_direction("sideways")
 
 
-def test_error_bars_no_end_cap():
+def test_scatter_error_bars_no_end_cap():
     eb = ChartErrorBars()
     eb.set_end_cap(False)
     xml = _with_error_bars(y_error_bars=eb)
     assert '<c:noEndCap val="1"/>' in xml
 
 
-def test_error_bars_end_cap_on_by_default():
+def test_scatter_error_bars_end_cap_on_by_default():
     eb = ChartErrorBars()
     xml = _with_error_bars(y_error_bars=eb)
     assert "noEndCap" not in xml
 
 
-def test_x_error_bars_on_bar_chart():
-    eb = ChartErrorBars()
-    xml = _with_error_bars(x_error_bars=eb, chart_type="bar")
-    assert '<c:errDir val="x"/>' in xml
-
-
-def test_y_and_x_error_bars_together():
-    y_eb = ChartErrorBars()
+def test_bar_chart_only_honors_x_error_bars():
     x_eb = ChartErrorBars()
-    x_eb.set_type_percentage(5.0)
-    xml = _with_error_bars(y_error_bars=y_eb, x_error_bars=x_eb, chart_type="bar")
-    assert xml.count("<c:errBars>") == 2
+    y_eb = ChartErrorBars()
+    xml = _with_error_bars(x_error_bars=x_eb, y_error_bars=y_eb, chart_type="bar")
+    assert xml.count("<c:errBars>") == 1
+    assert "<c:errDir" not in xml
+
+
+def test_column_chart_only_honors_y_error_bars():
+    x_eb = ChartErrorBars()
+    y_eb = ChartErrorBars()
+    xml = _with_error_bars(x_error_bars=x_eb, y_error_bars=y_eb, chart_type="column")
+    assert xml.count("<c:errBars>") == 1
+    assert "<c:errDir" not in xml
+
+
+def test_line_chart_only_honors_y_error_bars():
+    x_eb = ChartErrorBars()
+    y_eb = ChartErrorBars()
+    xml = _with_error_bars(x_error_bars=x_eb, y_error_bars=y_eb, chart_type="line")
+    assert xml.count("<c:errBars>") == 1
+    assert '<c:errDir val="y"/>' in xml

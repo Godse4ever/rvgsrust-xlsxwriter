@@ -4890,15 +4890,21 @@ impl ChartSeries {
         self.inner.set_custom_data_labels(&owned);
     }
 
-    // Vertical error bars. Only valid for chart types Excel supports them
-    // on -- upstream doesn't validate this, it just silently has no effect
-    // in Excel for unsupported types, so neither do we.
+    // Vertical error bars. Real upstream behavior, confirmed against
+    // source: only Scatter charts serialize both x and y error bars with
+    // a real <c:errDir> telling Excel which axis they're on. Every other
+    // chart type goes through a generic path that honors y_error_bars
+    // alone (with errDir="y") -- except Bar, which honors x_error_bars
+    // alone instead (with no errDir at all, since a Bar chart only has
+    // one value axis), and Column, the mirror image of Bar (y_error_bars
+    // alone, no errDir). In each of those cases the "wrong" axis's error
+    // bars set here are silently dropped, not a binding bug.
     fn set_y_error_bars(&mut self, error_bars: &ChartErrorBars) {
         self.inner.set_y_error_bars(&error_bars.inner);
     }
 
-    // Horizontal error bars. Excel only supports these for Scatter and Bar
-    // charts (see upstream's set_x_error_bars() doc comment).
+    // Horizontal error bars -- see set_y_error_bars() above for the full
+    // per-chart-type behavior. Only Scatter and Bar charts honor these.
     fn set_x_error_bars(&mut self, error_bars: &ChartErrorBars) {
         self.inner.set_x_error_bars(&error_bars.inner);
     }
