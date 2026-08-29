@@ -83,20 +83,19 @@ conveniently.
 
 ### 1e. Notes, filters, views, protection, images — Medium
 
+Row/column visibility, pixel dimensions, zoom/selection/tabs, ignored
+errors, autofit tuning, and NaN/infinity display strings shipped in
+PR #30 (`autofit_to_max_width` was dropped from the original list --
+upstream deprecates it in favor of `set_autofit_max_width()` +
+`autofit()`, both already exposed). What remains:
+
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
 | Cell notes | `worksheet.rs:5858` | `insert_note(row, col, text)`, `show_all_notes()`, `set_default_note_author(name)` — needs a `Note` pyclass | Medium |
 | Autofilter criteria | `worksheet.rs:8791` | `filter_column(col, filter)` — needs a `FilterCondition` pyclass. We expose only the autofilter *range* today | Medium |
-| Row / column visibility | `worksheet.rs:7717`, `8252` | `set_row_hidden(row)`, `set_column_hidden(col)`, `set_row_unhidden`, `hide_unused_rows` | Medium |
-| Pixel dimensions | — | `set_row_height_pixels`, `set_column_width_pixels`, `set_default_row_height` | Low |
-| Zoom, selection, tabs | `worksheet.rs:13140`, `10119` | `set_zoom(n)`, `set_selection(...)`, `set_active(bool)`, `set_first_tab(bool)`, `set_top_left_cell(...)`, `set_right_to_left(bool)`, `set_view_normal/page_layout/page_break_preview()` | Medium |
 | Password protection | `worksheet.rs:9828` | `protect_with_password(pw)`, `protect_with_options(...)`, `unprotect_range(...)` | Medium |
 | Image placement | `worksheet.rs:5197`, `5312` | `insert_image_with_offset(...)`, `insert_image_fit_to_cell(...)`, `embed_image(...)`, `insert_background_image(...)` | Medium |
-| Clear a cell | `worksheet.rs:10776` | `clear_cell(row, col)`, `clear_cell_format(row, col)` | Low |
-| Ignore-error flags | `worksheet.rs:14940` | `ignore_error(row, col, kind)` | Low |
 | Checkboxes, buttons, shapes | `worksheet.rs:6393` | `insert_checkbox(...)`, `insert_button(...)`, `insert_shape(...)` | Low |
-| Autofit tuning | `worksheet.rs:14663` | `autofit_to_max_width(w)`, `set_autofit_max_width(w)`, `set_autofit_max_row(r)` | Low |
-| NaN / infinity strings | — | `set_nan_value(s)`, `set_infinity_value(s)`, `set_neg_infinity_value(s)` | Low |
 | serde serialisation | — | `serialize_headers(...)` and friends. Feature-gated upstream; would need the `serde` feature enabled | Low |
 
 ---
@@ -192,9 +191,12 @@ Charts deprioritized to last per explicit direction -- everything
 else (Worksheet 1e, Workbook) goes first regardless of the
 value-per-effort ranking that guided the list before this:
 
-1. Worksheet 1e -- notes, filters, views, protection, images. Cell
-   notes and autofilter criteria need new pyclasses (`Note`,
-   `FilterCondition`); the rest are flat setters.
+1. Worksheet 1e -- notes, filters, views, protection, images. Flat
+   setters (visibility, sizing, view/zoom/tabs, ignored errors,
+   autofit tuning, NaN/infinity strings) shipped in PR #30. Still
+   open: password protection, image placement, checkboxes/buttons/
+   shapes (all flat setters), plus cell notes and autofilter criteria,
+   which need new pyclasses (`Note`, `FilterCondition`).
 2. Workbook -- 6 gaps. Chartsheets need a `Chartsheet` pyclass; the
    rest (themes, default format, VBA, read-only-recommended,
    tempdir/large-zip) are flat setters.

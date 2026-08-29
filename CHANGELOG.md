@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10] - 2026-08-29
+
+Patch release, no breaking changes. Adds Worksheet view, visibility,
+and sizing setters.
+
+### Added
+
+- **Row/column visibility and pixel sizing.** `set_row_hidden()`,
+  `set_row_unhidden()`, `set_column_hidden()`, `hide_unused_rows()`,
+  `set_row_height_pixels()`, `set_column_width_pixels()`,
+  `set_default_row_height()`.
+- **View, zoom, selection, tabs.** `set_zoom()`, `set_selection()`,
+  `set_top_left_cell()`, `set_active()`, `set_first_tab()`,
+  `set_right_to_left()`, `set_view_normal()`, `set_view_page_layout()`,
+  `set_view_page_break_preview()`.
+- **Ignored errors.** `ignore_error()`/`ignore_error_range()`, covering
+  all 9 upstream `IgnoreError` types as a string parameter (e.g.
+  `"number_stored_as_text"`, `"formula_error"`) with validation. Uses
+  the same non-mutating row-order guard as `group_rows()` in
+  constant_memory mode, so flagging an error on an earlier row after
+  writing a later one isn't blocked.
+- **Autofit tuning.** `set_autofit_max_width()`, `set_autofit_max_row()`
+  (`autofit_to_max_width()` intentionally not bound -- upstream
+  deprecates it in favor of these two plus the existing `autofit()`).
+- **NaN/infinity display strings.** `set_nan_value()`,
+  `set_infinity_value()`, `set_neg_infinity_value()`.
+- **`clear_cell()`.** Clears both a cell's value and format
+  (`clear_cell_format()` already existed for format-only clearing).
+
 ## [0.2.9] - 2026-08-29
 
 Patch release, no breaking changes. Adds chart error bars.
