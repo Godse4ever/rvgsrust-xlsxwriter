@@ -49,6 +49,28 @@ fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
     }
 }
 
+fn parse_ignore_error(name: &str) -> PyResult<rust_xlsxwriter::IgnoreError> {
+    use rust_xlsxwriter::IgnoreError as E;
+    match name {
+        "number_stored_as_text" => Ok(E::NumberStoredAsText),
+        "formula_error" => Ok(E::FormulaError),
+        "formula_differs" => Ok(E::FormulaDiffers),
+        "formula_refers_to_empty_cells" => Ok(E::FormulaRefersToEmptyCells),
+        "formula_omits_cells" => Ok(E::FormulaOmitsCells),
+        "data_validation_error" => Ok(E::DataValidationError),
+        "two_digit_text_year" => Ok(E::TwoDigitTextYear),
+        "unlocked_cells_with_formula" => Ok(E::UnlockedCellsWithFormula),
+        "inconsistent_column_formula" => Ok(E::InconsistentColumnFormula),
+        other => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Unknown ignore error type '{other}'. Expected one of: \
+             number_stored_as_text, formula_error, formula_differs, \
+             formula_refers_to_empty_cells, formula_omits_cells, \
+             data_validation_error, two_digit_text_year, \
+             unlocked_cells_with_formula, inconsistent_column_formula"
+        ))),
+    }
+}
+
 // Every path that mutates the workbook goes through
 // RefCell::borrow_mut(). That panics on a double borrow, and a double
 // borrow is genuinely reachable from Python rather than being an
@@ -2314,6 +2336,200 @@ impl Worksheet {
         self.check_row_order(row)?;
         self.with_sheet(py, |sheet| {
             sheet.clear_cell_format(row, col);
+            Ok(())
+        })
+    }
+
+    // Clears both the value and the format of a cell, leaving it blank.
+    // Same row-order guard as clear_cell_format() above, for the same
+    // reason (a cell that's already been streamed out in constant_memory
+    // mode can't be retroactively cleared).
+    fn clear_cell(&self, py: Python<'_>, row: u32, col: u16) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            sheet.clear_cell(row, col);
+            Ok(())
+        })
+    }
+
+    // ---- row/column visibility and sizing ----
+
+    fn set_row_hidden(&self, py: Python<'_>, row: u32) -> PyResult<()> {
+        self.with_sheet(py, |sheet| sheet.set_row_hidden(row).map(|_| ()))
+    }
+
+    fn set_row_unhidden(&self, py: Python<'_>, row: u32) -> PyResult<()> {
+        self.with_sheet(py, |sheet| sheet.set_row_unhidden(row).map(|_| ()))
+    }
+
+    fn set_column_hidden(&self, py: Python<'_>, col: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| sheet.set_column_hidden(col).map(|_| ()))
+    }
+
+    fn hide_unused_rows(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.hide_unused_rows(enable);
+            Ok(())
+        })
+    }
+
+    fn set_row_height_pixels(&self, py: Python<'_>, row: u32, height: u32) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_row_height_pixels(row, height).map(|_| ())
+        })
+    }
+
+    fn set_column_width_pixels(&self, py: Python<'_>, col: u16, width: u32) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_column_width_pixels(col, width).map(|_| ())
+        })
+    }
+
+    fn set_default_row_height(&self, py: Python<'_>, height: f64) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_default_row_height(height);
+            Ok(())
+        })
+    }
+
+    // ---- zoom, selection, tabs, protection ----
+
+    fn set_zoom(&self, py: Python<'_>, zoom: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_zoom(zoom);
+            Ok(())
+        })
+    }
+
+    fn set_selection(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet
+                .set_selection(first_row, first_col, last_row, last_col)
+                .map(|_| ())
+        })
+    }
+
+    fn set_top_left_cell(&self, py: Python<'_>, row: u32, col: u16) -> PyResult<()> {
+        self.with_sheet(py, |sheet| sheet.set_top_left_cell(row, col).map(|_| ()))
+    }
+
+    fn set_active(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_active(enable);
+            Ok(())
+        })
+    }
+
+    fn set_first_tab(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_first_tab(enable);
+            Ok(())
+        })
+    }
+
+    fn set_right_to_left(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_right_to_left(enable);
+            Ok(())
+        })
+    }
+
+    fn set_view_normal(&self, py: Python<'_>) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_view_normal();
+            Ok(())
+        })
+    }
+
+    fn set_view_page_layout(&self, py: Python<'_>) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_view_page_layout();
+            Ok(())
+        })
+    }
+
+    fn set_view_page_break_preview(&self, py: Python<'_>) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_view_page_break_preview();
+            Ok(())
+        })
+    }
+
+    // ---- ignored errors ----
+    // Metadata about a cell/range, not a value write -- same
+    // non-mutating row-order guard as group_rows()/group_rows_collapsed()
+    // (see check_row_order_readonly() above), so flagging an error on an
+    // earlier row after writing a later one isn't blocked.
+
+    fn ignore_error(&self, py: Python<'_>, row: u32, col: u16, error_type: &str) -> PyResult<()> {
+        self.check_row_order_readonly(row)?;
+        let kind = parse_ignore_error(error_type)?;
+        self.with_sheet(py, |sheet| sheet.ignore_error(row, col, kind).map(|_| ()))
+    }
+
+    fn ignore_error_range(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        error_type: &str,
+    ) -> PyResult<()> {
+        self.check_row_order_readonly(first_row)?;
+        let kind = parse_ignore_error(error_type)?;
+        self.with_sheet(py, |sheet| {
+            sheet
+                .ignore_error_range(first_row, first_col, last_row, last_col, kind)
+                .map(|_| ())
+        })
+    }
+
+    // ---- autofit tuning ----
+    // Upstream deprecates autofit_to_max_width() in favor of
+    // set_autofit_max_width() + autofit() (both already exposed below/
+    // pre-existing) -- not binding the deprecated method.
+
+    fn set_autofit_max_width(&self, py: Python<'_>, max_width: u32) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_autofit_max_width(max_width);
+            Ok(())
+        })
+    }
+
+    fn set_autofit_max_row(&self, py: Python<'_>, max_row: u32) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_autofit_max_row(max_row);
+            Ok(())
+        })
+    }
+
+    // ---- NaN / infinity display strings ----
+
+    fn set_nan_value(&self, py: Python<'_>, value: &str) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_nan_value(value);
+            Ok(())
+        })
+    }
+
+    fn set_infinity_value(&self, py: Python<'_>, value: &str) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_infinity_value(value);
+            Ok(())
+        })
+    }
+
+    fn set_neg_infinity_value(&self, py: Python<'_>, value: &str) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_neg_infinity_value(value);
             Ok(())
         })
     }
