@@ -2493,13 +2493,9 @@ impl Worksheet {
     }
 
     // ---- autofit tuning ----
-
-    fn autofit_to_max_width(&self, py: Python<'_>, max_width: u32) -> PyResult<()> {
-        self.with_sheet(py, |sheet| {
-            sheet.autofit_to_max_width(max_width);
-            Ok(())
-        })
-    }
+    // Upstream deprecates autofit_to_max_width() in favor of
+    // set_autofit_max_width() + autofit() (both already exposed below/
+    // pre-existing) -- not binding the deprecated method.
 
     fn set_autofit_max_width(&self, py: Python<'_>, max_width: u32) -> PyResult<()> {
         self.with_sheet(py, |sheet| {

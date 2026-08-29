@@ -167,7 +167,6 @@ def test_ignore_error_invalid_type_raises():
 
 def test_autofit_tuning_methods_do_not_raise():
     def build(ws):
-        ws.autofit_to_max_width(200)
         ws.set_autofit_max_width(300)
         ws.set_autofit_max_row(50)
         ws.autofit()
