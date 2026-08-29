@@ -335,8 +335,8 @@ def test_y2_axis_units():
     assert "20" in xml and "5" in xml
 
 
-def test_x2_axis_log_base():
-    assert '<c:logBase val="10"/>' in _with_secondary({"set_x2_axis_log_base": 10})
+def test_y2_axis_log_base():
+    assert '<c:logBase val="10"/>' in _with_secondary({"set_y2_axis_log_base": 10})
 
 
 def test_y2_axis_num_format():
