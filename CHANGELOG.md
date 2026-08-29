@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.14] - 2026-08-29
+
+Patch release, no breaking changes. Adds cell notes.
+
+### Added
+
+- **`Note`.** `set_author()`, `set_width()`, `set_height()`,
+  `set_visible()` (notes are hidden-until-hover by default), `set_alt_text()`,
+  `set_background_color()`, `set_font_name()`, `set_font_size()` --
+  not `set_format()` (a full `Format` override) or
+  `set_object_movement()`.
+- **`Worksheet.insert_note(row, col, note)`**, **`show_all_notes(enable)`**,
+  **`set_default_note_author(name)`**.
+
 ## [0.2.13] - 2026-08-29
 
 Patch release, no breaking changes. Adds checkboxes, buttons, and

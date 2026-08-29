@@ -98,11 +98,12 @@ existing `insert_image()`, no `Image` pyclass needed. Checkboxes
 (flat bool + optional `Format`), a new `Button` pyclass, and a new
 `Shape` pyclass (Textbox only -- the only shape type upstream
 implements -- text/sizing only, not fill/line/font) shipped in
-PR #33. What remains:
+PR #33. Cell notes (`Note` pyclass -- text/author/sizing/visible/
+alt_text/background_color/font_name/font_size, not `set_format()` or
+`set_object_movement()`) shipped in PR #34. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Cell notes | `worksheet.rs:5858` | `insert_note(row, col, text)`, `show_all_notes()`, `set_default_note_author(name)` — needs a `Note` pyclass | Medium |
 | Autofilter criteria | `worksheet.rs:8791` | `filter_column(col, filter)` — needs a `FilterCondition` pyclass. We expose only the autofilter *range* today | Medium |
 | serde serialisation | — | `serialize_headers(...)` and friends. Feature-gated upstream; would need the `serde` feature enabled | Low |
 
@@ -207,8 +208,9 @@ value-per-effort ranking that guided the list before this:
    (`insert_image_with_offset`, `embed_image(_with_format)`,
    `insert_image_fit_to_cell(_centered)`, `insert_background_image`)
    shipped in PR #32; checkboxes, `Button`, and Textbox-only `Shape`
-   shipped in PR #33. Still open: cell notes and autofilter criteria,
-   which need new pyclasses (`Note`, `FilterCondition`).
+   shipped in PR #33; cell notes (`Note` pyclass) shipped in PR #34.
+   Still open: autofilter criteria, which needs a new
+   `FilterCondition` pyclass -- the last item in 1e.
 2. Workbook -- 6 gaps. Chartsheets need a `Chartsheet` pyclass; the
    rest (themes, default format, VBA, read-only-recommended,
    tempdir/large-zip) are flat setters.
