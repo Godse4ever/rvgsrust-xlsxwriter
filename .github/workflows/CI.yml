@@ -86,10 +86,12 @@ jobs:
     - name: Run tests
       shell: bash
       run: |
-        set -o pipefail
-        pytest tests/ -v 2>&1 | tee pytest_output.log
+        set +e
+        pytest tests/ -v > pytest_output.log 2>&1
         code=$?
-        if [ $code -ne 0 ]; then
+        set -e
+        cat pytest_output.log
+        if [ "$code" != "0" ]; then
           tail -c 15000 pytest_output.log | while IFS= read -r line; do
             line="${line//$'\r'/}"
             if [ -n "$line" ]; then
