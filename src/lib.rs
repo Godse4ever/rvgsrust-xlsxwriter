@@ -2897,6 +2897,51 @@ impl Worksheet {
         })
     }
 
+    // Sets which worksheet elements are protected/unprotected (rather
+    // than the simple on/off of protect() above). Optionally also sets
+    // a password in the same call -- protect_with_options() and
+    // protect_with_password() write independent fields upstream, so
+    // combining them here is just a convenience, not a real upstream
+    // method.
+    #[pyo3(signature = (options, password=None))]
+    fn protect_with_options(
+        &self,
+        py: Python<'_>,
+        options: &ProtectionOptions,
+        password: Option<&str>,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.protect_with_options(&options.inner);
+            if let Some(p) = password {
+                sheet.protect_with_password(p);
+            }
+            Ok(())
+        })
+    }
+
+    // name/password default to upstream's own defaults ("" -- name
+    // becomes "Range1"/"Range2"/... automatically, password becomes
+    // no password).
+    #[pyo3(signature = (first_row, first_col, last_row, last_col, name="", password=""))]
+    fn unprotect_range(
+        &self,
+        py: Python<'_>,
+        first_row: u32,
+        first_col: u16,
+        last_row: u32,
+        last_col: u16,
+        name: &str,
+        password: &str,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet
+                .unprotect_range_with_options(
+                    first_row, first_col, last_row, last_col, name, password,
+                )
+                .map(|_| ())
+        })
+    }
+
     #[pyo3(signature = (row, col, formula, format=None))]
     fn write_formula(
         &self,
@@ -3459,6 +3504,81 @@ impl Workbook {
 // the single most-requested feature this closes -- don't depend on
 // either, so shipping without them is a reasonable line to draw rather
 // than blocking the whole feature on the date/time plumbing.
+// -----------------------------------------------------------------------
+// ProtectionOptions
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct ProtectionOptions {
+    inner: rust_xlsxwriter::ProtectionOptions,
+}
+
+#[pymethods]
+impl ProtectionOptions {
+    // Defaults match upstream's own ProtectionOptions::new() exactly:
+    // selecting cells stays allowed and chart/chartsheet contents stay
+    // editable by default; everything else defaults to protected/off.
+    #[new]
+    #[pyo3(signature = (
+        select_locked_cells=true,
+        select_unlocked_cells=true,
+        format_cells=false,
+        format_columns=false,
+        format_rows=false,
+        insert_columns=false,
+        insert_rows=false,
+        insert_links=false,
+        delete_columns=false,
+        delete_rows=false,
+        sort=false,
+        use_autofilter=false,
+        use_pivot_tables=false,
+        edit_scenarios=false,
+        edit_objects=false,
+        contents=true,
+    ))]
+    fn new(
+        select_locked_cells: bool,
+        select_unlocked_cells: bool,
+        format_cells: bool,
+        format_columns: bool,
+        format_rows: bool,
+        insert_columns: bool,
+        insert_rows: bool,
+        insert_links: bool,
+        delete_columns: bool,
+        delete_rows: bool,
+        sort: bool,
+        use_autofilter: bool,
+        use_pivot_tables: bool,
+        edit_scenarios: bool,
+        edit_objects: bool,
+        contents: bool,
+    ) -> Self {
+        ProtectionOptions {
+            inner: rust_xlsxwriter::ProtectionOptions {
+                select_locked_cells,
+                select_unlocked_cells,
+                format_cells,
+                format_columns,
+                format_rows,
+                insert_columns,
+                insert_rows,
+                insert_links,
+                delete_columns,
+                delete_rows,
+                sort,
+                use_autofilter,
+                use_pivot_tables,
+                edit_scenarios,
+                edit_objects,
+                contents,
+            },
+        }
+    }
+}
+
 fn dv_type_err(kind: &str, got: &str, expected: &str) -> PyErr {
     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
         "Unknown {kind} '{got}'. Expected one of: {expected}"
@@ -6221,6 +6341,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Table>()?;
     m.add_class::<TableColumn>()?;
     m.add_class::<DataValidation>()?;
+    m.add_class::<ProtectionOptions>()?;
     m.add_class::<ConditionalFormatCell>()?;
     m.add_class::<ConditionalFormatBlank>()?;
     m.add_class::<ConditionalFormatDuplicate>()?;
