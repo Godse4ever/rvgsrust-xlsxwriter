@@ -43,7 +43,7 @@ jobs:
         cat clippy_output.log
         if [ "$code" != "0" ]; then
           sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g' clippy_output.log > clippy_clean.log
-          tail -n 120 clippy_clean.log | while IFS= read -r line; do
+          awk '/^error/{f=1} f' clippy_clean.log | head -n 100 | while IFS= read -r line; do
             line="${line//$'\r'/}"
             if [ -n "$line" ]; then
               echo "::error::${line//$'%'/%25}"
