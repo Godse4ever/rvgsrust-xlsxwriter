@@ -94,13 +94,16 @@ upstream deprecates it in favor of `set_autofit_max_width()` +
 (`insert_image_with_offset`, `embed_image(_with_format)`,
 `insert_image_fit_to_cell(_centered)`, `insert_background_image`)
 shipped in PR #32 -- all take a plain `image_path: str` like the
-existing `insert_image()`, no `Image` pyclass needed. What remains:
+existing `insert_image()`, no `Image` pyclass needed. Checkboxes
+(flat bool + optional `Format`), a new `Button` pyclass, and a new
+`Shape` pyclass (Textbox only -- the only shape type upstream
+implements -- text/sizing only, not fill/line/font) shipped in
+PR #33. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
 | Cell notes | `worksheet.rs:5858` | `insert_note(row, col, text)`, `show_all_notes()`, `set_default_note_author(name)` — needs a `Note` pyclass | Medium |
 | Autofilter criteria | `worksheet.rs:8791` | `filter_column(col, filter)` — needs a `FilterCondition` pyclass. We expose only the autofilter *range* today | Medium |
-| Checkboxes, buttons, shapes | `worksheet.rs:6393` | `insert_checkbox(...)`, `insert_button(...)`, `insert_shape(...)` | Low |
 | serde serialisation | — | `serialize_headers(...)` and friends. Feature-gated upstream; would need the `serde` feature enabled | Low |
 
 ---
@@ -203,9 +206,9 @@ value-per-effort ranking that guided the list before this:
    `unprotect_range()`) shipped in PR #31; image placement
    (`insert_image_with_offset`, `embed_image(_with_format)`,
    `insert_image_fit_to_cell(_centered)`, `insert_background_image`)
-   shipped in PR #32. Still open: checkboxes/buttons/shapes (flat
-   setters), plus cell notes and autofilter criteria, which need new
-   pyclasses (`Note`, `FilterCondition`).
+   shipped in PR #32; checkboxes, `Button`, and Textbox-only `Shape`
+   shipped in PR #33. Still open: cell notes and autofilter criteria,
+   which need new pyclasses (`Note`, `FilterCondition`).
 2. Workbook -- 6 gaps. Chartsheets need a `Chartsheet` pyclass; the
    rest (themes, default format, VBA, read-only-recommended,
    tempdir/large-zip) are flat setters.

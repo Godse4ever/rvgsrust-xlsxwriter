@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.13] - 2026-08-29
+
+Patch release, no breaking changes. Adds checkboxes, buttons, and
+textbox shapes.
+
+### Added
+
+- **`insert_checkbox(row, col, value)`** / **`insert_checkbox_with_format(row,
+  col, value, format)`.** Flat bool + optional `Format`, no new pyclass.
+- **`Button`.** `set_caption()`, `set_macro()`, `set_width()`,
+  `set_height()`, `set_alt_text()`, via `Worksheet.insert_button()`/
+  `insert_button_with_offset()`.
+- **`Shape`.** Textbox only -- the only shape type upstream implements.
+  `Shape.textbox()`, `set_text()`, `set_width()`, `set_height()`,
+  `set_alt_text()`, via `Worksheet.insert_shape()`/
+  `insert_shape_with_offset()`. Fill/line/font formatting
+  (`ShapeFormat`/`ShapeFont`) not yet exposed.
+
 ## [0.2.12] - 2026-08-29
 
 Patch release, no breaking changes. Adds Worksheet image placement.
