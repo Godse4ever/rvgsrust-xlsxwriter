@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.12] - 2026-08-29
+
+Patch release, no breaking changes. Adds Worksheet image placement.
+
+### Added
+
+- **`insert_image_with_offset(row, col, image_path, x_offset, y_offset)`.**
+- **`embed_image(row, col, image_path)`** / **`embed_image_with_format(row,
+  col, image_path, format)`.** "Place in Cell" -- only renders in Excel
+  365 (2023+); older Excel shows a `#VALUE!` fallback that this binding
+  also writes, matching upstream. Uses Excel's rich-value cell-metadata
+  mechanism rather than a classic drawing anchor.
+- **`insert_image_fit_to_cell(row, col, image_path, keep_aspect_ratio=True)`**
+  / **`insert_image_fit_to_cell_centered(row, col, image_path)`.** Scales
+  the image to the cell but renders in every Excel version, unlike
+  `embed_image()`.
+- **`insert_background_image(image_path)`.**
+- All five take a plain `image_path: str`, matching the existing
+  `insert_image()`'s convention, rather than introducing a Python-facing
+  `Image` pyclass -- none of them need to pre-configure the image beyond
+  what they already take as parameters.
+
 ## [0.2.11] - 2026-08-29
 
 Patch release, no breaking changes. Adds Worksheet protection options.
