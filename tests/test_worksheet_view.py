@@ -35,6 +35,25 @@ def _xml(build, n_sheets=1):
             os.remove(path)
 
 
+def _shared_strings(build):
+    """Like _xml() but also returns xl/sharedStrings.xml, for values
+    (e.g. NaN/Infinity) that rust_xlsxwriter stores as shared strings
+    rather than inline in the sheet XML."""
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        ws.write(0, 0, 1)
+        build(ws)
+        wb.close(path)
+        with zipfile.ZipFile(path) as z:
+            return z.read("xl/sharedStrings.xml").decode("utf-8")
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
 # -------------------------- visibility & sizing --------------------------
 
 
@@ -187,7 +206,9 @@ def test_nan_and_infinity_values():
         ws.write(2, 0, float("inf"))
         ws.write(3, 0, float("-inf"))
 
-    sheet, _ = _xml(build)
-    assert ">NaN<" in sheet
-    assert ">Inf<" in sheet
-    assert ">-Inf<" in sheet
+    # NaN/Infinity are stored as shared strings by rust_xlsxwriter (Excel
+    # has no NaN/Inf numeric type), not inline in the sheet XML.
+    shared = _shared_strings(build)
+    assert "<t>NaN</t>" in shared
+    assert "<t>Inf</t>" in shared
+    assert "<t>-Inf</t>" in shared
