@@ -31,11 +31,23 @@ jobs:
         components: clippy, rustfmt
 
     - name: Lint (clippy)
+      shell: bash
       run: |
+        set +e
         cargo clippy --all-targets -- -D warnings \
           -A clippy::useless_conversion \
           -A clippy::too_many_arguments \
-          -A clippy::new_without_default
+          -A clippy::new_without_default > clippy_output.log 2>&1
+        code=$?
+        set -e
+        cat clippy_output.log
+        if [ "$code" != "0" ]; then
+          grep -E "^error" clippy_output.log | head -n 15 | while IFS= read -r line; do
+            line="${line//$'\r'/}"
+            echo "::error::${line//$'%'/%25}"
+          done
+        fi
+        exit $code
 
     - name: Format check
       run: cargo fmt --check
