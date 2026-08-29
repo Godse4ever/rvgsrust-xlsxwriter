@@ -90,15 +90,12 @@ jobs:
         pytest tests/ -v 2>&1 | tee pytest_output.log
         code=$?
         if [ $code -ne 0 ]; then
-          python3 - <<'PYEOF'
-import re
-text = open("pytest_output.log", encoding="utf-8", errors="replace").read()
-chunk = text[-15000:]
-for line in chunk.splitlines():
-    line = line.replace("%", "%25").replace("\r", "").replace("\n", "")
-    if line.strip():
-        print(f"::error::{line}")
-PYEOF
+          tail -c 15000 pytest_output.log | while IFS= read -r line; do
+            line="${line//$'\r'/}"
+            if [ -n "$line" ]; then
+              echo "::error::${line//$'%'/%25}"
+            fi
+          done
         fi
         exit $code
 
