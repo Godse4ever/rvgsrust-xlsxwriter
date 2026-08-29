@@ -87,13 +87,15 @@ Row/column visibility, pixel dimensions, zoom/selection/tabs, ignored
 errors, autofit tuning, and NaN/infinity display strings shipped in
 PR #30 (`autofit_to_max_width` was dropped from the original list --
 upstream deprecates it in favor of `set_autofit_max_width()` +
-`autofit()`, both already exposed). What remains:
+`autofit()`, both already exposed). Password protection
+(`ProtectionOptions` pyclass, `protect_with_options()`,
+`unprotect_range()`) shipped in PR #31 -- `protect()`/
+`protect_with_password()` already existed. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
 | Cell notes | `worksheet.rs:5858` | `insert_note(row, col, text)`, `show_all_notes()`, `set_default_note_author(name)` — needs a `Note` pyclass | Medium |
 | Autofilter criteria | `worksheet.rs:8791` | `filter_column(col, filter)` — needs a `FilterCondition` pyclass. We expose only the autofilter *range* today | Medium |
-| Password protection | `worksheet.rs:9828` | `protect_with_password(pw)`, `protect_with_options(...)`, `unprotect_range(...)` | Medium |
 | Image placement | `worksheet.rs:5197`, `5312` | `insert_image_with_offset(...)`, `insert_image_fit_to_cell(...)`, `embed_image(...)`, `insert_background_image(...)` | Medium |
 | Checkboxes, buttons, shapes | `worksheet.rs:6393` | `insert_checkbox(...)`, `insert_button(...)`, `insert_shape(...)` | Low |
 | serde serialisation | — | `serialize_headers(...)` and friends. Feature-gated upstream; would need the `serde` feature enabled | Low |
@@ -193,9 +195,11 @@ value-per-effort ranking that guided the list before this:
 
 1. Worksheet 1e -- notes, filters, views, protection, images. Flat
    setters (visibility, sizing, view/zoom/tabs, ignored errors,
-   autofit tuning, NaN/infinity strings) shipped in PR #30. Still
-   open: password protection, image placement, checkboxes/buttons/
-   shapes (all flat setters), plus cell notes and autofilter criteria,
+   autofit tuning, NaN/infinity strings) shipped in PR #30; password
+   protection (`ProtectionOptions`, `protect_with_options()`,
+   `unprotect_range()`) shipped in PR #31. Still open: image
+   placement, checkboxes/buttons/shapes (flat setters), plus cell
+   notes and autofilter criteria,
    which need new pyclasses (`Note`, `FilterCondition`).
 2. Workbook -- 6 gaps. Chartsheets need a `Chartsheet` pyclass; the
    rest (themes, default format, VBA, read-only-recommended,

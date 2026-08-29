@@ -1047,7 +1047,8 @@ deliberate design win.
 | **v0.2.8** | ✅ Patch release: chart secondary axes -- `set_x2_axis_*`/`set_y2_axis_*`, mirroring the existing `x_axis`/`y_axis` setters. Takes effect once a series is routed to the secondary axis via the existing `ChartSeries.set_secondary_axis()`. |
 | **v0.2.9** | ✅ Patch release: chart error bars -- `ChartErrorBars` pyclass (fixed value / percentage / standard deviation / standard error / custom-range types, direction, end cap, line formatting) via `ChartSeries.set_x_error_bars()`/`set_y_error_bars()`. |
 | **v0.2.10** | ✅ Patch release: Worksheet view/visibility -- row/column hidden state and pixel sizing, zoom/selection/top-left-cell/active/first-tab/right-to-left/view mode, `ignore_error`/`ignore_error_range` (9 error types), autofit tuning, NaN/infinity display strings, `clear_cell()`. |
-| **v0.3** | 🚧 Date/time data validation rules; Worksheet password protection, image placement, checkboxes/buttons/shapes, notes, autofilter criteria |
+| **v0.2.11** | ✅ Patch release: Worksheet protection -- `ProtectionOptions` pyclass (15 fields matching upstream defaults), `protect_with_options()`, `unprotect_range()`. |
+| **v0.3** | 🚧 Date/time data validation rules; Worksheet image placement, checkboxes/buttons/shapes, notes, autofilter criteria |
 | **v0.4** | 🚧 Workbook gaps (chartsheets, themes, VBA); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
