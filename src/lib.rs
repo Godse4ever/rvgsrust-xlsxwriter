@@ -4889,6 +4889,117 @@ impl ChartSeries {
         }
         self.inner.set_custom_data_labels(&owned);
     }
+
+    // Vertical error bars. Real upstream behavior, confirmed against
+    // source: only Scatter charts serialize both x and y error bars with
+    // a real <c:errDir> telling Excel which axis they're on. Every other
+    // chart type goes through a generic path that honors y_error_bars
+    // alone (with errDir="y") -- except Bar, which honors x_error_bars
+    // alone instead (with no errDir at all, since a Bar chart only has
+    // one value axis), and Column, the mirror image of Bar (y_error_bars
+    // alone, no errDir). In each of those cases the "wrong" axis's error
+    // bars set here are silently dropped, not a binding bug.
+    fn set_y_error_bars(&mut self, error_bars: &ChartErrorBars) {
+        self.inner.set_y_error_bars(&error_bars.inner);
+    }
+
+    // Horizontal error bars -- see set_y_error_bars() above for the full
+    // per-chart-type behavior. Only Scatter and Bar charts honor these.
+    fn set_x_error_bars(&mut self, error_bars: &ChartErrorBars) {
+        self.inner.set_x_error_bars(&error_bars.inner);
+    }
+}
+
+// -----------------------------------------------------------------------
+// ChartErrorBars
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct ChartErrorBars {
+    inner: rch::ChartErrorBars,
+}
+
+#[pymethods]
+impl ChartErrorBars {
+    #[new]
+    fn new() -> Self {
+        ChartErrorBars {
+            inner: rch::ChartErrorBars::new(),
+        }
+    }
+
+    // StandardError is upstream's own default -- exposed anyway so a
+    // caller can switch back to it after trying another type on the same
+    // instance, rather than needing to construct a fresh one.
+    fn set_type_standard_error(&mut self) {
+        self.inner.set_type(rch::ChartErrorBarsType::StandardError);
+    }
+
+    // Upstream requires value > 0.0 and just eprintln!()s + no-ops on a
+    // bad value rather than returning an error -- we don't second-guess
+    // that here, a bad value just silently has no effect, matching
+    // upstream exactly.
+    fn set_type_fixed_value(&mut self, value: f64) {
+        self.inner
+            .set_type(rch::ChartErrorBarsType::FixedValue(value));
+    }
+
+    // Upstream requires value >= 0.0, same silent-no-op behavior on a bad
+    // value as set_type_fixed_value above.
+    fn set_type_percentage(&mut self, value: f64) {
+        self.inner
+            .set_type(rch::ChartErrorBarsType::Percentage(value));
+    }
+
+    // Upstream requires value >= 0.0, same silent-no-op behavior as above.
+    fn set_type_standard_deviation(&mut self, value: f64) {
+        self.inner
+            .set_type(rch::ChartErrorBarsType::StandardDeviation(value));
+    }
+
+    // plus_range/minus_range are worksheet range strings, e.g.
+    // "Sheet1!$B$1:$B$5" -- a single-cell range is repeated for every
+    // point, matching FixedValue's behavior.
+    fn set_type_custom(&mut self, plus_range: &str, minus_range: &str) {
+        self.inner.set_type(rch::ChartErrorBarsType::Custom(
+            rch::ChartRange::new_from_string(plus_range),
+            rch::ChartRange::new_from_string(minus_range),
+        ));
+    }
+
+    // One of both, minus, plus.
+    fn set_direction(&mut self, direction: &str) -> PyResult<()> {
+        let parsed = parse_error_bars_direction(direction)?;
+        self.inner.set_direction(parsed);
+        Ok(())
+    }
+
+    fn set_end_cap(&mut self, enable: bool) {
+        self.inner.set_end_cap(enable);
+    }
+
+    // Excel only supports ChartFormat::set_line() on error bars -- any
+    // other formatting set here is silently ignored by Excel, matching
+    // upstream's own doc comment.
+    fn set_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_format(&mut fmt);
+    }
+}
+
+fn parse_error_bars_direction(name: &str) -> PyResult<rch::ChartErrorBarsDirection> {
+    use rch::ChartErrorBarsDirection as D;
+    match name.to_ascii_lowercase().as_str() {
+        "both" => Ok(D::Both),
+        "minus" => Ok(D::Minus),
+        "plus" => Ok(D::Plus),
+        other => Err(cf_type_err(
+            "error bars direction",
+            other,
+            "both, minus, plus",
+        )),
+    }
 }
 
 // Chart types that can show point markers but default to none. This
@@ -5916,5 +6027,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ChartMarker>()?;
     m.add_class::<ChartTrendline>()?;
     m.add_class::<ChartDataLabel>()?;
+    m.add_class::<ChartErrorBars>()?;
     Ok(())
 }
