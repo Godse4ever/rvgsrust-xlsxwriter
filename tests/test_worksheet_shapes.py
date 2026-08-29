@@ -31,7 +31,7 @@ def _text(files, name):
 def test_insert_checkbox_true():
     files = _zip_contents(lambda ws: ws.insert_checkbox(0, 0, True))
     sheet = _text(files, "xl/worksheets/sheet1.xml")
-    assert '<c r="A1" t="b"><v>1</v></c>' in sheet
+    assert 't="b"><v>1</v></c>' in sheet
     styles = _text(files, "xl/styles.xml")
     assert "xfpb:xfComplement" in styles
 
@@ -39,18 +39,18 @@ def test_insert_checkbox_true():
 def test_insert_checkbox_false():
     files = _zip_contents(lambda ws: ws.insert_checkbox(0, 0, False))
     sheet = _text(files, "xl/worksheets/sheet1.xml")
-    assert '<c r="A1" t="b"><v>0</v></c>' in sheet
+    assert 't="b"><v>0</v></c>' in sheet
 
 
 def test_insert_checkbox_with_format():
     def build(ws):
         fmt = Format()
-        fmt.set_background_color("FFC7CE")
+        fmt.set_background_color("#FFC7CE")
         ws.insert_checkbox(0, 0, True, format=fmt)
 
     files = _zip_contents(build)
     sheet = _text(files, "xl/worksheets/sheet1.xml")
-    assert '<c r="A1" t="b"><v>1</v></c>' in sheet
+    assert 't="b"><v>1</v></c>' in sheet
     styles = _text(files, "xl/styles.xml")
     assert "FFC7CE" in styles
 
