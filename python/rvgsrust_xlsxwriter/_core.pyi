@@ -349,6 +349,13 @@ class Worksheet:
         """Same syntax and caveats as set_header()."""
         ...
     def protect(self, password: Optional[str] = None) -> None: ...
+    def protect_with_options(
+        self, options: "ProtectionOptions", password: Optional[str] = None
+    ) -> None: ...
+    def unprotect_range(
+        self, first_row: int, first_col: int, last_row: int, last_col: int,
+        name: str = "", password: str = "",
+    ) -> None: ...
     def set_landscape(self) -> None: ...
     def set_portrait(self) -> None: ...
     def set_paper_size(self, paper_size: int) -> None: ...
@@ -573,6 +580,27 @@ DVRuleType = Literal[
     "less_than", "less_than_or_equal_to", "between", "not_between",
 ]
 DVErrorStyle = Literal["stop", "warning", "information"]
+
+class ProtectionOptions:
+    def __init__(
+        self,
+        select_locked_cells: bool = True,
+        select_unlocked_cells: bool = True,
+        format_cells: bool = False,
+        format_columns: bool = False,
+        format_rows: bool = False,
+        insert_columns: bool = False,
+        insert_rows: bool = False,
+        insert_links: bool = False,
+        delete_columns: bool = False,
+        delete_rows: bool = False,
+        sort: bool = False,
+        use_autofilter: bool = False,
+        use_pivot_tables: bool = False,
+        edit_scenarios: bool = False,
+        edit_objects: bool = False,
+        contents: bool = True,
+    ) -> None: ...
 
 class DataValidation:
     """Not the full upstream surface: allow_date()/allow_time() and the
