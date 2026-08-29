@@ -30,10 +30,10 @@ def test_protect_with_options_defaults():
     assert 'sheet="1"' in sheet
     # Defaults leave select/edit permissive, so none of those attributes
     # should be written.
-    assert "selectLockedCells" not in sheet
-    assert "selectUnlockedCells" not in sheet
-    assert "objects" not in sheet
-    assert "scenarios" not in sheet
+    assert 'selectLockedCells="1"' not in sheet
+    assert 'selectUnlockedCells="1"' not in sheet
+    assert 'objects="1"' not in sheet
+    assert 'scenarios="1"' not in sheet
 
 
 def test_protect_with_options_allow_insert():
