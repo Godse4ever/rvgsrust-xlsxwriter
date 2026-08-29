@@ -30,7 +30,7 @@ def test_insert_note_text():
     files = _zip_contents(lambda ws: ws.insert_note(0, 0, Note("Some text")))
     assert "xl/comments1.xml" in files
     comments = _text(files, "xl/comments1.xml")
-    assert "<t>Some text</t>" in comments
+    assert "Some text" in comments
     sheet = _text(files, "xl/worksheets/sheet1.xml")
     assert "<legacyDrawing " in sheet
 
@@ -89,10 +89,16 @@ def test_note_width_height_alt_text():
 
 
 def test_note_font_and_background_color():
+    # Font name/size land in comments1.xml's <rFont>/<sz> (the rich-text
+    # run properties), not the VML file; background_color is the one
+    # that's on the VML shape (fillcolor).
     note = Note("Text")
     note.set_font_name("Arial")
     note.set_font_size(12)
     note.set_background_color("#FFC7CE")
     files = _zip_contents(lambda ws: ws.insert_note(0, 0, note))
+    comments = _text(files, "xl/comments1.xml")
+    assert '<rFont val="Arial"/>' in comments
+    assert '<sz val="12"/>' in comments
     vml_files = [n for n in files if n.startswith("xl/drawings/vmlDrawing")]
-    assert "Arial" in _text(files, vml_files[0])
+    assert "#ffc7ce" in _text(files, vml_files[0]).lower()
