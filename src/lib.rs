@@ -3359,6 +3359,29 @@ impl Worksheet {
         })
     }
 
+    // ---- cell notes ----
+
+    fn insert_note(&self, py: Python<'_>, row: u32, col: u16, note: &Note) -> PyResult<()> {
+        self.check_row_order(row)?;
+        self.with_sheet(py, |sheet| {
+            sheet.insert_note(row, col, &note.inner).map(|_| ())
+        })
+    }
+
+    fn show_all_notes(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.show_all_notes(enable);
+            Ok(())
+        })
+    }
+
+    fn set_default_note_author(&self, py: Python<'_>, name: &str) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_default_note_author(name);
+            Ok(())
+        })
+    }
+
     fn autofit(&self, py: Python<'_>) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.autofit();
@@ -3827,6 +3850,66 @@ impl Shape {
 
     fn set_alt_text(&mut self, alt_text: &str) {
         self.inner = self.inner.clone().set_alt_text(alt_text);
+    }
+}
+
+// -----------------------------------------------------------------------
+// Note
+// -----------------------------------------------------------------------
+// MVP: the common text/author/sizing/visibility/basic-styling subset --
+// not set_format() (a full Format override) or set_object_movement().
+
+#[pyclass]
+#[derive(Clone)]
+struct Note {
+    inner: rust_xlsxwriter::Note,
+}
+
+#[pymethods]
+impl Note {
+    #[new]
+    fn new(text: &str) -> Self {
+        Note {
+            inner: rust_xlsxwriter::Note::new(text),
+        }
+    }
+
+    // Default "Author" is used if never set, either here or via
+    // Worksheet.set_default_note_author().
+    fn set_author(&mut self, name: &str) {
+        self.inner = self.inner.clone().set_author(name);
+    }
+
+    fn set_width(&mut self, width: u32) {
+        self.inner = self.inner.clone().set_width(width);
+    }
+
+    fn set_height(&mut self, height: u32) {
+        self.inner = self.inner.clone().set_height(height);
+    }
+
+    // Upstream default is hidden (only shown on hover/via
+    // show_all_notes()); set_visible(True) keeps it always shown.
+    fn set_visible(&mut self, enable: bool) {
+        self.inner = self.inner.clone().set_visible(enable);
+    }
+
+    fn set_alt_text(&mut self, alt_text: &str) {
+        self.inner = self.inner.clone().set_alt_text(alt_text);
+    }
+
+    fn set_background_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner = self.inner.clone().set_background_color(parsed);
+        Ok(())
+    }
+
+    fn set_font_name(&mut self, font_name: &str) {
+        self.inner = self.inner.clone().set_font_name(font_name);
+    }
+
+    fn set_font_size(&mut self, font_size: f64) {
+        self.inner = self.inner.clone().set_font_size(font_size);
     }
 }
 
@@ -6595,6 +6678,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ProtectionOptions>()?;
     m.add_class::<Button>()?;
     m.add_class::<Shape>()?;
+    m.add_class::<Note>()?;
     m.add_class::<ConditionalFormatCell>()?;
     m.add_class::<ConditionalFormatBlank>()?;
     m.add_class::<ConditionalFormatDuplicate>()?;
