@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11] - 2026-08-29
+
+Patch release, no breaking changes. Adds Worksheet protection options.
+
+### Added
+
+- **`ProtectionOptions`.** 15 boolean fields matching upstream's own
+  `ProtectionOptions::new()` defaults exactly (`select_locked_cells`/
+  `select_unlocked_cells` default to permissive; everything else,
+  including `edit_objects`/`edit_scenarios`, defaults to restrictive).
+- **`Worksheet.protect_with_options(options, password=None)`.** Sets
+  which worksheet elements are protected; the optional password is a
+  convenience that also calls `protect_with_password()` in the same
+  call (upstream keeps these as two independent methods).
+- **`Worksheet.unprotect_range(first_row, first_col, last_row, last_col,
+  name="", password="")`.** `protect()`/`protect_with_password()`
+  already existed as a single flattened `protect(password=None)`.
+
 ## [0.2.10] - 2026-08-29
 
 Patch release, no breaking changes. Adds Worksheet view, visibility,
