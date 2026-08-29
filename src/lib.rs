@@ -49,6 +49,18 @@ fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
     }
 }
 
+// Pre-checks existence before handing off to rust_xlsxwriter so the
+// error message includes the full path (the crate's own IoError
+// message may not).
+fn load_image(image_path: &str) -> PyResult<rust_xlsxwriter::Image> {
+    if !std::path::Path::new(image_path).exists() {
+        return Err(PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+            "file not found: '{image_path}'"
+        )));
+    }
+    rust_xlsxwriter::Image::new(image_path).map_err(xlsx_err_to_pyerr)
+}
+
 fn parse_ignore_error(name: &str) -> PyResult<rust_xlsxwriter::IgnoreError> {
     use rust_xlsxwriter::IgnoreError as E;
     match name {
@@ -3181,16 +3193,99 @@ impl Worksheet {
 
     fn insert_image(&self, py: Python<'_>, row: u32, col: u16, image_path: &str) -> PyResult<()> {
         self.check_row_order(row)?;
-        // Pre-check existence before handing to rust_xlsxwriter so the
-        // error message includes the full path (the crate's own IoError
-        // message may not).
-        if !std::path::Path::new(image_path).exists() {
-            return Err(PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
-                "insert_image(): file not found: '{image_path}'"
-            )));
-        }
-        let image = rust_xlsxwriter::Image::new(image_path).map_err(xlsx_err_to_pyerr)?;
+        let image = load_image(image_path)?;
         self.with_sheet(py, |sheet| sheet.insert_image(row, col, &image).map(|_| ()))
+    }
+
+    fn insert_image_with_offset(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        image_path: &str,
+        x_offset: u32,
+        y_offset: u32,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let image = load_image(image_path)?;
+        self.with_sheet(py, |sheet| {
+            sheet
+                .insert_image_with_offset(row, col, &image, x_offset, y_offset)
+                .map(|_| ())
+        })
+    }
+
+    // "Place in Cell" -- only renders in Excel 365 (2023+); older Excel
+    // shows #VALUE!. insert_image_fit_to_cell() below works everywhere.
+    fn embed_image(&self, py: Python<'_>, row: u32, col: u16, image_path: &str) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let image = load_image(image_path)?;
+        self.with_sheet(py, |sheet| sheet.embed_image(row, col, &image).map(|_| ()))
+    }
+
+    #[pyo3(signature = (row, col, image_path, format))]
+    fn embed_image_with_format(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        image_path: &str,
+        format: &Format,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let image = load_image(image_path)?;
+        self.with_sheet(py, |sheet| {
+            sheet
+                .embed_image_with_format(row, col, &image, &format.inner)
+                .map(|_| ())
+        })
+    }
+
+    // Scales the image to fit the cell (over the cell, not embedded in
+    // it, so -- unlike embed_image() -- this renders in every Excel
+    // version).
+    #[pyo3(signature = (row, col, image_path, keep_aspect_ratio=true))]
+    fn insert_image_fit_to_cell(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        image_path: &str,
+        keep_aspect_ratio: bool,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let image = load_image(image_path)?;
+        self.with_sheet(py, |sheet| {
+            sheet
+                .insert_image_fit_to_cell(row, col, &image, keep_aspect_ratio)
+                .map(|_| ())
+        })
+    }
+
+    fn insert_image_fit_to_cell_centered(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        image_path: &str,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let image = load_image(image_path)?;
+        self.with_sheet(py, |sheet| {
+            sheet
+                .insert_image_fit_to_cell_centered(row, col, &image)
+                .map(|_| ())
+        })
+    }
+
+    // No row-order guard: this sets a whole-sheet background, not a
+    // per-row object.
+    fn insert_background_image(&self, py: Python<'_>, image_path: &str) -> PyResult<()> {
+        let image = load_image(image_path)?;
+        self.with_sheet(py, |sheet| {
+            sheet.insert_background_image(&image);
+            Ok(())
+        })
     }
 
     fn autofit(&self, py: Python<'_>) -> PyResult<()> {
