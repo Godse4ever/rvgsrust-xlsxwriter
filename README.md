@@ -1045,8 +1045,9 @@ deliberate design win.
 | **v0.2.6** | ✅ Patch release: row/column outline grouping (`group_rows`/`group_columns`/`*_collapsed`/`group_symbols_above`/`group_symbols_to_left`). Known limitation: `group_rows()` doesn't apply per-row grouping when `constant_memory=True` -- see README's Known Limitations. |
 | **v0.2.7** | ✅ Patch release: `ConditionalFormatIconSet` and `ConditionalFormatCustomIcon` -- all 20 icon set styles, `reverse_icons`, `show_icons_only`, per-icon threshold/type/direction overrides. |
 | **v0.2.8** | ✅ Patch release: chart secondary axes -- `set_x2_axis_*`/`set_y2_axis_*`, mirroring the existing `x_axis`/`y_axis` setters. Takes effect once a series is routed to the secondary axis via the existing `ChartSeries.set_secondary_axis()`. |
-| **v0.3** | 🚧 Date/time data validation rules; chart error bars |
-| **v0.4** | 🚧 Chart error bars; cell notes and autofilter criteria; full xlsxwriter API compatibility layer |
+| **v0.2.9** | ✅ Patch release: chart error bars -- `ChartErrorBars` pyclass (fixed value / percentage / standard deviation / standard error / custom-range types, direction, end cap, line formatting) via `ChartSeries.set_x_error_bars()`/`set_y_error_bars()`. |
+| **v0.3** | 🚧 Date/time data validation rules; Worksheet notes/filters/views/protection/images |
+| **v0.4** | 🚧 Workbook gaps (chartsheets, themes, VBA); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
@@ -1057,9 +1058,10 @@ All three phases have landed:
 2. ✅ Formatting depth: `ChartFormat`/`ChartFont`, line/font/fill styling
 3. ✅ Decorations: `ChartMarker`, `ChartTrendline`, `ChartDataLabel`
 4. ✅ Secondary axes: `set_x2_axis_*`/`set_y2_axis_*`
+5. ✅ Error bars: `ChartErrorBars`
 
-Remaining chart work, tracked in [MISSING.md](MISSING.md): error bars,
-data tables, manual layout, and the less common chart types (Radar,
+Remaining chart work, tracked in [MISSING.md](MISSING.md): data
+tables, manual layout, and the less common chart types (Radar,
 Stock, Doughnut, Surface).
 
 ### Secondary Axes
@@ -1091,6 +1093,38 @@ chart.push_series(units)
 chart.push_series(revenue)
 chart.set_y_axis_name("Units")
 chart.set_y2_axis_name("Revenue ($M)")
+ws.insert_chart(0, 3, chart)
+
+wb.close()
+```
+
+### Error Bars
+
+`ChartErrorBars` covers all five upstream types. `set_type_standard_error()`
+is the default; `set_type_fixed_value()`/`set_type_percentage()`/
+`set_type_standard_deviation()` each take a single positive value;
+`set_type_custom()` takes two worksheet ranges (plus/minus). Direction
+defaults to `"both"` (also `"minus"`/`"plus"`); Excel only supports
+`ChartFormat.set_line()` on error bars, per upstream. Horizontal
+(`set_x_error_bars`) only renders in Excel for Scatter and Bar charts.
+
+```python
+from rvgsrust_xlsxwriter import Workbook, Chart, ChartSeries, ChartErrorBars
+
+wb = Workbook("error_bars.xlsx")
+ws = wb.add_worksheet()
+ws.write_column(0, 0, [10, 40, 50, 20, 10, 50])
+
+series = ChartSeries()
+series.set_values("Sheet1!$A$1:$A$6")
+
+error_bars = ChartErrorBars()
+error_bars.set_type_standard_deviation(1.0)
+error_bars.set_direction("plus")
+series.set_y_error_bars(error_bars)
+
+chart = Chart("column")
+chart.push_series(series)
 ws.insert_chart(0, 3, chart)
 
 wb.close()
@@ -1140,8 +1174,9 @@ The largest remaining gaps are header/footer text images on
 `Worksheet` (`set_header_image`/`set_footer_image` -- still need an
 `Image` pyclass first); date/time data validation rules and the
 cell-reference formula variants of the numeric/text-length/date/time
-rules; and error bars and a handful of formatting options on `Chart`
-(secondary axes closed in v0.2.8). `Conditional formats` and `Format`
+rules; and a handful of formatting options on `Chart` (secondary axes
+closed in v0.2.8, error bars closed in v0.2.9). `Conditional formats`
+and `Format`
 are both at full parity now (`Format` except `set_font_scheme()`, deliberately
 not exposed) -- see MISSING.md's "Suggested order" for the full
 ranked list.
