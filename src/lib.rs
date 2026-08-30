@@ -4000,7 +4000,7 @@ impl FilterCondition {
     fn add_list_filter(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
         match filter_value(value)? {
             FilterVal::Num(f) => self.inner = self.inner.clone().add_list_filter(f),
-            FilterVal::Str(s) => self.inner = self.inner.clone().add_list_filter(s),
+            FilterVal::Str(s) => self.inner = self.inner.clone().add_list_filter(s.as_str()),
         }
         Ok(())
     }
@@ -4015,7 +4015,9 @@ impl FilterCondition {
         let parsed = parse_filter_criteria(criteria)?;
         match filter_value(value)? {
             FilterVal::Num(f) => self.inner = self.inner.clone().add_custom_filter(parsed, f),
-            FilterVal::Str(s) => self.inner = self.inner.clone().add_custom_filter(parsed, s),
+            FilterVal::Str(s) => {
+                self.inner = self.inner.clone().add_custom_filter(parsed, s.as_str())
+            }
         }
         Ok(())
     }
