@@ -3382,6 +3382,24 @@ impl Worksheet {
         })
     }
 
+    // ---- autofilter criteria ----
+    // No row-order guard: this is column metadata, not a row write, and
+    // upstream's own filter_column() already requires autofilter() to
+    // have been called first (with a clear ParameterError if not).
+
+    fn filter_column(
+        &self,
+        py: Python<'_>,
+        col: u16,
+        filter_condition: &FilterCondition,
+    ) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet
+                .filter_column(col, &filter_condition.inner)
+                .map(|_| ())
+        })
+    }
+
     fn autofit(&self, py: Python<'_>) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.autofit();
@@ -3910,6 +3928,100 @@ impl Note {
 
     fn set_font_size(&mut self, font_size: f64) {
         self.inner = self.inner.clone().set_font_size(font_size);
+    }
+}
+
+// -----------------------------------------------------------------------
+// FilterCondition
+// -----------------------------------------------------------------------
+
+// Accepts a number or a string, matching upstream's IntoFilterData
+// (implemented for &str/f64/i32) -- same shape as cf_value() above for
+// conditional formats.
+enum FilterVal {
+    Num(f64),
+    Str(String),
+}
+
+fn filter_value(value: &Bound<'_, PyAny>) -> PyResult<FilterVal> {
+    if let Ok(f) = value.extract::<f64>() {
+        Ok(FilterVal::Num(f))
+    } else if let Ok(s) = value.extract::<String>() {
+        Ok(FilterVal::Str(s))
+    } else {
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "filter value must be a number or a string",
+        ))
+    }
+}
+
+fn parse_filter_criteria(name: &str) -> PyResult<rust_xlsxwriter::FilterCriteria> {
+    use rust_xlsxwriter::FilterCriteria as C;
+    match name {
+        "equal_to" => Ok(C::EqualTo),
+        "not_equal_to" => Ok(C::NotEqualTo),
+        "greater_than" => Ok(C::GreaterThan),
+        "greater_than_or_equal_to" => Ok(C::GreaterThanOrEqualTo),
+        "less_than" => Ok(C::LessThan),
+        "less_than_or_equal_to" => Ok(C::LessThanOrEqualTo),
+        "begins_with" => Ok(C::BeginsWith),
+        "does_not_begin_with" => Ok(C::DoesNotBeginWith),
+        "ends_with" => Ok(C::EndsWith),
+        "does_not_end_with" => Ok(C::DoesNotEndWith),
+        "contains" => Ok(C::Contains),
+        "does_not_contain" => Ok(C::DoesNotContain),
+        other => Err(dv_type_err(
+            "filter criteria",
+            other,
+            "equal_to, not_equal_to, greater_than, greater_than_or_equal_to, \
+             less_than, less_than_or_equal_to, begins_with, does_not_begin_with, \
+             ends_with, does_not_end_with, contains, does_not_contain",
+        )),
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct FilterCondition {
+    inner: rust_xlsxwriter::FilterCondition,
+}
+
+#[pymethods]
+impl FilterCondition {
+    #[new]
+    fn new() -> Self {
+        FilterCondition {
+            inner: rust_xlsxwriter::FilterCondition::new(),
+        }
+    }
+
+    // value is a number or a string, e.g. matching an exact cell value
+    // shown in Excel's AutoFilter dropdown list.
+    fn add_list_filter(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        match filter_value(value)? {
+            FilterVal::Num(f) => self.inner = self.inner.clone().add_list_filter(f),
+            FilterVal::Str(s) => self.inner = self.inner.clone().add_list_filter(s),
+        }
+        Ok(())
+    }
+
+    fn add_list_blanks_filter(&mut self) {
+        self.inner = self.inner.clone().add_list_blanks_filter();
+    }
+
+    // Up to two custom filters can be added; they combine with AND by
+    // default -- call add_custom_boolean_or() to combine with OR instead.
+    fn add_custom_filter(&mut self, criteria: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_filter_criteria(criteria)?;
+        match filter_value(value)? {
+            FilterVal::Num(f) => self.inner = self.inner.clone().add_custom_filter(parsed, f),
+            FilterVal::Str(s) => self.inner = self.inner.clone().add_custom_filter(parsed, s),
+        }
+        Ok(())
+    }
+
+    fn add_custom_boolean_or(&mut self) {
+        self.inner = self.inner.clone().add_custom_boolean_or();
     }
 }
 
@@ -6679,6 +6791,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Button>()?;
     m.add_class::<Shape>()?;
     m.add_class::<Note>()?;
+    m.add_class::<FilterCondition>()?;
     m.add_class::<ConditionalFormatCell>()?;
     m.add_class::<ConditionalFormatBlank>()?;
     m.add_class::<ConditionalFormatDuplicate>()?;
