@@ -81,7 +81,7 @@ reference in the same 8 comparison rules; lower priority since a
 `allow_custom()` formula already covers the same ground less
 conveniently.
 
-### 1e. Notes, filters, views, protection, images — Medium
+### 1e. Notes, filters, views, protection, images — closed (except serde)
 
 Row/column visibility, pixel dimensions, zoom/selection/tabs, ignored
 errors, autofit tuning, and NaN/infinity display strings shipped in
@@ -100,11 +100,15 @@ existing `insert_image()`, no `Image` pyclass needed. Checkboxes
 implements -- text/sizing only, not fill/line/font) shipped in
 PR #33. Cell notes (`Note` pyclass -- text/author/sizing/visible/
 alt_text/background_color/font_name/font_size, not `set_format()` or
-`set_object_movement()`) shipped in PR #34. What remains:
+`set_object_movement()`) shipped in PR #34. Autofilter criteria
+(`FilterCondition` pyclass -- `add_list_filter`, `add_list_blanks_filter`,
+`add_custom_filter` with all 12 `FilterCriteria` variants,
+`add_custom_boolean_or`) shipped in PR #35, via a new
+`Worksheet.filter_column()` (previously only the autofilter *range*
+was exposed). What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Autofilter criteria | `worksheet.rs:8791` | `filter_column(col, filter)` — needs a `FilterCondition` pyclass. We expose only the autofilter *range* today | Medium |
 | serde serialisation | — | `serialize_headers(...)` and friends. Feature-gated upstream; would need the `serde` feature enabled | Low |
 
 ---
@@ -200,20 +204,12 @@ Charts deprioritized to last per explicit direction -- everything
 else (Worksheet 1e, Workbook) goes first regardless of the
 value-per-effort ranking that guided the list before this:
 
-1. Worksheet 1e -- notes, filters, views, protection, images. Flat
-   setters (visibility, sizing, view/zoom/tabs, ignored errors,
-   autofit tuning, NaN/infinity strings) shipped in PR #30; password
-   protection (`ProtectionOptions`, `protect_with_options()`,
-   `unprotect_range()`) shipped in PR #31; image placement
-   (`insert_image_with_offset`, `embed_image(_with_format)`,
-   `insert_image_fit_to_cell(_centered)`, `insert_background_image`)
-   shipped in PR #32; checkboxes, `Button`, and Textbox-only `Shape`
-   shipped in PR #33; cell notes (`Note` pyclass) shipped in PR #34.
-   Still open: autofilter criteria, which needs a new
-   `FilterCondition` pyclass -- the last item in 1e.
+1. Worksheet 1e -- notes, filters, views, protection, images.
+   **Closed** (PRs #30-#35), except serde serialisation (Low
+   priority, feature-gated upstream, left for later).
 2. Workbook -- 6 gaps. Chartsheets need a `Chartsheet` pyclass; the
    rest (themes, default format, VBA, read-only-recommended,
-   tempdir/large-zip) are flat setters.
+   tempdir/large-zip) are flat setters. **Next up.**
 3. Charts -- ~58 remaining gaps (data tables, combined charts,
    gradient/pattern fills, axis label placement/tick marks/date-min-
    max, manual layout, per-point formatting, up-down/drop/high-low

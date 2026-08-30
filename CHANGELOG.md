@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.15] - 2026-08-29
+
+Patch release, no breaking changes. Adds autofilter criteria -- the
+last item in Worksheet 1e (notes, filters, views, protection, images)
+besides serde serialisation.
+
+### Added
+
+- **`FilterCondition`.** `add_list_filter(value)` (number or string),
+  `add_list_blanks_filter()`, `add_custom_filter(criteria, value)` with
+  all 12 `FilterCriteria` types (`equal_to`, `not_equal_to`,
+  `greater_than`, `greater_than_or_equal_to`, `less_than`,
+  `less_than_or_equal_to`, `begins_with`, `does_not_begin_with`,
+  `ends_with`, `does_not_end_with`, `contains`, `does_not_contain`),
+  `add_custom_boolean_or()` (two custom filters combine with AND by
+  default).
+- **`Worksheet.filter_column(col, filter_condition)`.** Previously only
+  the autofilter *range* (`autofilter()`) was exposed, not per-column
+  criteria.
+
 ## [0.2.14] - 2026-08-29
 
 Patch release, no breaking changes. Adds cell notes.
