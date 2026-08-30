@@ -114,8 +114,8 @@ def test_add_vba_project():
 
         files = _zip_contents(build)
         assert "xl/vbaProject.bin" in files
-        sheet = _text(files, "xl/worksheets/sheet1.xml")
-        assert 'codeName="{37E998C4-C9E5-D4B9-71C8-EB1FF731991C}"' in sheet
+        workbook_xml = _text(files, "xl/workbook.xml")
+        assert 'codeName="{37E998C4-C9E5-D4B9-71C8-EB1FF731991C}"' in workbook_xml
     finally:
         os.remove(path)
 
