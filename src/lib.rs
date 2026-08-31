@@ -3400,6 +3400,12 @@ impl Worksheet {
         })
     }
 
+    // Sets the codename used to refer to this worksheet from VBA. Only
+    // meaningful alongside Workbook.add_vba_project().
+    fn set_vba_name(&self, py: Python<'_>, name: &str) -> PyResult<()> {
+        self.with_sheet(py, |sheet| sheet.set_vba_name(name).map(|_| ()))
+    }
+
     fn autofit(&self, py: Python<'_>) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.autofit();
@@ -3655,6 +3661,90 @@ impl Workbook {
             .map_err(|_| reentrant_workbook_err())?
             .define_name(name, formula)
             .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    // Must be called before add_worksheet() -- rejects otherwise with
+    // upstream's own DefaultFormatError, matching set_default_format()'s
+    // own requirement below.
+    fn use_excel_2023_theme(&self) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .use_excel_2023_theme()
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    // path can be an Excel .thmx/.xlsx file, or a bare theme1.xml
+    // extracted from one. Must be called before add_worksheet(); pair
+    // with set_default_format() to match the theme's font, per
+    // upstream's own doc note.
+    fn use_custom_theme(&self, path: &str) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .use_custom_theme(path)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    // Must be called before add_worksheet() -- rejects with
+    // DefaultFormatError otherwise, since the default format is shared
+    // with worksheets as they're created.
+    fn set_default_format(&self, format: &Format, row_height: u32, col_width: u32) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .set_default_format(&format.inner, row_height, col_width)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    // Embeds an existing VBA project (.bin, extracted from an
+    // xlsm/xlsm-enabled file) so the output can be saved as .xlsm.
+    // add_vba_project_with_signature() (code-signed macros) isn't
+    // exposed -- a reasonable line to draw for a Low-priority item.
+    fn add_vba_project(&self, path: &str) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .add_vba_project(path)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    fn set_vba_name(&self, name: &str) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .set_vba_name(name)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    fn read_only_recommended(&self) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .read_only_recommended();
+        Ok(())
+    }
+
+    fn set_tempdir(&self, path: &str) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .set_tempdir(path)
+            .map_err(xlsx_err_to_pyerr)?;
+        Ok(())
+    }
+
+    fn use_zip_large_file(&self, enable: bool) -> PyResult<()> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| reentrant_workbook_err())?
+            .use_zip_large_file(enable);
         Ok(())
     }
 
