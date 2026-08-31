@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.16] - 2026-08-29
+
+Patch release, no breaking changes. Adds five of Workbook's six
+MISSING.md gaps -- only Chartsheets remain.
+
+### Added
+
+- **Themes.** `use_excel_2023_theme()`, `use_custom_theme(path)`. Both
+  must be called before `add_worksheet()` -- upstream's own
+  `DefaultFormatError` otherwise, since the default format is shared
+  with worksheets as they're created.
+- **`set_default_format(format, row_height, col_width)`.** Same
+  before-any-worksheet requirement. `col_width` must be one of
+  upstream's fixed set (56, 64, 72, 80, 96, 104, 120) -- anything else
+  raises.
+- **VBA projects.** `add_vba_project(path)` embeds an existing
+  `vbaProject.bin` (`add_vba_project_with_signature()`, for code-signed
+  macros, intentionally not bound). `set_vba_name(name)` on both
+  `Workbook` and `Worksheet`.
+- **`read_only_recommended()`.**
+- **`set_tempdir(path)`, `use_zip_large_file(enable)`.**
+
 ## [0.2.15] - 2026-08-29
 
 Patch release, no breaking changes. Adds autofilter criteria -- the

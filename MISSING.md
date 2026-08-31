@@ -113,16 +113,17 @@ was exposed). What remains:
 
 ---
 
-## 2. Workbook — 6 gaps
+## 2. Workbook — 1 gap
+
+Themes (`use_excel_2023_theme()`, `use_custom_theme()`), default format
+(`set_default_format()`), VBA projects (`add_vba_project()`,
+`Workbook`/`Worksheet.set_vba_name()`), read-only-recommended, and
+tempdir/large-zip all shipped in PR #36 (`add_vba_project_with_signature()`
+-- code-signed macros -- intentionally not bound). What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
 | Chartsheets | `workbook.rs:906` | `add_chartsheet()` — needs a `Chartsheet` pyclass | Medium |
-| Themes | `workbook.rs:1918` | `use_excel_2023_theme()`, `use_custom_theme(...)` | Low |
-| Workbook default format | — | `set_default_format(format)` | Low |
-| VBA projects | `workbook.rs:2141` | `add_vba_project(path)`, `set_vba_name(name)` | Low |
-| Read-only recommended | `workbook.rs:2345` | `read_only_recommended()` | Low |
-| Temp dir / large zip | `workbook.rs:828` | `set_tempdir(path)`, `use_zip_large_file(bool)` | Low |
 
 ---
 
@@ -207,9 +208,8 @@ value-per-effort ranking that guided the list before this:
 1. Worksheet 1e -- notes, filters, views, protection, images.
    **Closed** (PRs #30-#35), except serde serialisation (Low
    priority, feature-gated upstream, left for later).
-2. Workbook -- 6 gaps. Chartsheets need a `Chartsheet` pyclass; the
-   rest (themes, default format, VBA, read-only-recommended,
-   tempdir/large-zip) are flat setters. **Next up.**
+2. Workbook -- 1 gap left (PR #36 closed the other 5). Chartsheets
+   need a `Chartsheet` pyclass. **Next up.**
 3. Charts -- ~58 remaining gaps (data tables, combined charts,
    gradient/pattern fills, axis label placement/tick marks/date-min-
    max, manual layout, per-point formatting, up-down/drop/high-low
