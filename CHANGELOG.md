@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.17] - 2026-08-29
+
+Patch release, no breaking changes. Adds Workbook.add_chartsheet() --
+closes Workbook's MISSING.md gaps entirely.
+
+### Added
+
+- **`Workbook.add_chartsheet()`.** No new pyclass -- upstream returns
+  the same `&mut Worksheet` type from `add_chartsheet()` as from
+  `add_worksheet()` (internally flagged), so every existing
+  `Worksheet` method (`insert_chart`, `set_name`, `protect`, etc.)
+  already works on a chartsheet. Auto-named "Chart1", "Chart2", ...
+  -- rename with `set_name()`.
+
 ## [0.2.16] - 2026-08-29
 
 Patch release, no breaking changes. Adds five of Workbook's six
