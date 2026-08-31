@@ -6465,6 +6465,42 @@ impl Chart {
         self.inner.y2_axis().set_name_format(&mut fmt);
     }
 
+    // ---- up-down bars, drop lines, high-low lines ----
+    // Line-chart-only decorations: Excel silently ignores these on other
+    // chart types, matching upstream's own lack of validation here.
+
+    fn set_up_down_bars(&mut self, enable: bool) {
+        self.inner.set_up_down_bars(enable);
+    }
+
+    fn set_up_bar_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_up_bar_format(&mut fmt);
+    }
+
+    fn set_down_bar_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_down_bar_format(&mut fmt);
+    }
+
+    fn set_high_low_lines(&mut self, enable: bool) {
+        self.inner.set_high_low_lines(enable);
+    }
+
+    fn set_high_low_lines_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_high_low_lines_format(&mut fmt);
+    }
+
+    fn set_drop_lines(&mut self, enable: bool) {
+        self.inner.set_drop_lines(enable);
+    }
+
+    fn set_drop_lines_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.set_drop_lines_format(&mut fmt);
+    }
+
     // ---- legend ----
 
     // One of right, left, top, bottom, top_right.
