@@ -1055,7 +1055,8 @@ deliberate design win.
 | **v0.2.16** | ✅ Patch release: Workbook themes (`use_excel_2023_theme()`, `use_custom_theme()`), `set_default_format()`, VBA projects (`add_vba_project()`, `set_vba_name()` on both `Workbook` and `Worksheet`), `read_only_recommended()`, `set_tempdir()`, `use_zip_large_file()`. |
 | **v0.2.17** | ✅ Patch release: `Workbook.add_chartsheet()` -- closes Workbook's MISSING.md gaps entirely. No new pyclass needed; upstream returns the same `&mut Worksheet` type as `add_worksheet()`, so every existing `Worksheet` method already works on it. |
 | **v0.2.18** | ✅ Patch release: header/footer images (`set_header_image()`/`set_footer_image()`) and align/scale-with-page settings; `DataValidation.allow_date()`/`allow_time()` (accepting Python `date`/`time`/`datetime` objects) and their cell-reference formula variants. Closes Worksheet's MISSING.md gaps entirely except serde serialisation. |
-| **v0.3** | 🚧 Chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
+| **v0.2.19** | ✅ Patch release: chart up-down bars, drop lines, high-low lines -- Line-chart-only decorations. |
+| **v0.3** | 🚧 Remaining chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
@@ -1067,6 +1068,7 @@ All three phases have landed:
 3. ✅ Decorations: `ChartMarker`, `ChartTrendline`, `ChartDataLabel`
 4. ✅ Secondary axes: `set_x2_axis_*`/`set_y2_axis_*`
 5. ✅ Error bars: `ChartErrorBars`
+6. ✅ Up-down bars, drop lines, high-low lines (Line charts only)
 
 Remaining chart work, tracked in [MISSING.md](MISSING.md): data
 tables, manual layout, and the less common chart types (Radar,
