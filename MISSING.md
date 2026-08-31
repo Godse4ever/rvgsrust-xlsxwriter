@@ -22,17 +22,16 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 ---
 
-## Charts — ~58 gaps
+## Charts — ~55 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
 labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
-error bars (`ChartErrorBars`, PR #29) have shipped. What remains:
+error bars (`ChartErrorBars`, PR #29) have shipped. Up-down bars, drop
+lines, and high-low lines (all Line-chart-only decorations) shipped in
+PR #39. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Up-down bars | `chart.rs:2015` | `Chart.set_up_down_bars()`, `set_up_bar_format(fmt)`, `set_down_bar_format(fmt)` | Medium |
-| Drop lines | `chart.rs:2326` | `Chart.set_drop_lines()`, `set_drop_lines_format(fmt)` | Medium |
-| High-low lines | `chart.rs:2184` | `Chart.set_high_low_lines()`, `set_high_low_lines_format(fmt)` | Medium |
 | Data table | `chart.rs:2470` | `ChartDataTable` pyclass (`chart.rs:17269`), via `Chart.set_data_table(table)` | Medium |
 | Combined charts | `chart.rs:1744` | `Chart.combine(other_chart)` | Medium |
 | Chart / plot area formatting | `chart.rs:1530`, `1592` | Flatten as `set_chart_area_format(fmt)` / `set_plot_area_format(fmt)`, since `ChartArea::new` is `pub(crate)` like the axes | Medium |

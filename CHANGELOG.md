@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.19] - 2026-08-31
+
+Patch release, no breaking changes. Adds chart up-down bars, drop
+lines, and high-low lines -- Line-chart-only decorations, only
+rendered inside upstream's `c:lineChart` element (Excel silently
+ignores them on other chart types, matching upstream's own lack of
+validation here).
+
+### Added
+
+- **`Chart.set_up_down_bars(enable)`** / **`set_up_bar_format(format)`**
+  / **`set_down_bar_format(format)`.**
+- **`Chart.set_high_low_lines(enable)`** / **`set_high_low_lines_format(format)`.**
+- **`Chart.set_drop_lines(enable)`** / **`set_drop_lines_format(format)`.**
+
 ## [0.2.18] - 2026-08-31
 
 Patch release, no breaking changes. Closes Worksheet's remaining
