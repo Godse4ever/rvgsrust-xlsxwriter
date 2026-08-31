@@ -675,3 +675,34 @@ def test_up_bar_format_gets_sppr_element():
     fmt.set_fill_color("#FF0000")
     xml = _simple(chart_type="line", set_up_down_bars=True, set_up_bar_format=fmt)
     assert "<c:upBars><c:spPr>" in xml
+
+
+# ----------------------- chart area / plot area formatting -----------------------
+
+
+def test_chart_area_format():
+    fmt = ChartFormat()
+    fmt.set_fill_color("#FF0000")
+    xml = _simple(set_chart_area_format=fmt)
+    assert "FF0000" in xml
+
+
+def test_plot_area_format():
+    fmt = ChartFormat()
+    fmt.set_fill_color("#00FF00")
+    xml = _simple(set_plot_area_format=fmt)
+    assert "00FF00" in xml
+
+
+def test_chart_area_and_plot_area_format_together():
+    chart_fmt = ChartFormat()
+    chart_fmt.set_fill_color("#FF0000")
+    plot_fmt = ChartFormat()
+    plot_fmt.set_fill_color("#00FF00")
+    xml = _simple(set_chart_area_format=chart_fmt, set_plot_area_format=plot_fmt)
+    assert "FF0000" in xml
+    assert "00FF00" in xml
+    # chart area's spPr is a direct child of chartSpace (after </c:chart>),
+    # plot area's is the last child of plotArea -- confirm both fills
+    # landed in their own distinct spPr, not merged into one.
+    assert xml.count("<c:spPr>") >= 2
