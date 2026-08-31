@@ -1054,7 +1054,8 @@ deliberate design win.
 | **v0.2.15** | ✅ Patch release: a new `FilterCondition` pyclass for autofilter criteria (`add_list_filter`, `add_list_blanks_filter`, `add_custom_filter` with all 12 criteria types, `add_custom_boolean_or`) via a new `filter_column()` -- previously only the autofilter range was exposed. Closes Worksheet 1e entirely except serde serialisation. |
 | **v0.2.16** | ✅ Patch release: Workbook themes (`use_excel_2023_theme()`, `use_custom_theme()`), `set_default_format()`, VBA projects (`add_vba_project()`, `set_vba_name()` on both `Workbook` and `Worksheet`), `read_only_recommended()`, `set_tempdir()`, `use_zip_large_file()`. |
 | **v0.2.17** | ✅ Patch release: `Workbook.add_chartsheet()` -- closes Workbook's MISSING.md gaps entirely. No new pyclass needed; upstream returns the same `&mut Worksheet` type as `add_worksheet()`, so every existing `Worksheet` method already works on it. |
-| **v0.3** | 🚧 Date/time data validation rules; Chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
+| **v0.2.18** | ✅ Patch release: header/footer images (`set_header_image()`/`set_footer_image()`) and align/scale-with-page settings; `DataValidation.allow_date()`/`allow_time()` (accepting Python `date`/`time`/`datetime` objects) and their cell-reference formula variants. Closes Worksheet's MISSING.md gaps entirely except serde serialisation. |
+| **v0.3** | 🚧 Chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
@@ -1177,12 +1178,12 @@ naming itself (`set_top_border` vs upstream's `set_border_top`) has
 since been reconciled: both spellings work, the reversed ones kept for
 compatibility.
 
-The largest remaining gaps are header/footer text images on
-`Worksheet` (`set_header_image`/`set_footer_image` -- still need an
-`Image` pyclass first); date/time data validation rules and the
-cell-reference formula variants of the numeric/text-length/date/time
-rules; and a handful of formatting options on `Chart` (secondary axes
-closed in v0.2.8, error bars closed in v0.2.9). `Conditional formats`
+The largest remaining gaps are all on `Chart` now (secondary axes
+closed in v0.2.8, error bars closed in v0.2.9) -- Worksheet and
+Workbook are both fully closed except serde serialisation (a
+Cargo-feature-gated Rust generic that needs a Python-dict-to-JSON
+bridge, deferred as a dedicated follow-up rather than a small gap).
+`Conditional formats`
 and `Format`
 are both at full parity now (`Format` except `set_font_scheme()`, deliberately
 not exposed) -- see MISSING.md's "Suggested order" for the full

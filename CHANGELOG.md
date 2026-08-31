@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.18] - 2026-08-31
+
+Patch release, no breaking changes. Closes Worksheet's remaining
+MISSING.md gaps except serde serialisation.
+
+### Added
+
+- **Header/footer images.** `set_header_image(image_path, position)` /
+  `set_footer_image(image_path, position)` (position: left/center/right),
+  reusing the same plain-`image_path` convention as `insert_image()` --
+  no `Image` pyclass needed. Requires a matching `&[Picture]`/`&[G]`
+  placeholder already present in the header/footer text.
+- **`set_header_footer_scale_with_doc()`** / **`set_header_footer_align_with_page()`.**
+- **`DataValidation.allow_date()`/`allow_time()`.** Accept a Python
+  `date`/`time`/`datetime` object directly (attribute lookups for
+  year/month/day or hour/minute/second/microsecond, matching
+  `write_date_py()`/`write_datetime_py()`'s existing approach -- no
+  chrono dependency). Same 8 comparison types as the numeric rules.
+- **`allow_date_formula()`/`allow_time_formula()`.** Same 8 comparison
+  types, but against a cell reference instead of a literal value.
+
 ## [0.2.17] - 2026-08-29
 
 Patch release, no breaking changes. Adds Workbook.add_chartsheet() --
