@@ -1053,8 +1053,8 @@ deliberate design win.
 | **v0.2.14** | ✅ Patch release: a new `Note` pyclass for cell notes (text/author/sizing/visible/alt_text/background_color/font_name/font_size) via `insert_note()`, plus `show_all_notes()` and `set_default_note_author()`. |
 | **v0.2.15** | ✅ Patch release: a new `FilterCondition` pyclass for autofilter criteria (`add_list_filter`, `add_list_blanks_filter`, `add_custom_filter` with all 12 criteria types, `add_custom_boolean_or`) via a new `filter_column()` -- previously only the autofilter range was exposed. Closes Worksheet 1e entirely except serde serialisation. |
 | **v0.2.16** | ✅ Patch release: Workbook themes (`use_excel_2023_theme()`, `use_custom_theme()`), `set_default_format()`, VBA projects (`add_vba_project()`, `set_vba_name()` on both `Workbook` and `Worksheet`), `read_only_recommended()`, `set_tempdir()`, `use_zip_large_file()`. |
-| **v0.3** | 🚧 Chartsheets (`Chartsheet` pyclass) |
-| **v0.4** | 🚧 Date/time data validation rules; Chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
+| **v0.2.17** | ✅ Patch release: `Workbook.add_chartsheet()` -- closes Workbook's MISSING.md gaps entirely. No new pyclass needed; upstream returns the same `&mut Worksheet` type as `add_worksheet()`, so every existing `Worksheet` method already works on it. |
+| **v0.3** | 🚧 Date/time data validation rules; Chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
