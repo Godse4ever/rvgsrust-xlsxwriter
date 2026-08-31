@@ -6501,6 +6501,20 @@ impl Chart {
         self.inner.set_drop_lines_format(&mut fmt);
     }
 
+    // ---- chart area / plot area formatting ----
+    // Background behind the whole chart (chart_area) vs. the area
+    // between the axes where series are plotted (plot_area).
+
+    fn set_chart_area_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.chart_area().set_format(&mut fmt);
+    }
+
+    fn set_plot_area_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner.plot_area().set_format(&mut fmt);
+    }
+
     // ---- legend ----
 
     // One of right, left, top, bottom, top_right.
