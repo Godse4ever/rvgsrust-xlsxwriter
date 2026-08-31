@@ -61,6 +61,20 @@ fn load_image(image_path: &str) -> PyResult<rust_xlsxwriter::Image> {
     rust_xlsxwriter::Image::new(image_path).map_err(xlsx_err_to_pyerr)
 }
 
+fn parse_header_image_position(name: &str) -> PyResult<rust_xlsxwriter::HeaderImagePosition> {
+    use rust_xlsxwriter::HeaderImagePosition as P;
+    match name.to_ascii_lowercase().as_str() {
+        "left" => Ok(P::Left),
+        "center" => Ok(P::Center),
+        "right" => Ok(P::Right),
+        other => Err(cf_type_err(
+            "header image position",
+            other,
+            "left, center, right",
+        )),
+    }
+}
+
 fn parse_ignore_error(name: &str) -> PyResult<rust_xlsxwriter::IgnoreError> {
     use rust_xlsxwriter::IgnoreError as E;
     match name {
@@ -2877,6 +2891,40 @@ impl Worksheet {
         })
     }
 
+    // Requires a matching &[Picture]/&[G] placeholder already present in
+    // the header/footer text (set via set_header()/set_footer() above) --
+    // upstream raises ParameterError otherwise, which this just
+    // propagates rather than pre-validating itself.
+    fn set_header_image(&self, py: Python<'_>, image_path: &str, position: &str) -> PyResult<()> {
+        let image = load_image(image_path)?;
+        let parsed = parse_header_image_position(position)?;
+        self.with_sheet(py, |sheet| {
+            sheet.set_header_image(&image, parsed).map(|_| ())
+        })
+    }
+
+    fn set_footer_image(&self, py: Python<'_>, image_path: &str, position: &str) -> PyResult<()> {
+        let image = load_image(image_path)?;
+        let parsed = parse_header_image_position(position)?;
+        self.with_sheet(py, |sheet| {
+            sheet.set_footer_image(&image, parsed).map(|_| ())
+        })
+    }
+
+    fn set_header_footer_scale_with_doc(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_header_footer_scale_with_doc(enable);
+            Ok(())
+        })
+    }
+
+    fn set_header_footer_align_with_page(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_header_footer_align_with_page(enable);
+            Ok(())
+        })
+    }
+
     fn hide(&self, py: Python<'_>) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.set_hidden(true);
@@ -4228,6 +4276,83 @@ fn parse_dv_rule_u32(rule_type: &str, v1: u32, v2: Option<u32>) -> PyResult<DVRu
     }
 }
 
+fn parse_dv_rule_edt(
+    rule_type: &str,
+    v1: ExcelDateTime,
+    v2: Option<ExcelDateTime>,
+) -> PyResult<DVRule<ExcelDateTime>> {
+    match rule_type.to_lowercase().as_str() {
+        "equal_to" => Ok(DVRule::EqualTo(v1)),
+        "not_equal_to" => Ok(DVRule::NotEqualTo(v1)),
+        "greater_than" => Ok(DVRule::GreaterThan(v1)),
+        "greater_than_or_equal_to" => Ok(DVRule::GreaterThanOrEqualTo(v1)),
+        "less_than" => Ok(DVRule::LessThan(v1)),
+        "less_than_or_equal_to" => Ok(DVRule::LessThanOrEqualTo(v1)),
+        "between" | "not_between" => {
+            let v2 = v2.ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "'{rule_type}' requires a second value"
+                ))
+            })?;
+            if rule_type == "between" {
+                Ok(DVRule::Between(v1, v2))
+            } else {
+                Ok(DVRule::NotBetween(v1, v2))
+            }
+        }
+        other => Err(dv_type_err("rule type", other, DV_RULE_KINDS)),
+    }
+}
+
+fn parse_dv_rule_formula(
+    rule_type: &str,
+    v1: rust_xlsxwriter::Formula,
+    v2: Option<rust_xlsxwriter::Formula>,
+) -> PyResult<DVRule<rust_xlsxwriter::Formula>> {
+    match rule_type.to_lowercase().as_str() {
+        "equal_to" => Ok(DVRule::EqualTo(v1)),
+        "not_equal_to" => Ok(DVRule::NotEqualTo(v1)),
+        "greater_than" => Ok(DVRule::GreaterThan(v1)),
+        "greater_than_or_equal_to" => Ok(DVRule::GreaterThanOrEqualTo(v1)),
+        "less_than" => Ok(DVRule::LessThan(v1)),
+        "less_than_or_equal_to" => Ok(DVRule::LessThanOrEqualTo(v1)),
+        "between" | "not_between" => {
+            let v2 = v2.ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "'{rule_type}' requires a second value"
+                ))
+            })?;
+            if rule_type == "between" {
+                Ok(DVRule::Between(v1, v2))
+            } else {
+                Ok(DVRule::NotBetween(v1, v2))
+            }
+        }
+        other => Err(dv_type_err("rule type", other, DV_RULE_KINDS)),
+    }
+}
+
+// Reads only year/month/day -- matches write_date_py()'s own approach of
+// pulling attributes off a Python date/datetime object rather than using
+// a chrono-based extractor.
+fn extract_excel_date(value: &Bound<'_, PyAny>) -> PyResult<ExcelDateTime> {
+    let year: u16 = value.getattr("year")?.extract()?;
+    let month: u8 = value.getattr("month")?.extract()?;
+    let day: u8 = value.getattr("day")?.extract()?;
+    ExcelDateTime::from_ymd(year, month, day).map_err(xlsx_err_to_pyerr)
+}
+
+// Reads only hour/minute/second/microsecond -- works with either a
+// Python time or datetime object.
+fn extract_excel_time(value: &Bound<'_, PyAny>) -> PyResult<ExcelDateTime> {
+    let hour: u16 = value.getattr("hour")?.extract()?;
+    let minute: u8 = value.getattr("minute")?.extract()?;
+    let second: u8 = value.getattr("second")?.extract()?;
+    let microsecond: u32 = value.getattr("microsecond")?.extract()?;
+    let sec_frac = second as f64 + microsecond as f64 / 1_000_000.0;
+    ExcelDateTime::from_hms(hour, minute, sec_frac).map_err(xlsx_err_to_pyerr)
+}
+
 fn parse_dv_error_style(style: &str) -> PyResult<DataValidationErrorStyle> {
     match style.to_lowercase().as_str() {
         "stop" => Ok(DataValidationErrorStyle::Stop),
@@ -4323,6 +4448,67 @@ impl DataValidation {
     /// will show as a broken validation in Excel, not raise on write.
     fn allow_custom(&mut self, formula: &str) -> PyResult<()> {
         self.inner = self.inner.clone().allow_custom(formula.into());
+        Ok(())
+    }
+
+    /// value/value2 are Python date/datetime objects (only
+    /// year/month/day are read). rule_type: same 8 comparison types as
+    /// allow_whole_number.
+    #[pyo3(signature = (rule_type, value, value2=None))]
+    fn allow_date(
+        &mut self,
+        rule_type: &str,
+        value: &Bound<'_, PyAny>,
+        value2: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        let v1 = extract_excel_date(value)?;
+        let v2 = value2.map(extract_excel_date).transpose()?;
+        let rule = parse_dv_rule_edt(rule_type, v1, v2)?;
+        self.inner = self.inner.clone().allow_date(rule);
+        Ok(())
+    }
+
+    /// value/value2 are Python time/datetime objects (only
+    /// hour/minute/second/microsecond are read).
+    #[pyo3(signature = (rule_type, value, value2=None))]
+    fn allow_time(
+        &mut self,
+        rule_type: &str,
+        value: &Bound<'_, PyAny>,
+        value2: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        let v1 = extract_excel_time(value)?;
+        let v2 = value2.map(extract_excel_time).transpose()?;
+        let rule = parse_dv_rule_edt(rule_type, v1, v2)?;
+        self.inner = self.inner.clone().allow_time(rule);
+        Ok(())
+    }
+
+    /// Same 8 comparison types, but formula/formula2 are cell references
+    /// (e.g. "A1") instead of literal dates.
+    #[pyo3(signature = (rule_type, formula, formula2=None))]
+    fn allow_date_formula(
+        &mut self,
+        rule_type: &str,
+        formula: &str,
+        formula2: Option<&str>,
+    ) -> PyResult<()> {
+        let rule = parse_dv_rule_formula(rule_type, formula.into(), formula2.map(Into::into))?;
+        self.inner = self.inner.clone().allow_date_formula(rule);
+        Ok(())
+    }
+
+    /// Same 8 comparison types, but formula/formula2 are cell references
+    /// instead of literal times.
+    #[pyo3(signature = (rule_type, formula, formula2=None))]
+    fn allow_time_formula(
+        &mut self,
+        rule_type: &str,
+        formula: &str,
+        formula2: Option<&str>,
+    ) -> PyResult<()> {
+        let rule = parse_dv_rule_formula(rule_type, formula.into(), formula2.map(Into::into))?;
+        self.inner = self.inner.clone().allow_time_formula(rule);
         Ok(())
     }
 

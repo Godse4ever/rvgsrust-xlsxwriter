@@ -5,6 +5,7 @@ matching this project's convention for conditional formats.
 """
 import os
 import tempfile
+from datetime import date, datetime, time
 
 import openpyxl
 import pytest
@@ -298,3 +299,98 @@ def test_data_validation_does_not_advance_row_order_guard():
     finally:
         if os.path.exists(path):
             os.remove(path)
+
+
+# -------------------------------- date / time --------------------------------
+
+
+def test_allow_date_equal_to():
+    def build(ws):
+        dv = DataValidation()
+        dv.allow_date("equal_to", date(2000, 1, 1))
+        ws.add_data_validation(0, 0, 4, 0, dv)
+
+    _, dvs = _apply(build)
+    assert len(dvs) == 1
+    d = dvs[0]
+    assert d.type == "date"
+    # 2000-01-01 is Excel serial date 36526 (well-known reference point,
+    # predates the Feb-29-1900 leap year bug so unambiguous).
+    assert d.formula1 == "36526"
+
+
+def test_allow_date_between():
+    def build(ws):
+        dv = DataValidation()
+        dv.allow_date("between", date(2000, 1, 1), date(2000, 1, 31))
+        ws.add_data_validation(0, 0, 4, 0, dv)
+
+    _, dvs = _apply(build)
+    d = dvs[0]
+    assert d.formula1 == "36526"
+    assert d.formula2 == "36556"
+
+
+def test_allow_date_from_datetime_reads_date_part_only():
+    def build(ws):
+        dv = DataValidation()
+        dv.allow_date("equal_to", datetime(2000, 1, 1, 13, 45, 0))
+        ws.add_data_validation(0, 0, 4, 0, dv)
+
+    _, dvs = _apply(build)
+    assert dvs[0].formula1 == "36526"
+
+
+def test_allow_time_equal_to_noon():
+    def build(ws):
+        dv = DataValidation()
+        dv.allow_time("equal_to", time(12, 0, 0))
+        ws.add_data_validation(0, 0, 4, 0, dv)
+
+    _, dvs = _apply(build)
+    d = dvs[0]
+    assert d.type == "time"
+    assert d.formula1 == "0.5"
+
+
+def test_allow_time_between():
+    def build(ws):
+        dv = DataValidation()
+        dv.allow_time("between", time(6, 0, 0), time(18, 0, 0))
+        ws.add_data_validation(0, 0, 4, 0, dv)
+
+    _, dvs = _apply(build)
+    d = dvs[0]
+    assert d.formula1 == "0.25"
+    assert d.formula2 == "0.75"
+
+
+def test_allow_date_formula():
+    def build(ws):
+        ws.write(0, 1, date(2000, 1, 1))
+        dv = DataValidation()
+        dv.allow_date_formula("greater_than", "B1")
+        ws.add_data_validation(0, 0, 4, 0, dv)
+
+    _, dvs = _apply(build)
+    d = dvs[0]
+    assert d.type == "date"
+    assert d.formula1 == "B1"
+
+
+def test_allow_time_formula():
+    def build(ws):
+        dv = DataValidation()
+        dv.allow_time_formula("less_than", "B1")
+        ws.add_data_validation(0, 0, 4, 0, dv)
+
+    _, dvs = _apply(build)
+    d = dvs[0]
+    assert d.type == "time"
+    assert d.formula1 == "B1"
+
+
+def test_allow_date_missing_second_value_raises():
+    dv = DataValidation()
+    with pytest.raises(ValueError):
+        dv.allow_date("between", date(2000, 1, 1))

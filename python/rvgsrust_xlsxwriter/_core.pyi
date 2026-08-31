@@ -214,6 +214,8 @@ IgnoreErrorType = Literal[
     "inconsistent_column_formula",
 ]
 
+HeaderImagePosition = Literal["left", "center", "right"]
+
 class Worksheet:
     def write(self, row: int, col: int, value: Any, format: Optional[Format] = None) -> None: ...
     def write_row(self, row: int, col: int, values: Iterable[Any], format: Optional[Format] = None) -> None: ...
@@ -391,6 +393,20 @@ class Worksheet:
     def set_footer(self, text: str) -> None:
         """Same syntax and caveats as set_header()."""
         ...
+    def set_header_image(
+        self, image_path: str, position: HeaderImagePosition
+    ) -> None:
+        """Requires a matching &[Picture]/&[G] placeholder already present
+        in the header text set via set_header()."""
+        ...
+    def set_footer_image(
+        self, image_path: str, position: HeaderImagePosition
+    ) -> None:
+        """Requires a matching &[Picture]/&[G] placeholder already present
+        in the footer text set via set_footer()."""
+        ...
+    def set_header_footer_scale_with_doc(self, enable: bool) -> None: ...
+    def set_header_footer_align_with_page(self, enable: bool) -> None: ...
     def protect(self, password: Optional[str] = None) -> None: ...
     def protect_with_options(
         self, options: "ProtectionOptions", password: Optional[str] = None
@@ -713,6 +729,24 @@ class DataValidation:
         limit since the list isn't embedded in the rule."""
         ...
     def allow_custom(self, formula: str) -> None: ...
+    def allow_date(
+        self, rule_type: DVRuleType, value: Any, value2: Optional[Any] = None
+    ) -> None:
+        """value/value2 are Python date or datetime objects (only
+        year/month/day are read)."""
+        ...
+    def allow_time(
+        self, rule_type: DVRuleType, value: Any, value2: Optional[Any] = None
+    ) -> None:
+        """value/value2 are Python time or datetime objects (only
+        hour/minute/second/microsecond are read)."""
+        ...
+    def allow_date_formula(
+        self, rule_type: DVRuleType, formula: str, formula2: Optional[str] = None
+    ) -> None: ...
+    def allow_time_formula(
+        self, rule_type: DVRuleType, formula: str, formula2: Optional[str] = None
+    ) -> None: ...
     def allow_any_value(self) -> None:
         """Clears any rule from a previous allow_*() call."""
         ...
