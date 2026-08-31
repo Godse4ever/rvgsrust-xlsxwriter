@@ -1052,7 +1052,8 @@ deliberate design win.
 | **v0.2.13** | ✅ Patch release: checkboxes (`insert_checkbox()`/`insert_checkbox_with_format()`), a new `Button` pyclass (Form Control buttons), and a new `Shape` pyclass (Textbox only -- the only shape type upstream implements; text/sizing, not fill/line/font). |
 | **v0.2.14** | ✅ Patch release: a new `Note` pyclass for cell notes (text/author/sizing/visible/alt_text/background_color/font_name/font_size) via `insert_note()`, plus `show_all_notes()` and `set_default_note_author()`. |
 | **v0.2.15** | ✅ Patch release: a new `FilterCondition` pyclass for autofilter criteria (`add_list_filter`, `add_list_blanks_filter`, `add_custom_filter` with all 12 criteria types, `add_custom_boolean_or`) via a new `filter_column()` -- previously only the autofilter range was exposed. Closes Worksheet 1e entirely except serde serialisation. |
-| **v0.3** | 🚧 Workbook gaps (chartsheets, themes, VBA, read-only-recommended, tempdir/large-zip) |
+| **v0.2.16** | ✅ Patch release: Workbook themes (`use_excel_2023_theme()`, `use_custom_theme()`), `set_default_format()`, VBA projects (`add_vba_project()`, `set_vba_name()` on both `Workbook` and `Worksheet`), `read_only_recommended()`, `set_tempdir()`, `use_zip_large_file()`. |
+| **v0.3** | 🚧 Chartsheets (`Chartsheet` pyclass) |
 | **v0.4** | 🚧 Date/time data validation rules; Chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
