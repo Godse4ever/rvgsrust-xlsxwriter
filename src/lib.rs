@@ -3587,6 +3587,36 @@ impl Workbook {
         )
     }
 
+    // A chartsheet is a worksheet consisting of only a single chart --
+    // upstream returns the same &mut Worksheet type from add_chartsheet()
+    // as from add_worksheet() (internally flagged via
+    // Worksheet::new_chartsheet()), so this wraps the same way as
+    // add_worksheet() above: no separate pyclass, and every Worksheet
+    // method (insert_chart, set_name, protect, etc.) already works on it.
+    // Auto-named "Chart1", "Chart2", ... -- rename with set_name()
+    // afterwards.
+    fn add_chartsheet(slf: Py<Self>, py: Python<'_>) -> PyResult<Py<Worksheet>> {
+        let index = {
+            let wb_ref = slf.borrow(py);
+            let mut wb = wb_ref
+                .inner
+                .try_borrow_mut()
+                .map_err(|_| reentrant_workbook_err())?;
+            let idx = wb.worksheets().len();
+            wb.add_chartsheet();
+            idx
+        };
+        Py::new(
+            py,
+            Worksheet {
+                workbook: slf.clone_ref(py),
+                index,
+                constant_memory: false,
+                min_allowed_row: Cell::new(0),
+            },
+        )
+    }
+
     fn add_format(&self, py: Python<'_>) -> PyResult<Py<Format>> {
         Py::new(py, Format::new())
     }
