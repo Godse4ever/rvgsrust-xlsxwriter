@@ -9,7 +9,7 @@ import zipfile
 
 import pytest
 
-from rvgsrust_xlsxwriter import Chart, ChartErrorBars, ChartSeries, Workbook
+from rvgsrust_xlsxwriter import Chart, ChartErrorBars, ChartFormat, ChartSeries, Workbook
 
 ALL_TYPES = [
     "area", "area_stacked", "area_percent_stacked",
@@ -636,3 +636,42 @@ def test_line_chart_only_honors_y_error_bars():
     xml = _with_error_bars(x_error_bars=x_eb, y_error_bars=y_eb, chart_type="line")
     assert xml.count("<c:errBars>") == 1
     assert '<c:errDir val="y"/>' in xml
+
+
+# --------------------- up-down bars / drop / high-low lines ---------------------
+
+
+def test_up_down_bars_default_empty_tags():
+    xml = _simple(chart_type="line", set_up_down_bars=True)
+    assert "<c:upDownBars>" in xml
+    assert "<c:upBars/>" in xml
+    assert "<c:downBars/>" in xml
+
+
+def test_up_down_bars_only_on_line_charts():
+    xml = _simple(chart_type="column", set_up_down_bars=True)
+    assert "upDownBars" not in xml
+
+
+def test_high_low_lines_default_empty_tag():
+    xml = _simple(chart_type="line", set_high_low_lines=True)
+    assert "<c:hiLowLines/>" in xml
+
+
+def test_drop_lines_default_empty_tag():
+    xml = _simple(chart_type="line", set_drop_lines=True)
+    assert "<c:dropLines/>" in xml
+
+
+def test_drop_lines_not_written_when_disabled():
+    xml = _simple(chart_type="line")
+    assert "dropLines" not in xml
+    assert "hiLowLines" not in xml
+    assert "upDownBars" not in xml
+
+
+def test_up_bar_format_gets_sppr_element():
+    fmt = ChartFormat()
+    fmt.set_fill_color("#FF0000")
+    xml = _simple(chart_type="line", set_up_down_bars=True, set_up_bar_format=fmt)
+    assert "<c:upBars><c:spPr>" in xml
