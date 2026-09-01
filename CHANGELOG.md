@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.20] - 2026-08-31
+
+Patch release, no breaking changes. Adds chart/plot area formatting.
+
+### Added
+
+- **`Chart.set_chart_area_format(format)`** / **`set_plot_area_format(format)`.**
+  Background formatting for the whole chart vs. just the plotted area
+  between the axes. Flattened directly onto `Chart` (no new pyclass) --
+  `ChartArea::new()`/`ChartPlotArea::new()` are public upstream, unlike
+  the chart-axis sub-objects this project's other flattened setters
+  mirror.
+
 ## [0.2.19] - 2026-08-31
 
 Patch release, no breaking changes. Adds chart up-down bars, drop
