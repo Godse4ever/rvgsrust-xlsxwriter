@@ -22,14 +22,20 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 ---
 
-## Charts — ~53 gaps
+## Charts — ~48 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
 labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
 error bars (`ChartErrorBars`, PR #29) have shipped. Up-down bars, drop
 lines, and high-low lines (all Line-chart-only decorations) shipped in
 PR #39. Chart/plot area formatting shipped in PR #40. `Chart.combine()`
-for combined charts shipped in PR #41. What remains:
+for combined charts shipped in PR #41. Axis label placement, tick
+marks, date min/max/units, crossing, and display units all shipped in
+PR #42 -- note two OOXML quirks documented there: `set_x_axis_crossing()`
+actually controls the *value* axis's `<c:crosses>` (upstream stores
+crossing on the opposite axis from where it renders), and the same for
+`set_x_axis_position_between_ticks()` and `<c:crossBetween>`. What
+remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -37,11 +43,6 @@ for combined charts shipped in PR #41. What remains:
 | Per-point formatting | `chart.rs:7750` | `ChartPoint` pyclass, via `ChartSeries.set_points([...])` | Medium |
 | Gradient fills | `chart.rs:13980` | `ChartFormat.set_gradient_fill(...)` plus `ChartGradientStop` | Medium |
 | Pattern fills | `chart.rs:13915` | `ChartFormat.set_pattern_fill(...)` | Low |
-| Axis label placement | `chart.rs:12102` | `set_x_axis_label_position(str)`, `..._label_interval(n)`, `..._label_alignment(str)` | Medium |
-| Axis tick marks | `chart.rs:12376` | `set_x_axis_major_tick_type(str)`, `..._minor_tick_type(str)`, `..._tick_interval(n)` | Medium |
-| Date axis min/max/units | `chart.rs:11559` | `set_x_axis_min_date(...)`, `set_x_axis_max_date(...)`, `..._major_unit_date_type(str)` | Medium |
-| Axis crossing | `chart.rs:11329` | `set_x_axis_crossing(...)`, `set_x_axis_position_between_ticks(bool)` | Low |
-| Display units | `chart.rs:11747` | `set_y_axis_display_unit_type(str)`, `..._display_units_visible(bool)` | Low |
 | Gridline formatting | — | `set_x_axis_major_gridlines_format(fmt)` — currently gridlines can only be toggled, not styled | Medium |
 | Manual layouts | `chart.rs:9147` | `ChartLayout` pyclass for `title`, `legend`, `plot_area` | Low |
 | Legend entry deletion | `chart.rs:13314` | `Chart.set_legend_delete_entries([indices])` | Low |
