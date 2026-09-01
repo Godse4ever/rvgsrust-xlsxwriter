@@ -706,3 +706,50 @@ def test_chart_area_and_plot_area_format_together():
     # plot area's is the last child of plotArea -- confirm both fills
     # landed in their own distinct spPr, not merged into one.
     assert xml.count("<c:spPr>") >= 2
+
+
+# -------------------------------- combined charts --------------------------------
+
+
+def test_combine_charts_both_types_present():
+    def build(ws):
+        primary = ChartSeries()
+        primary.set_values("Sheet1!$A$1:$A$5")
+        primary_chart = Chart("column")
+        primary_chart.push_series(primary)
+
+        secondary = ChartSeries()
+        secondary.set_values("Sheet1!$B$1:$B$5")
+        secondary.set_secondary_axis(True)
+        secondary_chart = Chart("line")
+        secondary_chart.push_series(secondary)
+
+        primary_chart.combine(secondary_chart)
+        ws.insert_chart(0, 3, primary_chart)
+
+    xml = _build(build)[0]
+    assert "<c:barChart>" in xml
+    assert "<c:lineChart>" in xml
+
+
+def test_combine_mutating_other_after_call_has_no_effect():
+    def build(ws):
+        primary = ChartSeries()
+        primary.set_values("Sheet1!$A$1:$A$5")
+        primary_chart = Chart("column")
+        primary_chart.push_series(primary)
+
+        secondary = ChartSeries()
+        secondary.set_values("Sheet1!$B$1:$B$5")
+        secondary.set_secondary_axis(True)
+        secondary_chart = Chart("line")
+        secondary_chart.push_series(secondary)
+
+        primary_chart.combine(secondary_chart)
+        # Mutating secondary_chart after combine() should not affect the
+        # already-combined snapshot (upstream clones on combine()).
+        secondary_chart.set_title_name("Should not appear")
+        ws.insert_chart(0, 3, primary_chart)
+
+    xml = _build(build)[0]
+    assert "Should not appear" not in xml
