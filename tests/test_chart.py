@@ -790,7 +790,10 @@ def test_axis_minor_tick_type():
 
 
 def test_axis_tick_interval():
-    xml = _simple(set_y_axis_tick_interval=2)
+    # tick_interval/label_interval are category-axis-only properties
+    # upstream -- only meaningful on x_axis for a standard column/line
+    # chart (where x is the category axis).
+    xml = _simple(set_x_axis_tick_interval=2)
     assert '<c:tickMarkSkip val="2"/>' in xml
 
 
@@ -828,7 +831,9 @@ def test_axis_crossing_invalid_type_raises():
 
 
 def test_axis_position_between_ticks():
-    xml = _simple(chart_type="bar", set_x_axis_position_between_ticks=False)
+    # crossBetween is a value-axis property -- y_axis on a standard
+    # column/line chart (not "bar", which swaps category/value roles).
+    xml = _simple(set_y_axis_position_between_ticks=False)
     assert '<c:crossBetween val="midCat"/>' in xml
 
 
