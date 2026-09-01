@@ -4,6 +4,7 @@ Assertions are made against the generated xl/charts/chart1.xml, which is
 what Excel actually reads.
 """
 import os
+import re
 import tempfile
 import zipfile
 from datetime import date
@@ -853,3 +854,113 @@ def test_axis_display_unit_type_and_visible():
 def test_axis_display_units_not_written_when_none():
     xml = _simple(chart_type="column")
     assert "dispUnits" not in xml
+
+
+# --------------- legend deletion, object movement, decorative, scaling ---------------
+
+
+def test_legend_delete_entries():
+    def build(ws):
+        s1 = ChartSeries()
+        s1.set_values("Sheet1!$A$1:$A$5")
+        s2 = ChartSeries()
+        s2.set_values("Sheet1!$B$1:$B$5")
+        chart = Chart("column")
+        chart.push_series(s1)
+        chart.push_series(s2)
+        chart.set_legend_delete_entries([1])
+        ws.insert_chart(0, 3, chart)
+
+    xml = _build(build)[0]
+    assert "<c:legendEntry><c:idx val=\"1\"/><c:delete val=\"1\"/></c:legendEntry>" in xml
+
+
+def _simple_drawing_xml(chart_type="column", **calls):
+    """Like _simple(), but returns xl/drawings/drawing1.xml -- object
+    movement and decorative are drawing-anchor properties, not chart
+    properties, so they land there instead of chart1.xml."""
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        ws.write(0, 0, 10)
+        series = ChartSeries()
+        series.set_values("Sheet1!$A$1:$A$1")
+        chart = Chart(chart_type)
+        chart.push_series(series)
+        for name, arg in calls.items():
+            getattr(chart, name)(arg)
+        ws.insert_chart(0, 3, chart)
+        wb.close(path)
+        with zipfile.ZipFile(path) as z:
+            return z.read("xl/drawings/drawing1.xml").decode("utf-8")
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def test_object_movement_move_but_dont_size():
+    xml = _simple_drawing_xml(set_object_movement="move_but_dont_size_with_cells")
+    assert 'editAs="oneCell"' in xml
+
+
+def test_object_movement_dont_move_or_size():
+    xml = _simple_drawing_xml(set_object_movement="dont_move_or_size_with_cells")
+    assert 'editAs="absolute"' in xml
+
+
+def test_object_movement_default_has_no_edit_as():
+    xml = _simple_drawing_xml()
+    assert "editAs" not in xml
+
+
+def test_object_movement_invalid_raises():
+    with pytest.raises(ValueError):
+        _simple(set_object_movement="sideways")
+
+
+def test_decorative():
+    xml = _simple_drawing_xml(set_decorative=True)
+    assert "adec:decorative" in xml
+
+
+def test_decorative_false_by_default():
+    xml = _simple_drawing_xml()
+    assert "adec:decorative" not in xml
+
+
+def test_scale_width_and_height_change_extent():
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
+        path = tf.name
+    try:
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        ws.write(0, 0, 10)
+
+        default_series = ChartSeries()
+        default_series.set_values("Sheet1!$A$1:$A$1")
+        default_chart = Chart("column")
+        default_chart.push_series(default_series)
+        ws.insert_chart(0, 3, default_chart)
+
+        scaled_series = ChartSeries()
+        scaled_series.set_values("Sheet1!$A$1:$A$1")
+        scaled_chart = Chart("column")
+        scaled_chart.push_series(scaled_series)
+        scaled_chart.set_scale_width(2.0)
+        scaled_chart.set_scale_height(2.0)
+        ws.insert_chart(20, 3, scaled_chart)
+
+        wb.close(path)
+        with zipfile.ZipFile(path) as z:
+            drawing_xml = z.read("xl/drawings/drawing1.xml").decode("utf-8")
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+
+    cx_values = [int(m) for m in re.findall(r'cx="(\d+)"', drawing_xml)]
+    assert len(cx_values) == 2
+    # Allow rounding slack; should be very close to exactly double.
+    ratio = cx_values[1] / cx_values[0]
+    assert 1.9 < ratio < 2.1
