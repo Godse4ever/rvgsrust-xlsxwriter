@@ -1058,6 +1058,7 @@ deliberate design win.
 | **v0.2.19** | ✅ Patch release: chart up-down bars, drop lines, high-low lines -- Line-chart-only decorations. |
 | **v0.2.20** | ✅ Patch release: `set_chart_area_format()`/`set_plot_area_format()` for chart/plot area background formatting. |
 | **v0.2.21** | ✅ Patch release: `Chart.combine()` for combined charts (e.g. a Column chart combined with a Line chart, typically paired with `ChartSeries.set_secondary_axis()`). |
+| **v0.2.22** | ✅ Patch release: axis label placement/tick marks/date min-max-units/crossing/display units (`set_x_axis_*`/`set_y_axis_*`, 5 MISSING.md items batched into one release). |
 | **v0.3** | 🚧 Remaining chart gaps (data tables, manual layout, and more); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart

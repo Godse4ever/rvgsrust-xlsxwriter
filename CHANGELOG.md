@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.22] - 2026-08-31
+
+Patch release, no breaking changes. Adds five chart axis features in
+one release: label placement, tick marks, date min/max/units,
+crossing, and display units -- all flatten onto the existing
+`set_x_axis_*`/`set_y_axis_*` convention, for both axes.
+
+### Added
+
+- **`set_x/y_axis_label_position/_interval/_alignment`.**
+- **`set_x/y_axis_major_tick_type/_minor_tick_type/_tick_interval`.**
+- **`set_x/y_axis_min_date/_max_date`** (Python `date`/`datetime`
+  objects, reusing `DataValidation.allow_date()`'s extraction
+  approach) **/ `_major_unit_date_type`.**
+- **`set_x/y_axis_crossing`** (string keyword `"automatic"/"min"/"max"`,
+  or an int/float disambiguated by Python type into upstream's
+  `CategoryNumber`/`AxisValue`) **/ `_position_between_ticks`.**
+- **`set_x/y_axis_display_unit_type/_display_units_visible`.**
+
+Two OOXML quirks worth knowing, documented directly in the source:
+`set_x_axis_crossing()` actually controls the *value* axis's
+`<c:crosses>` element (upstream stores crossing on the axis opposite
+the one it renders on), and the same is true for
+`set_x_axis_position_between_ticks()` and `<c:crossBetween>`.
+
 ## [0.2.21] - 2026-08-31
 
 Patch release, no breaking changes. Adds combined charts.
