@@ -959,7 +959,7 @@ def test_scale_width_and_height_change_extent():
         if os.path.exists(path):
             os.remove(path)
 
-    cx_values = [int(m) for m in re.findall(r'cx="(\d+)"', drawing_xml)]
+    cx_values = [int(m) for m in re.findall(r'<a:ext cx="(\d+)"', drawing_xml)]
     assert len(cx_values) == 2
     # Allow rounding slack; should be very close to exactly double.
     ratio = cx_values[1] / cx_values[0]
