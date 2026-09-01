@@ -931,6 +931,11 @@ def test_decorative_false_by_default():
 
 
 def test_scale_width_and_height_change_extent():
+    # Charts use <xdr:twoCellAnchor> (size = which cells it spans), not
+    # explicit cx/cy pixel dimensions like images do -- the <a:ext> in a
+    # chart's <xdr:xfrm> is a hardcoded "0 0" placeholder Excel ignores.
+    # So scale_width/scale_height show up as a wider <xdr:to> column span
+    # instead.
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tf:
         path = tf.name
     try:
@@ -959,8 +964,8 @@ def test_scale_width_and_height_change_extent():
         if os.path.exists(path):
             os.remove(path)
 
-    cx_values = [int(m) for m in re.findall(r'<a:ext cx="(\d+)"', drawing_xml)]
-    assert len(cx_values) == 2
-    # Allow rounding slack; should be very close to exactly double.
-    ratio = cx_values[1] / cx_values[0]
-    assert 1.9 < ratio < 2.1
+    to_cols = [int(m) for m in re.findall(r"<xdr:to><xdr:col>(\d+)</xdr:col>", drawing_xml)]
+    assert len(to_cols) == 2
+    default_span = to_cols[0] - 3
+    scaled_span = to_cols[1] - 3
+    assert scaled_span > default_span * 1.5
