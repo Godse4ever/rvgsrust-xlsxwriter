@@ -1057,7 +1057,8 @@ deliberate design win.
 | **v0.2.18** | ✅ Patch release: header/footer images (`set_header_image()`/`set_footer_image()`) and align/scale-with-page settings; `DataValidation.allow_date()`/`allow_time()` (accepting Python `date`/`time`/`datetime` objects) and their cell-reference formula variants. Closes Worksheet's MISSING.md gaps entirely except serde serialisation. |
 | **v0.2.19** | ✅ Patch release: chart up-down bars, drop lines, high-low lines -- Line-chart-only decorations. |
 | **v0.2.20** | ✅ Patch release: `set_chart_area_format()`/`set_plot_area_format()` for chart/plot area background formatting. |
-| **v0.3** | 🚧 Remaining chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
+| **v0.2.21** | ✅ Patch release: `Chart.combine()` for combined charts (e.g. a Column chart combined with a Line chart, typically paired with `ChartSeries.set_secondary_axis()`). |
+| **v0.3** | 🚧 Remaining chart gaps (data tables, manual layout, and more); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
@@ -1071,6 +1072,7 @@ All three phases have landed:
 5. ✅ Error bars: `ChartErrorBars`
 6. ✅ Up-down bars, drop lines, high-low lines (Line charts only)
 7. ✅ Chart / plot area formatting: `set_chart_area_format()`, `set_plot_area_format()`
+8. ✅ Combined charts: `Chart.combine()`
 
 Remaining chart work, tracked in [MISSING.md](MISSING.md): data
 tables, manual layout, and the less common chart types (Radar,

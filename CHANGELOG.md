@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.21] - 2026-08-31
+
+Patch release, no breaking changes. Adds combined charts.
+
+### Added
+
+- **`Chart.combine(other_chart)`.** Combines this chart's primary type
+  with a secondary chart type (e.g. a Column chart combined with a Line
+  chart), typically paired with `ChartSeries.set_secondary_axis()` on
+  the combined chart's series. Upstream clones `other_chart` internally
+  on the call, so later mutations to it have no effect on the already-
+  combined snapshot.
+
 ## [0.2.20] - 2026-08-31
 
 Patch release, no breaking changes. Adds chart/plot area formatting.
