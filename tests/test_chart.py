@@ -6,6 +6,7 @@ what Excel actually reads.
 import os
 import tempfile
 import zipfile
+from datetime import date
 
 import pytest
 
@@ -753,3 +754,94 @@ def test_combine_mutating_other_after_call_has_no_effect():
 
     xml = _build(build)[0]
     assert "Should not appear" not in xml
+
+
+# ---------------- axis label/tick/date/crossing/display-unit settings ----------------
+
+
+def test_axis_label_position():
+    xml = _simple(set_x_axis_label_position="low")
+    assert '<c:tickLblPos val="low"/>' in xml
+
+
+def test_axis_label_position_none():
+    xml = _simple(set_y_axis_label_position="none")
+    assert '<c:tickLblPos val="none"/>' in xml
+
+
+def test_axis_label_alignment():
+    xml = _simple(chart_type="bar", set_y_axis_label_alignment="right")
+    assert '<c:lblAlgn val="r"/>' in xml
+
+
+def test_axis_label_interval():
+    xml = _simple(set_x_axis_label_interval=3)
+    assert '<c:tickLblSkip val="3"/>' in xml
+
+
+def test_axis_major_tick_type():
+    xml = _simple(set_x_axis_major_tick_type="outside")
+    assert '<c:majorTickMark val="out"/>' in xml
+
+
+def test_axis_minor_tick_type():
+    xml = _simple(set_y_axis_minor_tick_type="cross")
+    assert '<c:minorTickMark val="cross"/>' in xml
+
+
+def test_axis_tick_interval():
+    xml = _simple(set_y_axis_tick_interval=2)
+    assert '<c:tickMarkSkip val="2"/>' in xml
+
+
+def test_axis_min_max_date_and_major_unit_date_type():
+    def build(ws):
+        series = ChartSeries()
+        series.set_values("Sheet1!$B$1:$B$5")
+        chart = Chart("line")
+        chart.push_series(series)
+        chart.set_x_axis_date_axis(True)
+        chart.set_x_axis_min_date(date(2000, 1, 1))
+        chart.set_x_axis_max_date(date(2000, 1, 31))
+        chart.set_x_axis_major_unit_date_type("months")
+        ws.insert_chart(0, 3, chart)
+
+    xml = _build(build)[0]
+    assert '<c:min val="36526"/>' in xml
+    assert '<c:max val="36556"/>' in xml
+    assert '<c:majorTimeUnit val="months"/>' in xml
+
+
+def test_axis_crossing_keyword():
+    xml = _simple(chart_type="bar", set_y_axis_crossing="max")
+    assert 'val="max"' in xml
+
+
+def test_axis_crossing_numeric_value():
+    xml = _simple(chart_type="bar", set_y_axis_crossing=25.5)
+    assert '<c:crossesAt val="25.5"/>' in xml
+
+
+def test_axis_crossing_invalid_type_raises():
+    with pytest.raises(TypeError):
+        _simple(set_x_axis_crossing=["not", "valid"])
+
+
+def test_axis_position_between_ticks():
+    xml = _simple(chart_type="bar", set_x_axis_position_between_ticks=False)
+    assert '<c:crossBetween val="midCat"/>' in xml
+
+
+def test_axis_display_unit_type_and_visible():
+    xml = _simple(
+        set_y_axis_display_unit_type="thousands",
+        set_y_axis_display_units_visible=True,
+    )
+    assert "<c:dispUnits>" in xml
+    assert '<c:builtInUnit val="thousands"/>' in xml
+    assert "<c:dispUnitsLbl" in xml
+
+
+def test_axis_display_units_not_written_when_none():
+    xml = _simple(chart_type="column")
+    assert "dispUnits" not in xml
