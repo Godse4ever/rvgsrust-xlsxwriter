@@ -6515,6 +6515,15 @@ impl Chart {
         self.inner.plot_area().set_format(&mut fmt);
     }
 
+    // Combines this chart's primary chart type with a secondary chart
+    // type (e.g. a Column chart with a combined Line chart), typically
+    // used together with set_secondary_axis() on the combined chart's
+    // series. Upstream clones the passed chart internally, so later
+    // mutations to `other` after this call have no effect here.
+    fn combine(&mut self, other: &Chart) {
+        self.inner.combine(&other.inner);
+    }
+
     // ---- legend ----
 
     // One of right, left, top, bottom, top_right.
