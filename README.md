@@ -1056,6 +1056,7 @@ deliberate design win.
 | **v0.2.17** | ✅ Patch release: `Workbook.add_chartsheet()` -- closes Workbook's MISSING.md gaps entirely. No new pyclass needed; upstream returns the same `&mut Worksheet` type as `add_worksheet()`, so every existing `Worksheet` method already works on it. |
 | **v0.2.18** | ✅ Patch release: header/footer images (`set_header_image()`/`set_footer_image()`) and align/scale-with-page settings; `DataValidation.allow_date()`/`allow_time()` (accepting Python `date`/`time`/`datetime` objects) and their cell-reference formula variants. Closes Worksheet's MISSING.md gaps entirely except serde serialisation. |
 | **v0.2.19** | ✅ Patch release: chart up-down bars, drop lines, high-low lines -- Line-chart-only decorations. |
+| **v0.2.20** | ✅ Patch release: `set_chart_area_format()`/`set_plot_area_format()` for chart/plot area background formatting. |
 | **v0.3** | 🚧 Remaining chart gaps (data tables, combined charts, manual layout, and more); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
@@ -1069,6 +1070,7 @@ All three phases have landed:
 4. ✅ Secondary axes: `set_x2_axis_*`/`set_y2_axis_*`
 5. ✅ Error bars: `ChartErrorBars`
 6. ✅ Up-down bars, drop lines, high-low lines (Line charts only)
+7. ✅ Chart / plot area formatting: `set_chart_area_format()`, `set_plot_area_format()`
 
 Remaining chart work, tracked in [MISSING.md](MISSING.md): data
 tables, manual layout, and the less common chart types (Radar,

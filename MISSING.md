@@ -22,19 +22,22 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 ---
 
-## Charts — ~55 gaps
+## Charts — ~54 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
 labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
 error bars (`ChartErrorBars`, PR #29) have shipped. Up-down bars, drop
 lines, and high-low lines (all Line-chart-only decorations) shipped in
-PR #39. What remains:
+PR #39. Chart/plot area formatting shipped in PR #40 as
+`set_chart_area_format(fmt)`/`set_plot_area_format(fmt)`, flattened
+directly onto `Chart` -- `ChartArea::new()`/`ChartPlotArea::new()` turned
+out to be public upstream, not `pub(crate)` as originally guessed here.
+What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
 | Data table | `chart.rs:2470` | `ChartDataTable` pyclass (`chart.rs:17269`), via `Chart.set_data_table(table)` | Medium |
 | Combined charts | `chart.rs:1744` | `Chart.combine(other_chart)` | Medium |
-| Chart / plot area formatting | `chart.rs:1530`, `1592` | Flatten as `set_chart_area_format(fmt)` / `set_plot_area_format(fmt)`, since `ChartArea::new` is `pub(crate)` like the axes | Medium |
 | Per-point formatting | `chart.rs:7750` | `ChartPoint` pyclass, via `ChartSeries.set_points([...])` | Medium |
 | Gradient fills | `chart.rs:13980` | `ChartFormat.set_gradient_fill(...)` plus `ChartGradientStop` | Medium |
 | Pattern fills | `chart.rs:13915` | `ChartFormat.set_pattern_fill(...)` | Low |
