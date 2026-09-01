@@ -6092,6 +6092,115 @@ fn parse_error_bars_direction(name: &str) -> PyResult<rch::ChartErrorBarsDirecti
     }
 }
 
+fn parse_axis_label_position(name: &str) -> PyResult<rch::ChartAxisLabelPosition> {
+    use rch::ChartAxisLabelPosition as P;
+    match name.to_ascii_lowercase().as_str() {
+        "next_to" => Ok(P::NextTo),
+        "high" => Ok(P::High),
+        "low" => Ok(P::Low),
+        "none" => Ok(P::None),
+        other => Err(cf_type_err(
+            "axis label position",
+            other,
+            "next_to, high, low, none",
+        )),
+    }
+}
+
+fn parse_axis_label_alignment(name: &str) -> PyResult<rch::ChartAxisLabelAlignment> {
+    use rch::ChartAxisLabelAlignment as A;
+    match name.to_ascii_lowercase().as_str() {
+        "center" => Ok(A::Center),
+        "left" => Ok(A::Left),
+        "right" => Ok(A::Right),
+        other => Err(cf_type_err(
+            "axis label alignment",
+            other,
+            "center, left, right",
+        )),
+    }
+}
+
+fn parse_axis_tick_type(name: &str) -> PyResult<rch::ChartAxisTickType> {
+    use rch::ChartAxisTickType as T;
+    match name.to_ascii_lowercase().as_str() {
+        "none" => Ok(T::None),
+        "inside" => Ok(T::Inside),
+        "outside" => Ok(T::Outside),
+        "cross" => Ok(T::Cross),
+        other => Err(cf_type_err(
+            "axis tick type",
+            other,
+            "none, inside, outside, cross",
+        )),
+    }
+}
+
+fn parse_axis_date_unit_type(name: &str) -> PyResult<rch::ChartAxisDateUnitType> {
+    use rch::ChartAxisDateUnitType as U;
+    match name.to_ascii_lowercase().as_str() {
+        "days" => Ok(U::Days),
+        "months" => Ok(U::Months),
+        "years" => Ok(U::Years),
+        other => Err(cf_type_err(
+            "axis date unit type",
+            other,
+            "days, months, years",
+        )),
+    }
+}
+
+fn parse_axis_display_unit_type(name: &str) -> PyResult<rch::ChartAxisDisplayUnitType> {
+    use rch::ChartAxisDisplayUnitType as U;
+    match name.to_ascii_lowercase().as_str() {
+        "none" => Ok(U::None),
+        "hundreds" => Ok(U::Hundreds),
+        "thousands" => Ok(U::Thousands),
+        "ten_thousands" => Ok(U::TenThousands),
+        "hundred_thousands" => Ok(U::HundredThousands),
+        "millions" => Ok(U::Millions),
+        "ten_millions" => Ok(U::TenMillions),
+        "hundred_millions" => Ok(U::HundredMillions),
+        "billions" => Ok(U::Billions),
+        "trillions" => Ok(U::Trillions),
+        other => Err(cf_type_err(
+            "axis display unit type",
+            other,
+            "none, hundreds, thousands, ten_thousands, hundred_thousands, \
+             millions, ten_millions, hundred_millions, billions, trillions",
+        )),
+    }
+}
+
+// value is "automatic"/"min"/"max" (string), a category-index int, or an
+// axis-value float -- upstream's ChartAxisCrossing has two payload
+// variants alongside the three plain ones, disambiguated here by
+// Python type (int vs float) rather than a keyword.
+fn parse_axis_crossing(value: &Bound<'_, PyAny>) -> PyResult<rch::ChartAxisCrossing> {
+    use rch::ChartAxisCrossing as C;
+    if let Ok(s) = value.extract::<String>() {
+        match s.to_ascii_lowercase().as_str() {
+            "automatic" => Ok(C::Automatic),
+            "min" => Ok(C::Min),
+            "max" => Ok(C::Max),
+            other => Err(cf_type_err(
+                "axis crossing",
+                other,
+                "automatic, min, max (or pass an int/float directly)",
+            )),
+        }
+    } else if let Ok(n) = value.extract::<u32>() {
+        Ok(C::CategoryNumber(n))
+    } else if let Ok(f) = value.extract::<f64>() {
+        Ok(C::AxisValue(f))
+    } else {
+        Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+            "axis crossing must be a string ('automatic'/'min'/'max'), \
+             an int (category index), or a float (axis value)",
+        ))
+    }
+}
+
 // Chart types that can show point markers but default to none. This
 // mirrors upstream's condition exactly: ScatterStraight, ScatterSmooth,
 // Radar, and the three types whose chart_group_type is Line. Stock has its
@@ -6522,6 +6631,164 @@ impl Chart {
     // mutations to `other` after this call have no effect here.
     fn combine(&mut self, other: &Chart) {
         self.inner.combine(&other.inner);
+    }
+
+    // ---- axis label placement, tick marks, date units, crossing, display units ----
+    // All flatten onto the primary x_axis()/y_axis(), mirroring the
+    // set_x_axis_*/set_y_axis_* convention used elsewhere in this file.
+
+    fn set_x_axis_label_position(&mut self, position: &str) -> PyResult<()> {
+        let parsed = parse_axis_label_position(position)?;
+        self.inner.x_axis().set_label_position(parsed);
+        Ok(())
+    }
+
+    fn set_y_axis_label_position(&mut self, position: &str) -> PyResult<()> {
+        let parsed = parse_axis_label_position(position)?;
+        self.inner.y_axis().set_label_position(parsed);
+        Ok(())
+    }
+
+    fn set_x_axis_label_interval(&mut self, interval: u16) {
+        self.inner.x_axis().set_label_interval(interval);
+    }
+
+    fn set_y_axis_label_interval(&mut self, interval: u16) {
+        self.inner.y_axis().set_label_interval(interval);
+    }
+
+    fn set_x_axis_label_alignment(&mut self, alignment: &str) -> PyResult<()> {
+        let parsed = parse_axis_label_alignment(alignment)?;
+        self.inner.x_axis().set_label_alignment(parsed);
+        Ok(())
+    }
+
+    fn set_y_axis_label_alignment(&mut self, alignment: &str) -> PyResult<()> {
+        let parsed = parse_axis_label_alignment(alignment)?;
+        self.inner.y_axis().set_label_alignment(parsed);
+        Ok(())
+    }
+
+    fn set_x_axis_major_tick_type(&mut self, tick_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_tick_type(tick_type)?;
+        self.inner.x_axis().set_major_tick_type(parsed);
+        Ok(())
+    }
+
+    fn set_y_axis_major_tick_type(&mut self, tick_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_tick_type(tick_type)?;
+        self.inner.y_axis().set_major_tick_type(parsed);
+        Ok(())
+    }
+
+    fn set_x_axis_minor_tick_type(&mut self, tick_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_tick_type(tick_type)?;
+        self.inner.x_axis().set_minor_tick_type(parsed);
+        Ok(())
+    }
+
+    fn set_y_axis_minor_tick_type(&mut self, tick_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_tick_type(tick_type)?;
+        self.inner.y_axis().set_minor_tick_type(parsed);
+        Ok(())
+    }
+
+    fn set_x_axis_tick_interval(&mut self, interval: u16) {
+        self.inner.x_axis().set_tick_interval(interval);
+    }
+
+    fn set_y_axis_tick_interval(&mut self, interval: u16) {
+        self.inner.y_axis().set_tick_interval(interval);
+    }
+
+    // value is a Python date/datetime object (only year/month/day read),
+    // reusing the same extraction as DataValidation.allow_date().
+    fn set_x_axis_min_date(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let dt = extract_excel_date(value)?;
+        self.inner.x_axis().set_min_date(dt);
+        Ok(())
+    }
+
+    fn set_y_axis_min_date(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let dt = extract_excel_date(value)?;
+        self.inner.y_axis().set_min_date(dt);
+        Ok(())
+    }
+
+    fn set_x_axis_max_date(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let dt = extract_excel_date(value)?;
+        self.inner.x_axis().set_max_date(dt);
+        Ok(())
+    }
+
+    fn set_y_axis_max_date(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let dt = extract_excel_date(value)?;
+        self.inner.y_axis().set_max_date(dt);
+        Ok(())
+    }
+
+    fn set_x_axis_major_unit_date_type(&mut self, unit_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_date_unit_type(unit_type)?;
+        self.inner.x_axis().set_major_unit_date_type(parsed);
+        Ok(())
+    }
+
+    fn set_y_axis_major_unit_date_type(&mut self, unit_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_date_unit_type(unit_type)?;
+        self.inner.y_axis().set_major_unit_date_type(parsed);
+        Ok(())
+    }
+
+    // value is "automatic", "min", "max", an int (category-index
+    // crossing point), or a float (axis-value crossing point).
+    // value is "automatic", "min", "max", an int (category-index
+    // crossing point), or a float (axis-value crossing point). Note:
+    // upstream's own OOXML serialization renders "where does the OTHER
+    // axis cross this one" -- e.g. set_x_axis_crossing() ends up
+    // controlling the value axis's <c:crosses> element, not the category
+    // axis's. Purely an upstream/OOXML quirk in which axis's struct
+    // holds the field; this binding just passes the call through.
+    fn set_x_axis_crossing(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_axis_crossing(value)?;
+        self.inner.x_axis().set_crossing(parsed);
+        Ok(())
+    }
+
+    fn set_y_axis_crossing(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let parsed = parse_axis_crossing(value)?;
+        self.inner.y_axis().set_crossing(parsed);
+        Ok(())
+    }
+
+    // Same "OOXML puts it on the other axis" quirk as crossing above:
+    // this renders inside the value axis's <c:crossBetween>, not the
+    // category axis's, even though the field lives on x_axis here.
+    fn set_x_axis_position_between_ticks(&mut self, enable: bool) {
+        self.inner.x_axis().set_position_between_ticks(enable);
+    }
+
+    fn set_y_axis_position_between_ticks(&mut self, enable: bool) {
+        self.inner.y_axis().set_position_between_ticks(enable);
+    }
+
+    fn set_x_axis_display_unit_type(&mut self, unit_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_display_unit_type(unit_type)?;
+        self.inner.x_axis().set_display_unit_type(parsed);
+        Ok(())
+    }
+
+    fn set_y_axis_display_unit_type(&mut self, unit_type: &str) -> PyResult<()> {
+        let parsed = parse_axis_display_unit_type(unit_type)?;
+        self.inner.y_axis().set_display_unit_type(parsed);
+        Ok(())
+    }
+
+    fn set_x_axis_display_units_visible(&mut self, enable: bool) {
+        self.inner.x_axis().set_display_units_visible(enable);
+    }
+
+    fn set_y_axis_display_units_visible(&mut self, enable: bool) {
+        self.inner.y_axis().set_display_units_visible(enable);
     }
 
     // ---- legend ----
