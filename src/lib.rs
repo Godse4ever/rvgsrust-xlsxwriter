@@ -6741,6 +6741,13 @@ impl Chart {
 
     // value is "automatic", "min", "max", an int (category-index
     // crossing point), or a float (axis-value crossing point).
+    // value is "automatic", "min", "max", an int (category-index
+    // crossing point), or a float (axis-value crossing point). Note:
+    // upstream's own OOXML serialization renders "where does the OTHER
+    // axis cross this one" -- e.g. set_x_axis_crossing() ends up
+    // controlling the value axis's <c:crosses> element, not the category
+    // axis's. Purely an upstream/OOXML quirk in which axis's struct
+    // holds the field; this binding just passes the call through.
     fn set_x_axis_crossing(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
         let parsed = parse_axis_crossing(value)?;
         self.inner.x_axis().set_crossing(parsed);
@@ -6753,6 +6760,9 @@ impl Chart {
         Ok(())
     }
 
+    // Same "OOXML puts it on the other axis" quirk as crossing above:
+    // this renders inside the value axis's <c:crossBetween>, not the
+    // category axis's, even though the field lives on x_axis here.
     fn set_x_axis_position_between_ticks(&mut self, enable: bool) {
         self.inner.x_axis().set_position_between_ticks(enable);
     }

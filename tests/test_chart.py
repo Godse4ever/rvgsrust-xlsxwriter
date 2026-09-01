@@ -831,9 +831,12 @@ def test_axis_crossing_invalid_type_raises():
 
 
 def test_axis_position_between_ticks():
-    # crossBetween is a value-axis property -- y_axis on a standard
-    # column/line chart (not "bar", which swaps category/value roles).
-    xml = _simple(set_y_axis_position_between_ticks=False)
+    # crossBetween is rendered on the value axis, but the field that
+    # controls it lives on the category axis struct upstream (same
+    # "crossing comes from the opposite axis" OOXML quirk as crossing
+    # itself) -- so this is x_axis even though the XML element ends up
+    # inside <c:valAx>.
+    xml = _simple(set_x_axis_position_between_ticks=False)
     assert '<c:crossBetween val="midCat"/>' in xml
 
 
