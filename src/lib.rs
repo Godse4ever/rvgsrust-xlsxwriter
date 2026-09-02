@@ -6176,6 +6176,22 @@ fn parse_axis_display_unit_type(name: &str) -> PyResult<rch::ChartAxisDisplayUni
 // axis-value float -- upstream's ChartAxisCrossing has two payload
 // variants alongside the three plain ones, disambiguated here by
 // Python type (int vs float) rather than a keyword.
+fn parse_object_movement(name: &str) -> PyResult<rust_xlsxwriter::ObjectMovement> {
+    use rust_xlsxwriter::ObjectMovement as M;
+    match name {
+        "move_and_size_with_cells" => Ok(M::MoveAndSizeWithCells),
+        "move_but_dont_size_with_cells" => Ok(M::MoveButDontSizeWithCells),
+        "dont_move_or_size_with_cells" => Ok(M::DontMoveOrSizeWithCells),
+        "move_and_size_with_cells_after" => Ok(M::MoveAndSizeWithCellsAfter),
+        other => Err(cf_type_err(
+            "object movement",
+            other,
+            "move_and_size_with_cells, move_but_dont_size_with_cells, \
+             dont_move_or_size_with_cells, move_and_size_with_cells_after",
+        )),
+    }
+}
+
 fn parse_axis_crossing(value: &Bound<'_, PyAny>) -> PyResult<rch::ChartAxisCrossing> {
     use rch::ChartAxisCrossing as C;
     if let Ok(s) = value.extract::<String>() {
@@ -6807,6 +6823,39 @@ impl Chart {
 
     fn set_legend_overlay(&mut self, enable: bool) {
         self.inner.legend().set_overlay(enable);
+    }
+
+    // Hides one or more series names from the legend, by index (0-based,
+    // matching push_series() call order).
+    fn set_legend_delete_entries(&mut self, entries: Vec<usize>) {
+        self.inner.legend().delete_entries(&entries);
+    }
+
+    // ---- object movement, decorative, scaling ----
+
+    // One of move_and_size_with_cells (default), move_but_dont_size_with_cells,
+    // dont_move_or_size_with_cells, move_and_size_with_cells_after.
+    fn set_object_movement(&mut self, option: &str) -> PyResult<()> {
+        let parsed = parse_object_movement(option)?;
+        self.inner.set_object_movement(parsed);
+        Ok(())
+    }
+
+    // Marks the chart as decorative (no alt text needed) for
+    // accessibility tools.
+    fn set_decorative(&mut self, enable: bool) {
+        self.inner.set_decorative(enable);
+    }
+
+    // Syntactic alternative to set_width()/set_height() -- scale is
+    // relative to 1.0 (100%). Upstream silently ignores scale <= 0.0
+    // rather than erroring; this binding doesn't second-guess that.
+    fn set_scale_width(&mut self, scale: f64) {
+        self.inner.set_scale_width(scale);
+    }
+
+    fn set_scale_height(&mut self, scale: f64) {
+        self.inner.set_scale_height(scale);
     }
 
     // ---- fonts and formats ----
