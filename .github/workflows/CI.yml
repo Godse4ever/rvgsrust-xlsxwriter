@@ -84,7 +84,26 @@ jobs:
         python -m pip install .
 
     - name: Run tests
-      run: pytest tests/ -v
+      shell: bash
+      run: |
+        set +e
+        pytest tests/ -v > pytest_output.log 2>&1
+        code=$?
+        set -e
+        cat pytest_output.log
+        if [ "$code" != "0" ]; then
+          {
+            awk '/^=+ short test summary/{f=1} f' pytest_output.log | grep "^FAILED"
+            awk '/^=+ FAILURES =+$/{f=1} /^=+ short test summary/{f=0} f' pytest_output.log \
+              | grep -E "Error|assert|^E " | head -n 40
+          } | head -n 30 | while IFS= read -r line; do
+            line="${line//$'\r'/}"
+            if [ -n "$line" ]; then
+              echo "::error::${line//$'%'/%25}"
+            fi
+          done
+        fi
+        exit $code
 
   # This crate builds against pyo3's stable ABI (abi3-py38, see
   # Cargo.toml), which means a single wheel per OS/architecture works
