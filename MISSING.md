@@ -22,7 +22,7 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 ---
 
-## Charts — ~48 gaps
+## Charts — ~44 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
 labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
@@ -34,8 +34,9 @@ marks, date min/max/units, crossing, and display units all shipped in
 PR #42 -- note two OOXML quirks documented there: `set_x_axis_crossing()`
 actually controls the *value* axis's `<c:crosses>` (upstream stores
 crossing on the opposite axis from where it renders), and the same for
-`set_x_axis_position_between_ticks()` and `<c:crossBetween>`. What
-remains:
+`set_x_axis_position_between_ticks()` and `<c:crossBetween>`. Legend
+entry deletion, object movement, decorative, and scale width/height
+shipped in PR #43. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
@@ -43,10 +44,8 @@ remains:
 | Per-point formatting | `chart.rs:7750` | `ChartPoint` pyclass, via `ChartSeries.set_points([...])` | Medium |
 | Gradient fills | `chart.rs:13980` | `ChartFormat.set_gradient_fill(...)` plus `ChartGradientStop` | Medium |
 | Pattern fills | `chart.rs:13915` | `ChartFormat.set_pattern_fill(...)` | Low |
-| Gridline formatting | — | `set_x_axis_major_gridlines_format(fmt)` — currently gridlines can only be toggled, not styled | Medium |
+| Gridline formatting | — | Not implementable -- upstream has no `major_gridlines()`/`minor_gridlines()` accessor returning a formattable object, only the on/off toggle already exposed | Medium |
 | Manual layouts | `chart.rs:9147` | `ChartLayout` pyclass for `title`, `legend`, `plot_area` | Low |
-| Legend entry deletion | `chart.rs:13314` | `Chart.set_legend_delete_entries([indices])` | Low |
-| Object movement, decorative, scaling | `chart.rs:2668`, `2645`, `2583` | `set_object_movement(str)` (note `MoveButDontSizeWithCells`, not `MoveWithCells`), `set_decorative(bool)`, `set_scale_width(n)`, `set_scale_height(n)` | Low |
 
 ---
 
