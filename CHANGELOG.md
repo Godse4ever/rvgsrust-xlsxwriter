@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.23] - 2026-08-31
+
+Patch release, no breaking changes. Adds four chart features in one
+release: legend entry deletion, object movement, decorative marking,
+and scale width/height.
+
+### Added
+
+- **`Chart.set_legend_delete_entries(entries)`.** Hides one or more
+  series names from the legend, by 0-based index matching
+  `push_series()` call order.
+- **`Chart.set_object_movement(option)`.** One of
+  `move_and_size_with_cells` (default), `move_but_dont_size_with_cells`,
+  `dont_move_or_size_with_cells`, `move_and_size_with_cells_after`.
+- **`Chart.set_decorative(enable)`.** Marks the chart as decorative for
+  accessibility tools (no alt text needed).
+- **`Chart.set_scale_width(scale)`** / **`set_scale_height(scale)`.**
+  Relative to 1.0 (100%); a syntactic alternative to `set_width()`/
+  `set_height()`.
+
 ## [0.2.22] - 2026-08-31
 
 Patch release, no breaking changes. Adds five chart axis features in
