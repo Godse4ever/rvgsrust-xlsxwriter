@@ -22,7 +22,7 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 ---
 
-## Charts — ~44 gaps
+## Charts — ~40 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
 labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
@@ -36,11 +36,11 @@ actually controls the *value* axis's `<c:crosses>` (upstream stores
 crossing on the opposite axis from where it renders), and the same for
 `set_x_axis_position_between_ticks()` and `<c:crossBetween>`. Legend
 entry deletion, object movement, decorative, and scale width/height
-shipped in PR #43. What remains:
+shipped in PR #43. `ChartDataTable` (data tables) shipped in PR #44.
+What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Data table | `chart.rs:2470` | `ChartDataTable` pyclass (`chart.rs:17269`), via `Chart.set_data_table(table)` | Medium |
 | Per-point formatting | `chart.rs:7750` | `ChartPoint` pyclass, via `ChartSeries.set_points([...])` | Medium |
 | Gradient fills | `chart.rs:13980` | `ChartFormat.set_gradient_fill(...)` plus `ChartGradientStop` | Medium |
 | Pattern fills | `chart.rs:13915` | `ChartFormat.set_pattern_fill(...)` | Low |
