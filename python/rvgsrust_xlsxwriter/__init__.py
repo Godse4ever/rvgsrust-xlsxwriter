@@ -113,6 +113,7 @@ from rvgsrust_xlsxwriter._core import (
     ChartMarker,
     ChartTrendline,
     ChartDataLabel,
+    ChartDataTable,
     ChartErrorBars,
 )
 
@@ -211,6 +212,7 @@ __all__ = [
     "ChartMarker",
     "ChartTrendline",
     "ChartDataLabel",
+    "ChartDataTable",
     "ChartErrorBars",
 ]
 

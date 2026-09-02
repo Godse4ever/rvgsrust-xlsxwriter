@@ -11,7 +11,14 @@ from datetime import date
 
 import pytest
 
-from rvgsrust_xlsxwriter import Chart, ChartErrorBars, ChartFormat, ChartSeries, Workbook
+from rvgsrust_xlsxwriter import (
+    Chart,
+    ChartDataTable,
+    ChartErrorBars,
+    ChartFormat,
+    ChartSeries,
+    Workbook,
+)
 
 ALL_TYPES = [
     "area", "area_stacked", "area_percent_stacked",
@@ -969,3 +976,48 @@ def test_scale_width_and_height_change_extent():
     default_span = to_cols[0] - 3
     scaled_span = to_cols[1] - 3
     assert scaled_span > default_span * 1.5
+
+
+# ------------------------------ data table ------------------------------
+
+
+def test_data_table_defaults():
+    table = ChartDataTable()
+    xml = _simple(set_data_table=table)
+    assert "<c:dTable>" in xml
+    assert '<c:showHorzBorder val="1"/>' in xml
+    assert '<c:showVertBorder val="1"/>' in xml
+    assert '<c:showOutline val="1"/>' in xml
+    assert "showKeys" not in xml
+
+
+def test_data_table_legend_keys():
+    table = ChartDataTable()
+    table.show_legend_keys(True)
+    xml = _simple(set_data_table=table)
+    assert '<c:showKeys val="1"/>' in xml
+
+
+def test_data_table_borders_off():
+    table = ChartDataTable()
+    table.show_horizontal_borders(False)
+    table.show_vertical_borders(False)
+    table.show_outline_borders(False)
+    xml = _simple(set_data_table=table)
+    assert "showHorzBorder" not in xml
+    assert "showVertBorder" not in xml
+    assert "showOutline" not in xml
+
+
+def test_data_table_not_written_by_default():
+    xml = _simple(chart_type="column")
+    assert "dTable" not in xml
+
+
+def test_data_table_format():
+    fmt = ChartFormat()
+    fmt.set_fill_color("#00FFFF")
+    table = ChartDataTable()
+    table.set_format(fmt)
+    xml = _simple(set_data_table=table)
+    assert "00FFFF" in xml
