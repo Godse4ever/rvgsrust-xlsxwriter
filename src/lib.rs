@@ -6001,6 +6001,54 @@ impl ChartSeries {
 }
 
 // -----------------------------------------------------------------------
+// ChartDataTable
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct ChartDataTable {
+    inner: rch::ChartDataTable,
+}
+
+#[pymethods]
+impl ChartDataTable {
+    #[new]
+    fn new() -> Self {
+        ChartDataTable {
+            inner: rch::ChartDataTable::new(),
+        }
+    }
+
+    // All four border/key toggles below default to upstream's own
+    // defaults: horizontal/vertical/outline borders on, legend keys off.
+
+    fn show_horizontal_borders(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_horizontal_borders(enable);
+    }
+
+    fn show_vertical_borders(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_vertical_borders(enable);
+    }
+
+    fn show_outline_borders(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_outline_borders(enable);
+    }
+
+    fn show_legend_keys(&mut self, enable: bool) {
+        self.inner = self.inner.clone().show_legend_keys(enable);
+    }
+
+    fn set_font(&mut self, font: &ChartFont) {
+        self.inner = self.inner.clone().set_font(&font.inner);
+    }
+
+    fn set_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner = self.inner.clone().set_format(&mut fmt);
+    }
+}
+
+// -----------------------------------------------------------------------
 // ChartErrorBars
 // -----------------------------------------------------------------------
 
@@ -6624,6 +6672,10 @@ impl Chart {
     fn set_drop_lines_format(&mut self, format: &ChartFormat) {
         let mut fmt = format.inner.clone();
         self.inner.set_drop_lines_format(&mut fmt);
+    }
+
+    fn set_data_table(&mut self, table: &ChartDataTable) {
+        self.inner.set_data_table(&table.inner);
     }
 
     // ---- chart area / plot area formatting ----
@@ -7497,6 +7549,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ChartMarker>()?;
     m.add_class::<ChartTrendline>()?;
     m.add_class::<ChartDataLabel>()?;
+    m.add_class::<ChartDataTable>()?;
     m.add_class::<ChartErrorBars>()?;
     Ok(())
 }
