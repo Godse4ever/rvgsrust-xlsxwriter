@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.24] - 2026-08-31
+
+Patch release, no breaking changes. Adds chart data tables.
+
+### Added
+
+- **`ChartDataTable`.** `show_horizontal_borders()`/
+  `show_vertical_borders()`/`show_outline_borders()` (all on by
+  default), `show_legend_keys()` (off by default), `set_font()`,
+  `set_format()` -- matches upstream's own struct exactly, no fields
+  skipped. Via `Chart.set_data_table(table)`.
+
 ## [0.2.23] - 2026-08-31
 
 Patch release, no breaking changes. Adds four chart features in one
