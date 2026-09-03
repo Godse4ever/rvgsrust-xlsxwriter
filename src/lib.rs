@@ -5980,6 +5980,17 @@ impl ChartSeries {
         self.inner.set_custom_data_labels(&owned);
     }
 
+    // Length must match the series' number of data points; an
+    // unformatted ChartPoint() for any point you want left alone.
+    fn set_points(&mut self, py: Python<'_>, points: Vec<Py<ChartPoint>>) {
+        let mut owned = Vec::with_capacity(points.len());
+        for point in &points {
+            let borrowed = point.borrow(py);
+            owned.push(borrowed.inner.clone());
+        }
+        self.inner.set_points(&owned);
+    }
+
     // Vertical error bars. Real upstream behavior, confirmed against
     // source: only Scatter charts serialize both x and y error bars with
     // a real <c:errDir> telling Excel which axis they're on. Every other
@@ -5997,6 +6008,32 @@ impl ChartSeries {
     // per-chart-type behavior. Only Scatter and Bar charts honor these.
     fn set_x_error_bars(&mut self, error_bars: &ChartErrorBars) {
         self.inner.set_x_error_bars(&error_bars.inner);
+    }
+}
+
+// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// ChartPoint
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct ChartPoint {
+    inner: rch::ChartPoint,
+}
+
+#[pymethods]
+impl ChartPoint {
+    #[new]
+    fn new() -> Self {
+        ChartPoint {
+            inner: rch::ChartPoint::new(),
+        }
+    }
+
+    fn set_format(&mut self, format: &ChartFormat) {
+        let mut fmt = format.inner.clone();
+        self.inner = self.inner.clone().set_format(&mut fmt);
     }
 }
 
@@ -7549,6 +7586,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ChartMarker>()?;
     m.add_class::<ChartTrendline>()?;
     m.add_class::<ChartDataLabel>()?;
+    m.add_class::<ChartPoint>()?;
     m.add_class::<ChartDataTable>()?;
     m.add_class::<ChartErrorBars>()?;
     Ok(())

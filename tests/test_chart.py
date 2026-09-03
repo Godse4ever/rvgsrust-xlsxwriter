@@ -16,6 +16,7 @@ from rvgsrust_xlsxwriter import (
     ChartDataTable,
     ChartErrorBars,
     ChartFormat,
+    ChartPoint,
     ChartSeries,
     Workbook,
 )
@@ -1021,3 +1022,44 @@ def test_data_table_format():
     table.set_format(fmt)
     xml = _simple(set_data_table=table)
     assert "00FFFF" in xml
+
+
+# ------------------------------ per-point formatting ------------------------------
+
+
+def test_set_points_formats_specific_points():
+    def build(ws):
+        series = ChartSeries()
+        series.set_values("Sheet1!$B$1:$B$5")
+        red = ChartFormat()
+        red.set_fill_color("#FF0000")
+        blue = ChartFormat()
+        blue.set_fill_color("#0000FF")
+        points = [ChartPoint(), ChartPoint(), ChartPoint()]
+        points[0].set_format(red)
+        points[2].set_format(blue)
+        series.set_points(points)
+        chart = Chart("pie")
+        chart.push_series(series)
+        ws.insert_chart(0, 3, chart)
+
+    xml = _build(build)[0]
+    assert xml.count("<c:dPt>") == 2
+    assert '<c:idx val="0"/>' in xml
+    assert '<c:idx val="2"/>' in xml
+    assert '<c:idx val="1"/>' not in xml
+    assert "FF0000" in xml
+    assert "0000FF" in xml
+
+
+def test_set_points_all_unformatted_writes_nothing():
+    def build(ws):
+        series = ChartSeries()
+        series.set_values("Sheet1!$B$1:$B$5")
+        series.set_points([ChartPoint(), ChartPoint()])
+        chart = Chart("column")
+        chart.push_series(series)
+        ws.insert_chart(0, 3, chart)
+
+    xml = _build(build)[0]
+    assert "dPt" not in xml
