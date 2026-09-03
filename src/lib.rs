@@ -6277,6 +6277,86 @@ fn parse_object_movement(name: &str) -> PyResult<rust_xlsxwriter::ObjectMovement
     }
 }
 
+fn parse_chart_gradient_fill_type(name: &str) -> PyResult<rch::ChartGradientFillType> {
+    use rch::ChartGradientFillType as T;
+    match name.to_ascii_lowercase().as_str() {
+        "linear" => Ok(T::Linear),
+        "radial" => Ok(T::Radial),
+        "rectangular" => Ok(T::Rectangular),
+        "path" => Ok(T::Path),
+        other => Err(cf_type_err(
+            "chart gradient fill type",
+            other,
+            "linear, radial, rectangular, path",
+        )),
+    }
+}
+
+fn parse_chart_pattern_fill_type(name: &str) -> PyResult<rch::ChartPatternFillType> {
+    use rch::ChartPatternFillType as T;
+    let parsed = match name.to_ascii_lowercase().as_str() {
+        "dotted_5_percent" => T::Dotted5Percent,
+        "dotted_10_percent" => T::Dotted10Percent,
+        "dotted_20_percent" => T::Dotted20Percent,
+        "dotted_25_percent" => T::Dotted25Percent,
+        "dotted_30_percent" => T::Dotted30Percent,
+        "dotted_40_percent" => T::Dotted40Percent,
+        "dotted_50_percent" => T::Dotted50Percent,
+        "dotted_60_percent" => T::Dotted60Percent,
+        "dotted_70_percent" => T::Dotted70Percent,
+        "dotted_75_percent" => T::Dotted75Percent,
+        "dotted_80_percent" => T::Dotted80Percent,
+        "dotted_90_percent" => T::Dotted90Percent,
+        "diagonal_stripes_light_downwards" => T::DiagonalStripesLightDownwards,
+        "diagonal_stripes_light_upwards" => T::DiagonalStripesLightUpwards,
+        "diagonal_stripes_dark_downwards" => T::DiagonalStripesDarkDownwards,
+        "diagonal_stripes_dark_upwards" => T::DiagonalStripesDarkUpwards,
+        "diagonal_stripes_wide_downwards" => T::DiagonalStripesWideDownwards,
+        "diagonal_stripes_wide_upwards" => T::DiagonalStripesWideUpwards,
+        "vertical_stripes_light" => T::VerticalStripesLight,
+        "horizontal_stripes_light" => T::HorizontalStripesLight,
+        "vertical_stripes_narrow" => T::VerticalStripesNarrow,
+        "horizontal_stripes_narrow" => T::HorizontalStripesNarrow,
+        "vertical_stripes_dark" => T::VerticalStripesDark,
+        "horizontal_stripes_dark" => T::HorizontalStripesDark,
+        "stripes_backslashes" => T::StripesBackslashes,
+        "stripes_forward_slashes" => T::StripesForwardSlashes,
+        "horizontal_stripes_alternating" => T::HorizontalStripesAlternating,
+        "vertical_stripes_alternating" => T::VerticalStripesAlternating,
+        "small_confetti" => T::SmallConfetti,
+        "large_confetti" => T::LargeConfetti,
+        "zigzag" => T::Zigzag,
+        "wave" => T::Wave,
+        "diagonal_brick" => T::DiagonalBrick,
+        "horizontal_brick" => T::HorizontalBrick,
+        "weave" => T::Weave,
+        "plaid" => T::Plaid,
+        "divot" => T::Divot,
+        "dotted_grid" => T::DottedGrid,
+        "dotted_diamond" => T::DottedDiamond,
+        "shingle" => T::Shingle,
+        "trellis" => T::Trellis,
+        "sphere" => T::Sphere,
+        "small_grid" => T::SmallGrid,
+        "large_grid" => T::LargeGrid,
+        "small_checkerboard" => T::SmallCheckerboard,
+        "large_checkerboard" => T::LargeCheckerboard,
+        "outlined_diamond_grid" => T::OutlinedDiamondGrid,
+        "solid_diamond_grid" => T::SolidDiamondGrid,
+        other => {
+            return Err(cf_type_err(
+                "chart pattern fill type",
+                other,
+                "one of the 48 upstream ChartPatternFillType variants, e.g. \
+                 dotted_5_percent, diagonal_stripes_light_downwards, \
+                 small_checkerboard, trellis, weave, wave, zigzag -- see \
+                 rust_xlsxwriter's ChartPatternFillType docs for the full list",
+            ))
+        }
+    };
+    Ok(parsed)
+}
+
 fn parse_axis_crossing(value: &Bound<'_, PyAny>) -> PyResult<rch::ChartAxisCrossing> {
     use rch::ChartAxisCrossing as C;
     if let Ok(s) = value.extract::<String>() {
@@ -7246,6 +7326,113 @@ impl ChartFormat {
     fn set_no_fill(&mut self) {
         self.inner.set_no_fill();
     }
+
+    fn set_pattern_fill(&mut self, fill: &ChartPatternFill) {
+        self.inner.set_pattern_fill(&fill.inner);
+    }
+
+    fn set_gradient_fill(&mut self, fill: &ChartGradientFill) {
+        self.inner.set_gradient_fill(&fill.inner);
+    }
+}
+
+// -----------------------------------------------------------------------
+// ChartPatternFill
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct ChartPatternFill {
+    inner: rch::ChartPatternFill,
+}
+
+#[pymethods]
+impl ChartPatternFill {
+    #[new]
+    fn new() -> Self {
+        ChartPatternFill {
+            inner: rch::ChartPatternFill::new(),
+        }
+    }
+
+    fn set_pattern(&mut self, pattern: &str) -> PyResult<()> {
+        let parsed = parse_chart_pattern_fill_type(pattern)?;
+        self.inner.set_pattern(parsed);
+        Ok(())
+    }
+
+    fn set_background_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner.set_background_color(parsed);
+        Ok(())
+    }
+
+    fn set_foreground_color(&mut self, color: &str) -> PyResult<()> {
+        let parsed = parse_color(color)?;
+        self.inner.set_foreground_color(parsed);
+        Ok(())
+    }
+}
+
+// -----------------------------------------------------------------------
+// ChartGradientStop / ChartGradientFill
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct ChartGradientStop {
+    inner: rch::ChartGradientStop,
+}
+
+#[pymethods]
+impl ChartGradientStop {
+    // position is 0-100 (percent along the gradient).
+    #[new]
+    fn new(color: &str, position: u8) -> PyResult<Self> {
+        let parsed = parse_color(color)?;
+        Ok(ChartGradientStop {
+            inner: rch::ChartGradientStop::new(parsed, position),
+        })
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct ChartGradientFill {
+    inner: rch::ChartGradientFill,
+}
+
+#[pymethods]
+impl ChartGradientFill {
+    #[new]
+    fn new() -> Self {
+        ChartGradientFill {
+            inner: rch::ChartGradientFill::new(),
+        }
+    }
+
+    // Silently no-ops (with an eprintln! upstream) if fewer than 2 or
+    // more than 10 stops are given -- not raised as an error here either.
+    fn set_gradient_stops(&mut self, py: Python<'_>, stops: Vec<Py<ChartGradientStop>>) {
+        let mut owned = Vec::with_capacity(stops.len());
+        for stop in &stops {
+            let borrowed = stop.borrow(py);
+            owned.push(borrowed.inner.clone());
+        }
+        self.inner.set_gradient_stops(&owned);
+    }
+
+    // One of linear (default), radial, rectangular, path.
+    fn set_type(&mut self, gradient_type: &str) -> PyResult<()> {
+        let parsed = parse_chart_gradient_fill_type(gradient_type)?;
+        self.inner.set_type(parsed);
+        Ok(())
+    }
+
+    // Angle in degrees (0-359), only meaningful for the linear type.
+    fn set_angle(&mut self, angle: u16) {
+        self.inner.set_angle(angle);
+    }
 }
 
 // ============================================
@@ -7587,6 +7774,9 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ChartTrendline>()?;
     m.add_class::<ChartDataLabel>()?;
     m.add_class::<ChartPoint>()?;
+    m.add_class::<ChartPatternFill>()?;
+    m.add_class::<ChartGradientStop>()?;
+    m.add_class::<ChartGradientFill>()?;
     m.add_class::<ChartDataTable>()?;
     m.add_class::<ChartErrorBars>()?;
     Ok(())
