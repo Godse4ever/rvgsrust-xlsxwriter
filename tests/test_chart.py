@@ -16,6 +16,9 @@ from rvgsrust_xlsxwriter import (
     ChartDataTable,
     ChartErrorBars,
     ChartFormat,
+    ChartGradientFill,
+    ChartGradientStop,
+    ChartPatternFill,
     ChartPoint,
     ChartSeries,
     Workbook,
@@ -1063,3 +1066,88 @@ def test_set_points_all_unformatted_writes_nothing():
 
     xml = _build(build)[0]
     assert "dPt" not in xml
+
+
+# --------------------------- pattern / gradient fills ---------------------------
+
+
+def test_pattern_fill_basic():
+    pattern = ChartPatternFill()
+    pattern.set_pattern("wave")
+    fmt = ChartFormat()
+    fmt.set_pattern_fill(pattern)
+    xml = _simple(set_chart_area_format=fmt)
+    assert '<a:pattFill prst="wave">' in xml
+
+
+def test_pattern_fill_percent_naming():
+    pattern = ChartPatternFill()
+    pattern.set_pattern("dotted_5_percent")
+    fmt = ChartFormat()
+    fmt.set_pattern_fill(pattern)
+    xml = _simple(set_chart_area_format=fmt)
+    assert '<a:pattFill prst="pct5">' in xml
+
+
+def test_pattern_fill_fg_bg_colors():
+    pattern = ChartPatternFill()
+    pattern.set_pattern("trellis")
+    pattern.set_foreground_color("#FF0000")
+    pattern.set_background_color("#00FF00")
+    fmt = ChartFormat()
+    fmt.set_pattern_fill(pattern)
+    xml = _simple(set_chart_area_format=fmt)
+    assert "<a:fgClr>" in xml
+    assert "<a:bgClr>" in xml
+    assert "FF0000" in xml
+    assert "00FF00" in xml
+
+
+def test_pattern_fill_invalid_type_raises():
+    pattern = ChartPatternFill()
+    with pytest.raises(ValueError):
+        pattern.set_pattern("not_a_real_pattern")
+
+
+def test_gradient_fill_linear_default():
+    stops = [ChartGradientStop("#FF0000", 0), ChartGradientStop("#0000FF", 100)]
+    fill = ChartGradientFill()
+    fill.set_gradient_stops(stops)
+    fmt = ChartFormat()
+    fmt.set_gradient_fill(fill)
+    xml = _simple(set_chart_area_format=fmt)
+    assert "<a:gradFill>" in xml
+    assert "<a:gsLst>" in xml
+    assert '<a:gs pos="0">' in xml
+    assert '<a:gs pos="100000">' in xml
+    assert "FF0000" in xml
+    assert "0000FF" in xml
+
+
+def test_gradient_fill_angle():
+    stops = [ChartGradientStop("#FF0000", 0), ChartGradientStop("#0000FF", 100)]
+    fill = ChartGradientFill()
+    fill.set_gradient_stops(stops)
+    fill.set_angle(90)
+    fmt = ChartFormat()
+    fmt.set_gradient_fill(fill)
+    xml = _simple(set_chart_area_format=fmt)
+    assert '<a:lin ang="5400000" scaled="0"/>' in xml
+
+
+def test_gradient_fill_radial_type_uses_path_not_angle():
+    stops = [ChartGradientStop("#FF0000", 0), ChartGradientStop("#0000FF", 100)]
+    fill = ChartGradientFill()
+    fill.set_gradient_stops(stops)
+    fill.set_type("radial")
+    fmt = ChartFormat()
+    fmt.set_gradient_fill(fill)
+    xml = _simple(set_chart_area_format=fmt)
+    assert "<a:path" in xml
+    assert "<a:lin " not in xml
+
+
+def test_gradient_fill_invalid_type_raises():
+    fill = ChartGradientFill()
+    with pytest.raises(ValueError):
+        fill.set_type("sideways")
