@@ -1061,7 +1061,8 @@ deliberate design win.
 | **v0.2.22** | ✅ Patch release: axis label placement/tick marks/date min-max-units/crossing/display units (`set_x_axis_*`/`set_y_axis_*`, 5 MISSING.md items batched into one release). |
 | **v0.2.23** | ✅ Patch release: `Chart.set_legend_delete_entries()`, `set_object_movement()`, `set_decorative()`, `set_scale_width()`/`set_scale_height()` (4 MISSING.md items batched into one release). |
 | **v0.2.24** | ✅ Patch release: a new `ChartDataTable` pyclass for chart data tables, via `Chart.set_data_table()`. |
-| **v0.3** | 🚧 Remaining chart gaps (per-point formatting, gradient/pattern fills, manual layout); full xlsxwriter API compatibility layer |
+| **v0.2.25** | ✅ Patch release: a new `ChartPoint` pyclass for per-point formatting (e.g. individually coloring Pie chart segments), via `ChartSeries.set_points()`. |
+| **v0.3** | 🚧 Remaining chart gaps (gradient/pattern fills, manual layout); full xlsxwriter API compatibility layer |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases

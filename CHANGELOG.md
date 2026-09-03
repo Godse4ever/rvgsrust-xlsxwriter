@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.25] - 2026-08-31
+
+Patch release, no breaking changes. Adds chart per-point formatting.
+
+### Added
+
+- **`ChartPoint`.** `new()` + `set_format()` -- via
+  `ChartSeries.set_points([...])`, mirroring the existing
+  `set_custom_data_labels()` pattern for a list-of-objects parameter.
+  Length must match the series' number of data points; pass an
+  unformatted `ChartPoint()` for any point left alone (upstream skips
+  writing `<c:dPt>` entirely for unformatted points). The most common
+  use is coloring individual Pie chart segments.
+
 ## [0.2.24] - 2026-08-31
 
 Patch release, no breaking changes. Adds chart data tables.
