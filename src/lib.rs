@@ -6013,6 +6013,41 @@ impl ChartSeries {
 
 // -----------------------------------------------------------------------
 // -----------------------------------------------------------------------
+// ChartLayout
+// -----------------------------------------------------------------------
+
+#[pyclass]
+#[derive(Clone)]
+struct ChartLayout {
+    inner: rch::ChartLayout,
+}
+
+#[pymethods]
+impl ChartLayout {
+    #[new]
+    fn new() -> Self {
+        ChartLayout {
+            inner: rch::ChartLayout::new(),
+        }
+    }
+
+    // x_offset/y_offset: 0.0 < value <= 1.0. Upstream silently ignores
+    // (with an eprintln!) an out-of-range value rather than raising --
+    // not second-guessed here either.
+    fn set_offset(&mut self, x_offset: f64, y_offset: f64) {
+        self.inner = self.inner.clone().set_offset(x_offset, y_offset);
+    }
+
+    // width/height: 0.0 < value <= 1.0. Only meaningful for plot-area
+    // and legend layouts -- for title/other text objects the size comes
+    // from the font instead. Same silent-ignore behavior on an
+    // out-of-range value as set_offset() above.
+    fn set_dimensions(&mut self, width: f64, height: f64) {
+        self.inner = self.inner.clone().set_dimensions(width, height);
+    }
+}
+
+// -----------------------------------------------------------------------
 // ChartPoint
 // -----------------------------------------------------------------------
 
@@ -6509,6 +6544,12 @@ impl Chart {
         self.inner.title().set_hidden();
     }
 
+    // To position the title over the plot area, also call
+    // set_title_overlay(True).
+    fn set_title_layout(&mut self, layout: &ChartLayout) {
+        self.inner.title().set_layout(&layout.inner);
+    }
+
     fn set_title_overlay(&mut self, enable: bool) {
         self.inner.title().set_overlay(enable);
     }
@@ -6809,6 +6850,10 @@ impl Chart {
         self.inner.plot_area().set_format(&mut fmt);
     }
 
+    fn set_plot_area_layout(&mut self, layout: &ChartLayout) {
+        self.inner.plot_area().set_layout(&layout.inner);
+    }
+
     // Combines this chart's primary chart type with a secondary chart
     // type (e.g. a Column chart with a combined Line chart), typically
     // used together with set_secondary_axis() on the combined chart's
@@ -6992,6 +7037,10 @@ impl Chart {
 
     fn set_legend_overlay(&mut self, enable: bool) {
         self.inner.legend().set_overlay(enable);
+    }
+
+    fn set_legend_layout(&mut self, layout: &ChartLayout) {
+        self.inner.legend().set_layout(&layout.inner);
     }
 
     // Hides one or more series names from the legend, by index (0-based,
@@ -7773,6 +7822,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ChartMarker>()?;
     m.add_class::<ChartTrendline>()?;
     m.add_class::<ChartDataLabel>()?;
+    m.add_class::<ChartLayout>()?;
     m.add_class::<ChartPoint>()?;
     m.add_class::<ChartPatternFill>()?;
     m.add_class::<ChartGradientStop>()?;
