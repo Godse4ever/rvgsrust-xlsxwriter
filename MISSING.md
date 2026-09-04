@@ -4,47 +4,17 @@ Only open items below. Anything closed has been removed from this file
 rather than marked done, so this stays a to-do list, not a changelog —
 see [CHANGELOG.md](CHANGELOG.md) for what shipped.
 
-Worksheet and Workbook are both fully closed now (PRs #30-#38) --
-Charts is the only section with open gaps. serde serialisation is the
-one deliberate exception, left open below rather than closed, because
-it's a real feature (new Cargo feature flag + a Python-dict-to-
-serde_json::Value bridge) rather than a small gap, and hasn't been
-attempted yet.
+Worksheet, Workbook, and Charts are all fully closed now (PRs #30-#47).
+serde serialisation is the one deliberate exception, left open below
+rather than closed, because it's a real feature (new Cargo feature
+flag + a Python-dict-to-serde_json::Value bridge) rather than a small
+gap, and hasn't been attempted yet. Gridline formatting on `Chart` is
+a separate, permanent exception -- not a to-do, since upstream has no
+API to bind to (see Known limitations below).
 
 All `file:line` references below were read from source, re-checked
 against
 [`v0.98.2`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.98.2/src).
-
-Priorities are a judgement call about request frequency, weighted toward
-this project's actual use — survey and market-research reporting, where
-page setup, print layout and per-column formatting come up far more often
-than VBA or chartsheets. They are not upstream's opinion.
-
----
-
-## Charts — ~35 gaps
-
-Parts 1–3 covered the core (series, formatting, markers/trendlines/data
-labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
-error bars (`ChartErrorBars`, PR #29) have shipped. Up-down bars, drop
-lines, and high-low lines (all Line-chart-only decorations) shipped in
-PR #39. Chart/plot area formatting shipped in PR #40. `Chart.combine()`
-for combined charts shipped in PR #41. Axis label placement, tick
-marks, date min/max/units, crossing, and display units all shipped in
-PR #42 -- note two OOXML quirks documented there: `set_x_axis_crossing()`
-actually controls the *value* axis's `<c:crosses>` (upstream stores
-crossing on the opposite axis from where it renders), and the same for
-`set_x_axis_position_between_ticks()` and `<c:crossBetween>`. Legend
-entry deletion, object movement, decorative, and scale width/height
-shipped in PR #43. `ChartDataTable` (data tables) shipped in PR #44.
-`ChartPoint` (per-point formatting) shipped in PR #45. Gradient and
-pattern fills (`ChartGradientFill`/`ChartGradientStop`/`ChartPatternFill`)
-shipped together in PR #46. What remains:
-
-| Feature | Upstream | Suggested Python API | Priority |
-|---|---|---|---|
-| Gridline formatting | — | Not implementable -- upstream has no `major_gridlines()`/`minor_gridlines()` accessor returning a formattable object, only the on/off toggle already exposed | Medium |
-| Manual layouts | `chart.rs:9147` | `ChartLayout` pyclass for `title`, `legend`, `plot_area` | Low |
 
 ---
 
@@ -67,6 +37,12 @@ left as a dedicated follow-up rather than rushed.
 ---
 
 ## Known limitations (not parity gaps)
+
+**Chart gridline formatting:** not implementable from this binding --
+upstream has no `major_gridlines()`/`minor_gridlines()` accessor
+returning a formattable object on `Chart`, only the on/off toggle
+already exposed (`set_x_axis_major_gridlines()` etc.). There is no
+`ChartFormat`-compatible path to style gridline color/weight/dash type.
 
 **`group_rows()` in `constant_memory=True` mode:** individual `<row>`
 elements never get an `outlineLevel` attribute -- only the sheet-wide
