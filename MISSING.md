@@ -22,7 +22,7 @@ than VBA or chartsheets. They are not upstream's opinion.
 
 ---
 
-## Charts — ~37 gaps
+## Charts — ~35 gaps
 
 Parts 1–3 covered the core (series, formatting, markers/trendlines/data
 labels). Secondary axes (`set_x2_axis_*`/`set_y2_axis_*`, PR #28) and
@@ -37,12 +37,12 @@ crossing on the opposite axis from where it renders), and the same for
 `set_x_axis_position_between_ticks()` and `<c:crossBetween>`. Legend
 entry deletion, object movement, decorative, and scale width/height
 shipped in PR #43. `ChartDataTable` (data tables) shipped in PR #44.
-`ChartPoint` (per-point formatting) shipped in PR #45. What remains:
+`ChartPoint` (per-point formatting) shipped in PR #45. Gradient and
+pattern fills (`ChartGradientFill`/`ChartGradientStop`/`ChartPatternFill`)
+shipped together in PR #46. What remains:
 
 | Feature | Upstream | Suggested Python API | Priority |
 |---|---|---|---|
-| Gradient fills | `chart.rs:13980` | `ChartFormat.set_gradient_fill(...)` plus `ChartGradientStop` | Medium |
-| Pattern fills | `chart.rs:13915` | `ChartFormat.set_pattern_fill(...)` | Low |
 | Gridline formatting | — | Not implementable -- upstream has no `major_gridlines()`/`minor_gridlines()` accessor returning a formattable object, only the on/off toggle already exposed | Medium |
 | Manual layouts | `chart.rs:9147` | `ChartLayout` pyclass for `title`, `legend`, `plot_area` | Low |
 
