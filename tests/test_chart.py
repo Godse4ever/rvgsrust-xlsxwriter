@@ -18,6 +18,7 @@ from rvgsrust_xlsxwriter import (
     ChartFormat,
     ChartGradientFill,
     ChartGradientStop,
+    ChartLayout,
     ChartPatternFill,
     ChartPoint,
     ChartSeries,
@@ -1151,3 +1152,50 @@ def test_gradient_fill_invalid_type_raises():
     fill = ChartGradientFill()
     with pytest.raises(ValueError):
         fill.set_type("sideways")
+
+
+# ------------------------------ manual layouts ------------------------------
+
+
+def test_title_layout_offset():
+    layout = ChartLayout()
+    layout.set_offset(0.1, 0.2)
+    xml = _simple(set_title_name="My Title", set_title_layout=layout)
+    assert "<c:manualLayout>" in xml
+    assert '<c:x val="0.1"/>' in xml
+    assert '<c:y val="0.2"/>' in xml
+
+
+def test_legend_layout_with_dimensions():
+    layout = ChartLayout()
+    layout.set_offset(0.05, 0.9)
+    layout.set_dimensions(0.5, 0.1)
+    xml = _simple(set_legend_layout=layout)
+    assert '<c:x val="0.05"/>' in xml
+    assert '<c:y val="0.9"/>' in xml
+    assert '<c:w val="0.5"/>' in xml
+    assert '<c:h val="0.1"/>' in xml
+
+
+def test_plot_area_layout():
+    layout = ChartLayout()
+    layout.set_offset(0.15, 0.15)
+    layout.set_dimensions(0.7, 0.7)
+    xml = _simple(set_plot_area_layout=layout)
+    assert '<c:x val="0.15"/>' in xml
+    assert '<c:w val="0.7"/>' in xml
+
+
+def test_default_layout_is_self_closing():
+    xml = _simple(chart_type="column")
+    assert "<c:layout/>" in xml
+    assert "manualLayout" not in xml
+
+
+def test_layout_out_of_range_offset_silently_ignored():
+    layout = ChartLayout()
+    layout.set_offset(2.0, 0.5)  # x out of range
+    xml = _simple(set_title_name="T", set_title_layout=layout)
+    # Neither x nor y should be written since upstream rejects the whole
+    # call when x_offset is invalid.
+    assert "manualLayout" not in xml
