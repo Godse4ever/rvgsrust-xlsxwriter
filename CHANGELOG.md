@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.26] - 2026-08-31
+
+Patch release, no breaking changes. Adds chart gradient and pattern
+fills, batched into one release.
+
+### Added
+
+- **`ChartPatternFill`.** `set_pattern()` (all 48 upstream
+  `ChartPatternFillType` variants, e.g. `dotted_5_percent`,
+  `diagonal_stripes_light_downwards`, `trellis`, `weave`, `wave`,
+  `zigzag`), `set_background_color()`, `set_foreground_color()`.
+- **`ChartGradientStop`.** `(color, position)` -- position is 0-100
+  (percent along the gradient).
+- **`ChartGradientFill`.** `set_gradient_stops()` (requires 2-10 stops;
+  upstream silently ignores the call otherwise rather than raising, and
+  this binding doesn't second-guess that), `set_type()` (linear/
+  radial/rectangular/path), `set_angle()` (0-359 degrees, linear only).
+- **`ChartFormat.set_pattern_fill()`/`set_gradient_fill()`.**
+
 ## [0.2.25] - 2026-08-31
 
 Patch release, no breaking changes. Adds chart per-point formatting.
