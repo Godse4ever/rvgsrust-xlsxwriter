@@ -1063,7 +1063,8 @@ deliberate design win.
 | **v0.2.24** | ✅ Patch release: a new `ChartDataTable` pyclass for chart data tables, via `Chart.set_data_table()`. |
 | **v0.2.25** | ✅ Patch release: a new `ChartPoint` pyclass for per-point formatting (e.g. individually coloring Pie chart segments), via `ChartSeries.set_points()`. |
 | **v0.2.26** | ✅ Patch release: `ChartPatternFill` (all 48 upstream pattern types) and `ChartGradientFill`/`ChartGradientStop`, via `ChartFormat.set_pattern_fill()`/`set_gradient_fill()`. |
-| **v0.3** | 🚧 Manual chart layouts; full xlsxwriter API compatibility layer |
+| **v0.2.27** | ✅ Patch release: a new `ChartLayout` pyclass (`set_offset()`/`set_dimensions()`) for manual title/legend/plot-area positioning, via `Chart.set_title_layout()`/`set_legend_layout()`/`set_plot_area_layout()`. Closes MISSING.md's Charts section entirely except gridline formatting, which has no upstream API to bind to. |
+| **v0.4** | 🚧 Full xlsxwriter API compatibility layer; possibly serde serialisation (see MISSING.md) |
 
 **Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
 types, ~214 public methods across ~39 types) were implemented in phases
@@ -1078,10 +1079,10 @@ All three phases have landed:
 6. ✅ Up-down bars, drop lines, high-low lines (Line charts only)
 7. ✅ Chart / plot area formatting: `set_chart_area_format()`, `set_plot_area_format()`
 8. ✅ Combined charts: `Chart.combine()`
+9. ✅ Axis label placement/tick marks/date units/crossing/display units, legend deletion, object movement, data tables, per-point formatting, gradient/pattern fills, manual layouts
 
-Remaining chart work, tracked in [MISSING.md](MISSING.md): data
-tables, manual layout, and the less common chart types (Radar,
-Stock, Doughnut, Surface).
+Full API parity on Charts now, except gridline formatting (no upstream
+API to bind to -- see MISSING.md).
 
 ### Secondary Axes
 
@@ -1149,6 +1150,37 @@ ws.insert_chart(0, 3, chart)
 wb.close()
 ```
 
+### Manual Layouts
+
+`ChartLayout` positions the title, legend, or plot area precisely
+instead of leaving it to Excel's automatic layout. `set_offset(x, y)`
+and `set_dimensions(width, height)` both take fractions of the chart's
+total size (`0.0 < value <= 1.0`); dimensions only affect the legend
+and plot area, since text objects size from their font instead.
+
+```python
+from rvgsrust_xlsxwriter import Workbook, Chart, ChartSeries, ChartLayout
+
+wb = Workbook("manual_layout.xlsx")
+ws = wb.add_worksheet()
+ws.write_column(0, 0, [10, 40, 50, 20, 10, 50])
+
+series = ChartSeries()
+series.set_values("Sheet1!$A$1:$A$6")
+
+chart = Chart("column")
+chart.push_series(series)
+
+legend_layout = ChartLayout()
+legend_layout.set_offset(0.75, 0.15)
+legend_layout.set_dimensions(0.2, 0.3)
+chart.set_legend_layout(legend_layout)
+
+ws.insert_chart(0, 3, chart)
+
+wb.close()
+```
+
 ### Known limitations
 
 These are current, deliberate gaps rather than oversights:
@@ -1189,16 +1221,14 @@ naming itself (`set_top_border` vs upstream's `set_border_top`) has
 since been reconciled: both spellings work, the reversed ones kept for
 compatibility.
 
-The largest remaining gaps are all on `Chart` now (secondary axes
-closed in v0.2.8, error bars closed in v0.2.9) -- Worksheet and
-Workbook are both fully closed except serde serialisation (a
-Cargo-feature-gated Rust generic that needs a Python-dict-to-JSON
-bridge, deferred as a dedicated follow-up rather than a small gap).
-`Conditional formats`
+Worksheet, Workbook, and Chart are all fully closed now, except two
+deliberate exceptions: serde serialisation (a Cargo-feature-gated Rust
+generic that needs a Python-dict-to-JSON bridge, deferred as a
+dedicated follow-up rather than a small gap) and Chart gridline
+formatting (no upstream API to bind to at all). `Conditional formats`
 and `Format`
 are both at full parity now (`Format` except `set_font_scheme()`, deliberately
-not exposed) -- see MISSING.md's "Suggested order" for the full
-ranked list.
+not exposed) -- see [MISSING.md](MISSING.md) for what's left.
 
 ## Performance TODO
 

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.27] - 2026-08-31
+
+Patch release, no breaking changes. Adds manual chart layouts --
+closes MISSING.md's Charts section entirely except gridline
+formatting, which has no upstream API to bind to.
+
+### Added
+
+- **`ChartLayout`.** `set_offset(x, y)` (`0.0 < value <= 1.0` for
+  each) / `set_dimensions(width, height)` (same range; only meaningful
+  for plot-area and legend layouts, since title/other text objects
+  size from their font instead). Silently ignores an out-of-range
+  value rather than raising, matching upstream.
+- **`Chart.set_title_layout()`/`set_legend_layout()`/`set_plot_area_layout()`.**
+
 ## [0.2.26] - 2026-08-31
 
 Patch release, no breaking changes. Adds chart gradient and pattern
