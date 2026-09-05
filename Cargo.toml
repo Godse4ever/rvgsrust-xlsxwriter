@@ -14,8 +14,15 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 
-# rust_xlsxwriter 0.98.2 (upgraded from 0.96 -- see below for what changed
-# and why 0.97.x was never installed as an intermediate step), with:
+# rust_xlsxwriter 0.99.0 (upgraded from 0.98.2 -- breaking rename
+# XlsxError::TableNameReused -> XlsxError::NameReused does not affect this
+# binding: src/lib.rs only pattern-matches XlsxError::IoError and falls
+# through everything else to a generic .to_string() conversion. 0.99.0 also
+# adds stricter validation that table names and defined names must be
+# globally unique to each other, and fixes quote_sheet_name() / defined-name
+# splitting for quoted sheet names -- see upstream CHANGELOG for details.
+# (See below for what changed going from 0.96 to 0.98.2, and why 0.97.x was
+# never installed as an intermediate step), with:
 # - zlib: compression backend
 # - zmij: ~10% faster numeric-write backend (drop-in, no API change)
 # - constant_memory: enables Workbook.add_worksheet(constant_memory=True)
@@ -129,7 +136,7 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 # verification the 0.96 pin got; that verification could not be run
 # locally for the same toolchain reason, so this upgrade is validated
 # by CI (which has the real toolchain), not by a local build.
-rust_xlsxwriter = { version = "0.98.2", features = ["zlib", "zmij", "constant_memory"] }
+rust_xlsxwriter = { version = "0.99.0", features = ["zlib", "zmij", "constant_memory"] }
 
 # Native Arrow zero-copy DataFrame support (write_dataframe()). Reads
 # via the Arrow PyCapsule Interface (__arrow_c_stream__) -- no per-cell
