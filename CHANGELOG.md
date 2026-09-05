@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.28] - 2026-09-05
+
+Patch release, no breaking changes. Upgrades the underlying
+`rust_xlsxwriter` crate from 0.98.2 to 0.99.0.
+
+### Changed
+
+- **`rust_xlsxwriter` 0.98.2 -> 0.99.0.** Upstream's breaking rename of
+  `XlsxError::TableNameReused` to `NameReused` doesn't affect this
+  binding -- only `IoError` is pattern-matched specially, everything
+  else already falls through to a generic error conversion. Upstream
+  also added stricter table-name/defined-name cross-namespace
+  uniqueness validation and fixed `quote_sheet_name()`/defined-name
+  splitting bugs; both are reachable through this binding's existing
+  `add_table()`/`define_name()` passthrough with no source changes
+  needed. Full assessment in `Cargo.toml`.
+
 ## [0.2.27] - 2026-08-31
 
 Patch release, no breaking changes. Adds manual chart layouts --
