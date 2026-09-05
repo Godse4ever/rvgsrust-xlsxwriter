@@ -14,8 +14,9 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 
-# rust_xlsxwriter 0.98.2 (upgraded from 0.96 -- see below for what changed
-# and why 0.97.x was never installed as an intermediate step), with:
+# rust_xlsxwriter 0.99.0 (upgraded from 0.98.2 -- see below for the
+# 0.96->0.98.2 history first, then this section for what 0.99.0 changed
+# and why it was safe), with:
 # - zlib: compression backend
 # - zmij: ~10% faster numeric-write backend (drop-in, no API change)
 # - constant_memory: enables Workbook.add_worksheet(constant_memory=True)
@@ -129,7 +130,36 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 # verification the 0.96 pin got; that verification could not be run
 # locally for the same toolchain reason, so this upgrade is validated
 # by CI (which has the real toolchain), not by a local build.
-rust_xlsxwriter = { version = "0.98.2", features = ["zlib", "zmij", "constant_memory"] }
+#
+# --- 0.99.0 (from 0.98.2) ---
+#
+# - Breaking: XlsxError::TableNameReused renamed to XlsxError::NameReused
+#   (clarifies that Table names and Defined names now share one
+#   uniqueness namespace, not two separate ones). Doesn't affect this
+#   binding: xlsx_err_to_pyerr() (src/lib.rs) only pattern-matches
+#   XlsxError::IoError specially: every other variant, including this
+#   one under either name, falls through to the generic arm and becomes
+#   a ValueError via .to_string(). No source change needed here.
+#
+# - New validation: Table names and Defined names must now be unique
+#   against each other, not just within their own kind, and both are
+#   checked more closely against Excel's own naming rules. add_table()
+#   and define_name() are both exposed here with no name-collision
+#   checking of their own -- previously-passing calls that happened to
+#   reuse a name across a table and a defined name would now raise.
+#   Checked: no existing test in this project does that (each test's
+#   names are scoped to that test's own workbook), so nothing in this
+#   project's suite was expected to trip this, and CI on the version
+#   bump PR confirmed the full suite still passes unchanged.
+#
+# - Fixed: utility::quote_sheet_name() no longer misidentifies names
+#   like "Q.1" as a cell reference; worksheet-scoped defined names with
+#   quoted sheet names like 'Sheet 1'!Name now split correctly. Neither
+#   bug was reported against this binding, but both paths are reachable
+#   through the plain define_name()/table-name strings this binding
+#   passes straight through, so this project benefits from the fix
+#   without any source change.
+rust_xlsxwriter = { version = "0.99.0", features = ["zlib", "zmij", "constant_memory"] }
 
 # Native Arrow zero-copy DataFrame support (write_dataframe()). Reads
 # via the Arrow PyCapsule Interface (__arrow_c_stream__) -- no per-cell
