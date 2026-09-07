@@ -1,38 +1,42 @@
-# API parity gaps vs rust_xlsxwriter 0.98.2
+# API parity gaps vs rust_xlsxwriter 0.99.0
 
 Only open items below. Anything closed has been removed from this file
 rather than marked done, so this stays a to-do list, not a changelog —
 see [CHANGELOG.md](CHANGELOG.md) for what shipped.
 
 Worksheet, Workbook, and Charts are all fully closed now (PRs #30-#47).
-serde serialisation is the one deliberate exception, left open below
-rather than closed, because it's a real feature (new Cargo feature
-flag + a Python-dict-to-serde_json::Value bridge) rather than a small
-gap, and hasn't been attempted yet. Gridline formatting on `Chart` is
-a separate, permanent exception -- not a to-do, since upstream has no
-API to bind to (see Known limitations below).
+serde serialisation was evaluated and deliberately declined -- see
+below for why -- rather than closed as done. Gridline formatting on
+`Chart` is a separate, permanent exception -- not a to-do, since
+upstream has no API to bind to (see Known limitations below). With
+both of those settled, there is currently nothing actionable left in
+this file.
 
 All `file:line` references below were read from source, re-checked
 against
-[`v0.98.2`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.98.2/src).
+[`v0.98.2`](https://github.com/jmcnamara/rust_xlsxwriter/tree/v0.98.2/src)
+(the pin in place when the parity work was done; the crate has since
+moved to 0.99.0 -- see CHANGELOG.md -- with no API changes affecting
+this binding).
 
 ---
 
-## serde serialisation — deferred, not attempted
+## serde serialisation — declined
 
 `Worksheet.serialize()`/`serialize_headers()` and friends are feature-gated
 upstream behind Cargo's `serde` feature. `serde`/`serde_json` are already
 present transitively in `Cargo.lock` (pulled in by other dependencies), so
-enabling the feature and adding a direct `serde_json` dependency is lower-risk
-than it looks at first. The real work is the bridge: upstream's methods are
-generic over `T: Serialize`, which only works for actual Rust structs deriving
-`Serialize` -- there's no such thing from Python. A binding would need to
-accept a Python dict (or list of dicts) and convert it to `serde_json::Value`
-(which does implement `Serialize`) before calling through, and would need to
-be checked against upstream's serializer to see whether it tolerates a plain
-JSON value the way it tolerates a derived struct (field-renaming/skip
-attributes on a real struct have no JSON equivalent). Not a small gap --
-left as a dedicated follow-up rather than rushed.
+enabling the feature and adding a direct `serde_json` dependency would have
+been lower-risk than it looks at first. The real work would have been the
+bridge: upstream's methods are generic over `T: Serialize`, which only works
+for actual Rust structs deriving `Serialize` -- there's no such thing from
+Python. A binding would have needed to accept a Python dict (or list of
+dicts) and convert it to `serde_json::Value` (which does implement
+`Serialize`) before calling through, with no guarantee upstream's serializer
+tolerates a plain JSON value the way it tolerates a derived struct
+(field-renaming/skip attributes on a real struct have no JSON equivalent).
+Evaluated and explicitly decided not worth the effort -- not on the
+roadmap.
 
 ---
 

@@ -1031,204 +1031,31 @@ deliberate design win.
 
 ---
 
-## Roadmap
-
-| Version | Features |
-|---------|----------|
-| **v0.1** | ✅ Core writing, formatting, merging, formulas, dates, images, Polars/Pandas support |
-| **v0.2** | ✅ Bulk `write_records()` / `write_rows()`; Arrow zero-copy `write_dataframe()`; `constant_memory` streaming mode; autofilter; defined names; worksheet tables; charts (phases 1-3); conditional formatting; sparklines; page setup; extended Arrow types |
-| **v0.2.1** | ✅ Audit release: correctness fixes, GIL released during `save()`, allocation-free Arrow string path, streamed `write_dataframe()`, cross-platform CI |
-| **v0.2.2** | ✅ Patch release: `Workbook.close()` / `with Workbook(path) as wb:` now work with no argument, using the constructor-provided path; version metadata alignment; `set_column_range_width()`; canonical `set_border_top/bottom/left/right()` names (old names kept as aliases); `.pyi` type stubs + `py.typed` marker; `Cargo.lock` committed; `write_dataframe(column_formats=...)` -- a true per-cell merge, so a border survives on a date column alongside its own number format, not the column-scoped workaround this shipped with first; `annotations` no longer leaks into the module namespace |
-| **v0.2.3** | ✅ Patch release: `Workbook.save_to_buffer() -> bytes`; `Worksheet.set_header()`/`set_footer()` (text only, images still need an `Image` pyclass); `write_rows()` no longer double-materializes the dataset before writing |
-| **v0.2.4** | ✅ Patch release: `write_dataframe()` no longer materializes a formatted blank cell for every null when `column_formats` is used (was up to 84x slower / 29x larger on sparse wide data); upgraded `rust_xlsxwriter` 0.96 -> 0.98.2 (MSRV 1.85 -> 1.88); `Format` at full parity except `set_font_scheme()` (`set_quote_prefix`, `set_hyperlink`, `set_checkbox`, `set_font_family/charset/script`, `set_reading_direction`, and matching `unset_*` inverses); `set_range_format_with_border()` and `clear_cell_format()` on `Worksheet` |
-| **v0.2.5** | ✅ Patch release: `DataValidation` and `Worksheet.add_data_validation()` -- dropdown lists (from a string list or a cell range), whole-number/decimal-number/text-length range rules, custom formula rules, and every input/error-message setting. Date/time rules and cell-reference formula variants still open. |
-| **v0.2.6** | ✅ Patch release: row/column outline grouping (`group_rows`/`group_columns`/`*_collapsed`/`group_symbols_above`/`group_symbols_to_left`). Known limitation: `group_rows()` doesn't apply per-row grouping when `constant_memory=True` -- see README's Known Limitations. |
-| **v0.2.7** | ✅ Patch release: `ConditionalFormatIconSet` and `ConditionalFormatCustomIcon` -- all 20 icon set styles, `reverse_icons`, `show_icons_only`, per-icon threshold/type/direction overrides. |
-| **v0.2.8** | ✅ Patch release: chart secondary axes -- `set_x2_axis_*`/`set_y2_axis_*`, mirroring the existing `x_axis`/`y_axis` setters. Takes effect once a series is routed to the secondary axis via the existing `ChartSeries.set_secondary_axis()`. |
-| **v0.2.9** | ✅ Patch release: chart error bars -- `ChartErrorBars` pyclass (fixed value / percentage / standard deviation / standard error / custom-range types, direction, end cap, line formatting) via `ChartSeries.set_x_error_bars()`/`set_y_error_bars()`. |
-| **v0.2.10** | ✅ Patch release: Worksheet view/visibility -- row/column hidden state and pixel sizing, zoom/selection/top-left-cell/active/first-tab/right-to-left/view mode, `ignore_error`/`ignore_error_range` (9 error types), autofit tuning, NaN/infinity display strings, `clear_cell()`. |
-| **v0.2.11** | ✅ Patch release: Worksheet protection -- `ProtectionOptions` pyclass (15 fields matching upstream defaults), `protect_with_options()`, `unprotect_range()`. |
-| **v0.2.12** | ✅ Patch release: Worksheet image placement -- `insert_image_with_offset()`, `embed_image()`/`embed_image_with_format()`, `insert_image_fit_to_cell()`/`insert_image_fit_to_cell_centered()`, `insert_background_image()`, all taking a plain image path like the existing `insert_image()`. |
-| **v0.2.13** | ✅ Patch release: checkboxes (`insert_checkbox()`/`insert_checkbox_with_format()`), a new `Button` pyclass (Form Control buttons), and a new `Shape` pyclass (Textbox only -- the only shape type upstream implements; text/sizing, not fill/line/font). |
-| **v0.2.14** | ✅ Patch release: a new `Note` pyclass for cell notes (text/author/sizing/visible/alt_text/background_color/font_name/font_size) via `insert_note()`, plus `show_all_notes()` and `set_default_note_author()`. |
-| **v0.2.15** | ✅ Patch release: a new `FilterCondition` pyclass for autofilter criteria (`add_list_filter`, `add_list_blanks_filter`, `add_custom_filter` with all 12 criteria types, `add_custom_boolean_or`) via a new `filter_column()` -- previously only the autofilter range was exposed. Closes Worksheet 1e entirely except serde serialisation. |
-| **v0.2.16** | ✅ Patch release: Workbook themes (`use_excel_2023_theme()`, `use_custom_theme()`), `set_default_format()`, VBA projects (`add_vba_project()`, `set_vba_name()` on both `Workbook` and `Worksheet`), `read_only_recommended()`, `set_tempdir()`, `use_zip_large_file()`. |
-| **v0.2.17** | ✅ Patch release: `Workbook.add_chartsheet()` -- closes Workbook's MISSING.md gaps entirely. No new pyclass needed; upstream returns the same `&mut Worksheet` type as `add_worksheet()`, so every existing `Worksheet` method already works on it. |
-| **v0.2.18** | ✅ Patch release: header/footer images (`set_header_image()`/`set_footer_image()`) and align/scale-with-page settings; `DataValidation.allow_date()`/`allow_time()` (accepting Python `date`/`time`/`datetime` objects) and their cell-reference formula variants. Closes Worksheet's MISSING.md gaps entirely except serde serialisation. |
-| **v0.2.19** | ✅ Patch release: chart up-down bars, drop lines, high-low lines -- Line-chart-only decorations. |
-| **v0.2.20** | ✅ Patch release: `set_chart_area_format()`/`set_plot_area_format()` for chart/plot area background formatting. |
-| **v0.2.21** | ✅ Patch release: `Chart.combine()` for combined charts (e.g. a Column chart combined with a Line chart, typically paired with `ChartSeries.set_secondary_axis()`). |
-| **v0.2.22** | ✅ Patch release: axis label placement/tick marks/date min-max-units/crossing/display units (`set_x_axis_*`/`set_y_axis_*`, 5 MISSING.md items batched into one release). |
-| **v0.2.23** | ✅ Patch release: `Chart.set_legend_delete_entries()`, `set_object_movement()`, `set_decorative()`, `set_scale_width()`/`set_scale_height()` (4 MISSING.md items batched into one release). |
-| **v0.2.24** | ✅ Patch release: a new `ChartDataTable` pyclass for chart data tables, via `Chart.set_data_table()`. |
-| **v0.2.25** | ✅ Patch release: a new `ChartPoint` pyclass for per-point formatting (e.g. individually coloring Pie chart segments), via `ChartSeries.set_points()`. |
-| **v0.2.26** | ✅ Patch release: `ChartPatternFill` (all 48 upstream pattern types) and `ChartGradientFill`/`ChartGradientStop`, via `ChartFormat.set_pattern_fill()`/`set_gradient_fill()`. |
-| **v0.2.27** | ✅ Patch release: a new `ChartLayout` pyclass (`set_offset()`/`set_dimensions()`) for manual title/legend/plot-area positioning, via `Chart.set_title_layout()`/`set_legend_layout()`/`set_plot_area_layout()`. Closes MISSING.md's Charts section entirely except gridline formatting, which has no upstream API to bind to. |
-| **v0.4** | 🚧 Full xlsxwriter API compatibility layer; possibly serde serialisation (see MISSING.md) |
-
-**Charts** (`rust_xlsxwriter`'s largest subsystem -- 18k+ lines, 23 chart
-types, ~214 public methods across ~39 types) were implemented in phases
-so each could be verified rather than shipping a large surface untested.
-All three phases have landed:
-1. ✅ Core `Chart`/`ChartSeries` + common types (Bar/Column/Line/Pie/
-   Scatter + stacked variants) + basic title/legend/axis
-2. ✅ Formatting depth: `ChartFormat`/`ChartFont`, line/font/fill styling
-3. ✅ Decorations: `ChartMarker`, `ChartTrendline`, `ChartDataLabel`
-4. ✅ Secondary axes: `set_x2_axis_*`/`set_y2_axis_*`
-5. ✅ Error bars: `ChartErrorBars`
-6. ✅ Up-down bars, drop lines, high-low lines (Line charts only)
-7. ✅ Chart / plot area formatting: `set_chart_area_format()`, `set_plot_area_format()`
-8. ✅ Combined charts: `Chart.combine()`
-9. ✅ Axis label placement/tick marks/date units/crossing/display units, legend deletion, object movement, data tables, per-point formatting, gradient/pattern fills, manual layouts
-
-Full API parity on Charts now, except gridline formatting (no upstream
-API to bind to -- see MISSING.md).
-
-### Secondary Axes
-
-Route a series to the secondary axis with the existing
-`ChartSeries.set_secondary_axis()`, then style that axis with
-`set_x2_axis_*`/`set_y2_axis_*` (same method set as the primary
-`set_x_axis_*`/`set_y_axis_*`, minus `date_axis`/`text_axis` on the y
-side). The secondary-axis XML is only written once a series actually
-uses it — calling the setters alone has no effect.
-
-```python
-from rvgsrust_xlsxwriter import Workbook, Chart, ChartSeries
-
-wb = Workbook("secondary_axis.xlsx")
-ws = wb.add_worksheet()
-ws.write_column(0, 0, [10, 40, 50, 20, 10, 50])
-ws.write_column(0, 1, [1, 4, 5, 2, 1, 5])
-
-units = ChartSeries()
-units.set_values("Sheet1!$A$1:$A$6")
-
-revenue = ChartSeries()
-revenue.set_values("Sheet1!$B$1:$B$6")
-revenue.set_secondary_axis(True)
-
-chart = Chart("column")
-chart.push_series(units)
-chart.push_series(revenue)
-chart.set_y_axis_name("Units")
-chart.set_y2_axis_name("Revenue ($M)")
-ws.insert_chart(0, 3, chart)
-
-wb.close()
-```
-
-### Error Bars
-
-`ChartErrorBars` covers all five upstream types. `set_type_standard_error()`
-is the default; `set_type_fixed_value()`/`set_type_percentage()`/
-`set_type_standard_deviation()` each take a single positive value;
-`set_type_custom()` takes two worksheet ranges (plus/minus). Direction
-defaults to `"both"` (also `"minus"`/`"plus"`); Excel only supports
-`ChartFormat.set_line()` on error bars, per upstream. Horizontal
-(`set_x_error_bars`) only renders in Excel for Scatter and Bar charts.
-
-```python
-from rvgsrust_xlsxwriter import Workbook, Chart, ChartSeries, ChartErrorBars
-
-wb = Workbook("error_bars.xlsx")
-ws = wb.add_worksheet()
-ws.write_column(0, 0, [10, 40, 50, 20, 10, 50])
-
-series = ChartSeries()
-series.set_values("Sheet1!$A$1:$A$6")
-
-error_bars = ChartErrorBars()
-error_bars.set_type_standard_deviation(1.0)
-error_bars.set_direction("plus")
-series.set_y_error_bars(error_bars)
-
-chart = Chart("column")
-chart.push_series(series)
-ws.insert_chart(0, 3, chart)
-
-wb.close()
-```
-
-### Manual Layouts
-
-`ChartLayout` positions the title, legend, or plot area precisely
-instead of leaving it to Excel's automatic layout. `set_offset(x, y)`
-and `set_dimensions(width, height)` both take fractions of the chart's
-total size (`0.0 < value <= 1.0`); dimensions only affect the legend
-and plot area, since text objects size from their font instead.
-
-```python
-from rvgsrust_xlsxwriter import Workbook, Chart, ChartSeries, ChartLayout
-
-wb = Workbook("manual_layout.xlsx")
-ws = wb.add_worksheet()
-ws.write_column(0, 0, [10, 40, 50, 20, 10, 50])
-
-series = ChartSeries()
-series.set_values("Sheet1!$A$1:$A$6")
-
-chart = Chart("column")
-chart.push_series(series)
-
-legend_layout = ChartLayout()
-legend_layout.set_offset(0.75, 0.15)
-legend_layout.set_dimensions(0.2, 0.3)
-chart.set_legend_layout(legend_layout)
-
-ws.insert_chart(0, 3, chart)
-
-wb.close()
-```
-
-### Known limitations
-
-These are current, deliberate gaps rather than oversights:
-
-- **`write_dataframe()` column types.** Decimal, list, struct and
-  dictionary-encoded Arrow columns are not supported; such a column
-  raises `TypeError` and `dataframe.py` falls back to the per-cell path.
-- **Timezones.** Excel has no timezone concept. Timezone-aware Arrow
-  timestamps are written as UTC wall-clock time and warn once per column.
-- **Precision.** Excel cells hold an f64, so integers above 2^53 lose
-  precision. This is a format limitation, not an implementation one.
-- **`constant_memory=True`** requires rows to be written in
-  non-decreasing order, and raises `ValueError` naming the offending row
-  on violation rather than silently emitting a corrupt file (which is
-  what `rust_xlsxwriter` itself would do) — see
-  [`constant_memory` fails loudly, not silently](#constant_memory-fails-loudly-not-silently)
-  for why this is deliberate rather than just defensive. Separately,
-  `group_rows()`/`group_rows_collapsed()` don't apply per-row grouping
-  at all under `constant_memory=True` — see
-  [Row and Column Grouping](#row-and-column-grouping).
-- **Python 3.8.** `requires-python` still declares `>=3.8`, but CI tests
-  3.9 upward; the `pandas>=2.0` extra already requires 3.9+.
-
----
-
 ## API Parity
 
-[MISSING.md](MISSING.md) audits the exposed Python API against
-rust_xlsxwriter 0.98.2 (re-checked line-by-line against that source
-after this project's 0.96->0.98.2 upgrade -- see MISSING.md's own note)
-and lists what is not yet wrapped, with upstream `file:line` references,
-a suggested Python API shape, and a priority for each. Sparklines,
-cell/row/column/range formats, page setup and print settings, and
-per-side border naming are all at full parity now -- an
-earlier audit pass had flagged per-side borders as missing entirely,
-which was a false positive from a naming mismatch, and separately the
-naming itself (`set_top_border` vs upstream's `set_border_top`) has
-since been reconciled: both spellings work, the reversed ones kept for
-compatibility.
+[MISSING.md](MISSING.md) tracks the exposed Python API against
+rust_xlsxwriter (currently 0.99.0; re-checked line-by-line against
+source through the 0.96->0.98.2->0.99.0 upgrades -- see MISSING.md's
+own notes) and lists anything not yet wrapped, with upstream
+`file:line` references, a suggested Python API shape, and a priority
+for each. Sparklines, cell/row/column/range formats, page setup and
+print settings, and per-side border naming are all at full parity now
+-- an earlier audit pass had flagged per-side borders as missing
+entirely, which was a false positive from a naming mismatch, and
+separately the naming itself (`set_top_border` vs upstream's
+`set_border_top`) has since been reconciled: both spellings work, the
+reversed ones kept for compatibility.
 
-Worksheet, Workbook, and Chart are all fully closed now, except two
-deliberate exceptions: serde serialisation (a Cargo-feature-gated Rust
-generic that needs a Python-dict-to-JSON bridge, deferred as a
-dedicated follow-up rather than a small gap) and Chart gridline
-formatting (no upstream API to bind to at all). `Conditional formats`
+Worksheet, Workbook, and Chart are all fully closed -- full API parity
+is reached as of v0.2.28. Two deliberate, permanent exceptions remain:
+serde serialisation (a Cargo-feature-gated Rust generic with no direct
+Python equivalent; evaluated and decided not worth pursuing) and Chart
+gridline formatting (no upstream API to bind to at all). `Conditional
+formats`
 and `Format`
-are both at full parity now (`Format` except `set_font_scheme()`, deliberately
-not exposed) -- see [MISSING.md](MISSING.md) for what's left.
+are both at full parity too (`Format` except `set_font_scheme()`, deliberately
+not exposed) -- see [MISSING.md](MISSING.md) for the remaining known
+limitations.
 
 ## Performance TODO
 
