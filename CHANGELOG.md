@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-06
+
+### Fixed (behavior change -- see note below)
+
+- **`classify()` silently wrote `datetime.date`/`datetime.datetime`/
+  `pandas.Timestamp` values as text cells instead of real Excel dates.**
+  `classify()` (the internal value-to-cell-type dispatcher behind
+  `write()`, `write_row()`, `write_column()`, `write_rows()`, and
+  `write_records()`) had no branch matching date-like objects, so they
+  fell through to the final `str(value)` fallback and were written as
+  a text cell (e.g. `"2024-06-21"`) -- no error, no warning. Detection
+  now uses `hasattr("toordinal")` (the standard Python date-protocol
+  marker, shared by `datetime.date`, `datetime.datetime`, and
+  `pandas.Timestamp`), with `hasattr("hour")` distinguishing date-only
+  from a full datetime, matching `write_date_py()`/`write_datetime_py()`'s
+  existing, already-correct approach.
+
+  **This is a deliberate behavior change.** Code that was relying on
+  the old (buggy) string output for a date-typed column -- for example,
+  code that read the written file back and expected a string like
+  `"2024-06-21"` -- will now see a real date cell (and, reading it back
+  with openpyxl or similar, a `datetime.date`/`datetime.datetime`
+  object) instead. `write_dataframe()` was never affected (it has its
+  own Arrow-native date handling), and neither were
+  `write_date_py()`/`write_datetime_py()`, which already did this
+  correctly.
+
+  A related gap in `write_value()` was fixed alongside this: a
+  date/datetime `CellValue` written with *no* explicit `Format` was
+  previously still stored as a plain number with Excel's default
+  "General" format -- since OOXML has no distinct date cell type, this
+  meant the value would render as a bare serial number (e.g. `45455`)
+  in Excel and round-trip as a plain float rather than a date via
+  openpyxl, even after `classify()` correctly identified it as a date.
+  `write_value()` now applies the same default `"yyyy-mm-dd"`/
+  `"yyyy-mm-dd hh:mm:ss"` formats already used for unformatted Arrow
+  date/datetime columns in `write_dataframe()`, so a bare
+  `ws.write(row, col, date_obj)` with no format argument now round-trips
+  correctly. This also fixes the same latent issue in
+  `write_date_py()`/`write_datetime_py()`/`write_date()`/`write_datetime()`
+  when called without an explicit format.
+
+### Changed
+
+- Removed `classify()`'s dead `i64` extraction branch: PyO3's `f64`
+  extraction already succeeds for any Python `int` and runs first, so
+  the `i64` branch never executed, and even when it did it just cast
+  back to `f64` anyway.
+- Cleaned up a run of stray extra spaces baked into the
+  `__arrow_c_stream__()` PyCapsule-name-mismatch error message.
+- `write_rows()` now iterates both its row and cell loops with
+  `.iter()` instead of indexing every access with `get_item()`,
+  matching `write_records()`'s access pattern -- `get_item()` bounds-
+  checks and wraps every access in a `PyResult`, which added up at
+  100k+ rows.
+
 ## [0.2.28] - 2026-09-05
 
 Patch release, no breaking changes. Upgrades the underlying

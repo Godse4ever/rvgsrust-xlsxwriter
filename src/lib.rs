@@ -263,11 +263,37 @@ fn classify(value: &Bound<'_, PyAny>) -> PyResult<CellValue<'static>> {
         // it just avoids paying for a failed String-extraction attempt
         // on every number, which is the common case for numeric-heavy
         // data.
+        //
+        // No separate i64 branch: PyO3's f64 extraction already succeeds
+        // for any Python int (CPython's number protocol coerces int to
+        // float here even without an explicit __float__), and it runs
+        // first, so a would-be i64 branch below this point would never
+        // execute -- and even if it somehow did, it would just cast
+        // back to f64 anyway. Removed as dead code.
         Ok(CellValue::Num(f))
-    } else if let Ok(i) = value.extract::<i64>() {
-        Ok(CellValue::Num(i as f64))
     } else if let Ok(s) = value.extract::<String>() {
         Ok(CellValue::Str(Cow::Owned(s)))
+    } else if value.hasattr("toordinal")? {
+        // datetime.date, datetime.datetime, and pandas.Timestamp all
+        // implement toordinal() -- the standard Python date protocol
+        // marker -- and nothing else classify() sees here does (plain
+        // numbers and strings don't have it), so this is a safe,
+        // specific signal without importing the datetime module or
+        // depending on PyO3's chrono feature. Previously nothing here
+        // matched a date-like object at all: it fell through silently
+        // to the final str(value) fallback below and got written as a
+        // text cell ("2024-06-21") instead of a real Excel date -- no
+        // error, no warning. hasattr("hour") distinguishes date-only
+        // (datetime.date lacks it) from a full datetime (datetime.datetime
+        // and pandas.Timestamp both have it), matching write_date_py()/
+        // write_datetime_py()'s own approach below.
+        if value.hasattr("hour")? {
+            let edt = extract_excel_datetime_full(value)?;
+            Ok(CellValue::DateTime(edt.to_excel()))
+        } else {
+            let edt = extract_excel_date(value)?;
+            Ok(CellValue::Date(edt.to_excel()))
+        }
     } else {
         Ok(CellValue::Str(Cow::Owned(value.str()?.to_string())))
     }
@@ -305,13 +331,27 @@ fn write_value(
             sheet.write_datetime_with_format(row, col, &edt, f)?;
             Ok(())
         }
-        // No format supplied: still written as a datetime cell type, but
-        // Excel will render the bare serial. Callers inside this crate
-        // always pass a format for these variants; this arm exists for
-        // exhaustiveness.
-        (CellValue::Date(n) | CellValue::DateTime(n), None) => {
+        // No format supplied: a date/datetime cell is, at the OOXML
+        // level, nothing but a plain number -- there's no distinct
+        // "date" cell type. Without a date-shaped number format, Excel
+        // renders the bare serial (e.g. "45455") and readers like
+        // openpyxl hand it back as a float, not a date, which would
+        // silently defeat the entire point of classify() detecting the
+        // date in the first place. Apply the same default formats
+        // already used for unformatted date/datetime Arrow columns
+        // (see write_dataframe()'s col_fmts_owned above) so a bare
+        // classify()-routed write (ws.write(), write_row(), etc. with
+        // no format arg) still round-trips as a real date.
+        (CellValue::Date(n), None) => {
             let edt = ExcelDateTime::from_serial_datetime(*n)?;
-            sheet.write_datetime(row, col, &edt)?;
+            let default_fmt = RustFormat::new().set_num_format("yyyy-mm-dd");
+            sheet.write_datetime_with_format(row, col, &edt, &default_fmt)?;
+            Ok(())
+        }
+        (CellValue::DateTime(n), None) => {
+            let edt = ExcelDateTime::from_serial_datetime(*n)?;
+            let default_fmt = RustFormat::new().set_num_format("yyyy-mm-dd hh:mm:ss");
+            sheet.write_datetime_with_format(row, col, &edt, &default_fmt)?;
             Ok(())
         }
     }
@@ -383,7 +423,7 @@ fn arrow_stream_reader(obj: &Bound<'_, PyAny>) -> PyResult<ArrowArrayStreamReade
     let expected = c"arrow_array_stream";
     if capsule_name != Some(expected) {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-            "__arrow_c_stream__() returned a PyCapsule with unexpected name {:?};              expected \"arrow_array_stream\"",
+            "__arrow_c_stream__() returned a PyCapsule with unexpected name {:?}; expected \"arrow_array_stream\"",
             capsule_name.map(|c| c.to_string_lossy().into_owned())
         )));
     }
@@ -1650,14 +1690,14 @@ impl Worksheet {
 
         let data_fmt = format.map(|f| &f.inner);
         let head_fmt = header_format.map(|f| &f.inner);
-        let n_rows = rows.len();
 
         // Single pass: borrow the worksheet once, then for each row read
-        // its values via direct index access (rows.get_item(r) +
-        // row_list.get_item(c), O(1) each) and write them immediately.
-        // Using direct indexing rather than downcast::<PyList>() + .iter()
-        // still avoids the per-row iterator allocation the naive approach
-        // would add.
+        // its values via list iteration and write them immediately.
+        // Iterating with .iter() rather than indexing every row/cell
+        // with get_item() avoids the per-access bounds check and
+        // PyResult wrapping get_item() carries -- .iter() advances a
+        // plain pointer, matching write_records()'s access pattern and
+        // benchmarking faster at 100k+ rows.
         let wb_ref = self.workbook.borrow(py);
         let mut wb = wb_ref
             .inner
@@ -1667,8 +1707,7 @@ impl Worksheet {
             .worksheet_from_index(self.index)
             .map_err(xlsx_err_to_pyerr)?;
 
-        for (row_num, r) in (start_row..).zip(0..n_rows) {
-            let row_obj = rows.get_item(r)?;
+        for (row_num, (r, row_obj)) in (start_row..).zip(rows.iter().enumerate()) {
             let row_list = row_obj.downcast::<PyList>().map_err(|_| {
                 PyErr::new::<pyo3::exceptions::PyTypeError, _>(
                     "write_rows(): each row must be a list",
@@ -1676,9 +1715,7 @@ impl Worksheet {
             })?;
             let is_header = write_header && r == 0;
             let fmt = if is_header { head_fmt } else { data_fmt };
-            let n_cols = row_list.len();
-            for c in 0..n_cols {
-                let val = row_list.get_item(c)?;
+            for (c, val) in row_list.iter().enumerate() {
                 let cv = classify(&val)?;
                 write_value(sheet, row_num, start_col + c as u16, &cv, fmt)
                     .map_err(xlsx_err_to_pyerr)?;
@@ -4351,6 +4388,24 @@ fn extract_excel_time(value: &Bound<'_, PyAny>) -> PyResult<ExcelDateTime> {
     let microsecond: u32 = value.getattr("microsecond")?.extract()?;
     let sec_frac = second as f64 + microsecond as f64 / 1_000_000.0;
     ExcelDateTime::from_hms(hour, minute, sec_frac).map_err(xlsx_err_to_pyerr)
+}
+
+// Full date + time in one ExcelDateTime -- for classify()'s datetime
+// branch, matching write_datetime_py()'s own year/month/day +
+// hour/minute/second/microsecond construction exactly.
+fn extract_excel_datetime_full(value: &Bound<'_, PyAny>) -> PyResult<ExcelDateTime> {
+    let year: u16 = value.getattr("year")?.extract()?;
+    let month: u8 = value.getattr("month")?.extract()?;
+    let day: u8 = value.getattr("day")?.extract()?;
+    let hour: u16 = value.getattr("hour")?.extract()?;
+    let minute: u8 = value.getattr("minute")?.extract()?;
+    let second: u8 = value.getattr("second")?.extract()?;
+    let microsecond: u32 = value.getattr("microsecond")?.extract()?;
+    let sec_frac = second as f64 + microsecond as f64 / 1_000_000.0;
+    ExcelDateTime::from_ymd(year, month, day)
+        .map_err(xlsx_err_to_pyerr)?
+        .and_hms(hour, minute, sec_frac)
+        .map_err(xlsx_err_to_pyerr)
 }
 
 fn parse_dv_error_style(style: &str) -> PyResult<DataValidationErrorStyle> {

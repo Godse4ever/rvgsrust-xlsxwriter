@@ -1200,3 +1200,186 @@ def test_write_rows_interleaves_classify_and_write():
     assert sheet["A3"].value is None
     assert sheet["A4"].value is None
 
+
+# Regression tests for classify() silently coercing dates to strings
+# (fixed in 0.3.0). Before the fix, classify() had no branch matching
+# datetime.date/datetime.datetime/pandas.Timestamp objects, so any of
+# them fell through to the final str(value) fallback and got written
+# as a text cell (e.g. "2024-06-21") -- no error, no warning. This
+# affected every classify()-routed path: write(), write_row(),
+# write_column(), write_rows(), write_records(). It did not affect
+# write_dataframe() (separate Arrow-native date handling) or the
+# dedicated write_date_py()/write_datetime_py() methods, which already
+# handled this correctly and are tested elsewhere in this file.
+#
+# Verified via openpyxl rather than just "did it raise": openpyxl only
+# reads a numeric cell back as a real datetime.date/datetime if the
+# cell's number format is date-shaped, so these tests also cover the
+# write_value() fix that applies a default "yyyy-mm-dd"/"yyyy-mm-dd
+# hh:mm:ss" format when a date/datetime CellValue is written with no
+# explicit Format -- without that, the serial number would round-trip
+# as a plain float even after classify() correctly identified it as a
+# date, silently defeating the fix.
+
+
+def test_write_raw_date_is_not_coerced_to_string():
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, _dt.date(2024, 6, 21))
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    cell_val = sheet["A1"].value
+    assert not isinstance(cell_val, str)
+    assert isinstance(cell_val, _dt.date)
+    assert cell_val.year == 2024
+    assert cell_val.month == 6
+    assert cell_val.day == 21
+
+
+def test_write_raw_datetime_is_not_coerced_to_string():
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, _dt.datetime(2024, 6, 21, 14, 30, 0))
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    cell_val = sheet["A1"].value
+    assert not isinstance(cell_val, str)
+    assert isinstance(cell_val, _dt.date)  # datetime is a date subclass
+    assert cell_val.year == 2024
+    assert cell_val.month == 6
+    assert cell_val.day == 21
+    assert cell_val.hour == 14
+    assert cell_val.minute == 30
+
+
+def test_write_raw_pandas_timestamp_is_not_coerced_to_string():
+    import datetime as _dt
+
+    pd = pytest.importorskip("pandas")
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, pd.Timestamp("2024-06-21 09:15:00"))
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    cell_val = sheet["A1"].value
+    assert not isinstance(cell_val, str)
+    assert isinstance(cell_val, _dt.date)
+    assert cell_val.year == 2024
+    assert cell_val.month == 6
+    assert cell_val.day == 21
+    assert cell_val.hour == 9
+    assert cell_val.minute == 15
+
+
+def test_write_row_raw_date_is_not_coerced_to_string():
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_row(0, 0, ["label", _dt.date(2024, 1, 1)])
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    assert sheet["A1"].value == "label"
+    cell_val = sheet["B1"].value
+    assert not isinstance(cell_val, str)
+    assert isinstance(cell_val, _dt.date)
+    assert cell_val.year == 2024
+
+
+def test_write_column_raw_date_is_not_coerced_to_string():
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_column(0, 0, [_dt.date(2024, 1, 1), _dt.date(2024, 12, 31)])
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    for addr, expected in [("A1", (2024, 1, 1)), ("A2", (2024, 12, 31))]:
+        cell_val = sheet[addr].value
+        assert not isinstance(cell_val, str)
+        assert isinstance(cell_val, _dt.date)
+        assert (cell_val.year, cell_val.month, cell_val.day) == expected
+
+
+def test_write_rows_raw_date_is_not_coerced_to_string():
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_rows(0, 0, [
+        ["label", _dt.date(2024, 3, 15)],
+        ["other", _dt.date(2024, 4, 20)],
+    ])
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    for addr, expected in [("B1", (2024, 3, 15)), ("B2", (2024, 4, 20))]:
+        cell_val = sheet[addr].value
+        assert not isinstance(cell_val, str)
+        assert isinstance(cell_val, _dt.date)
+        assert (cell_val.year, cell_val.month, cell_val.day) == expected
+
+
+def test_write_records_raw_date_is_not_coerced_to_string():
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_records(0, 0, [
+        {"name": "Alice", "joined": _dt.date(2023, 5, 1)},
+        {"name": "Bob", "joined": _dt.date(2023, 9, 12)},
+    ])
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    # Row 0 is the header ("name", "joined"); data starts at row 1.
+    assert sheet["B1"].value == "joined"
+    for addr, expected in [("B2", (2023, 5, 1)), ("B3", (2023, 9, 12))]:
+        cell_val = sheet[addr].value
+        assert not isinstance(cell_val, str)
+        assert isinstance(cell_val, _dt.date)
+        assert (cell_val.year, cell_val.month, cell_val.day) == expected
+
+
+def test_write_records_raw_datetime_is_not_coerced_to_string():
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_records(0, 0, [
+        {"event": "kickoff", "at": _dt.datetime(2024, 6, 21, 9, 0, 0)},
+    ])
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    cell_val = sheet["B2"].value
+    assert not isinstance(cell_val, str)
+    assert isinstance(cell_val, _dt.date)
+    assert cell_val.hour == 9
+
+
+def test_write_value_default_date_format_round_trips_without_explicit_format():
+    # Guards the write_value() half of the fix specifically: a date
+    # CellValue written with no explicit Format must still get a
+    # date-shaped default number format, or openpyxl reads the serial
+    # back as a plain float rather than a date, even though classify()
+    # correctly identified it as a date.
+    import datetime as _dt
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, _dt.date(2024, 6, 21))  # no format argument at all
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    assert sheet["A1"].number_format != "General"
+    assert isinstance(sheet["A1"].value, _dt.date)
