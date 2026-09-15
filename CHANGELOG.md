@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-14
+
+Patch release, no breaking changes. Two real gaps surfaced during a
+user's migration review from classic `xlsxwriter` -- both had a plain
+upstream accessor and simply weren't wrapped in the original API
+parity pass, unlike the deliberate `MISSING.md` exceptions.
+
+### Added
+
+- **`Worksheet.set_screen_gridlines(enable)`.** Independent of the
+  existing `set_print_gridlines()`, which only affects printed pages.
+  Screen gridlines are on by default; writes `showGridLines="0"` only
+  when disabled.
+- **6 more border styles.** `set_border()`/`set_border_top()` etc.
+  previously only accepted 7 of upstream's 13 `FormatBorder` variants.
+  Added `medium_dashed`, `dash_dot`, `medium_dash_dot`, `dash_dot_dot`,
+  `medium_dash_dot_dot`, `slant_dash_dot` -- full parity with classic
+  `xlsxwriter`'s border style set now.
+
+### Fixed
+
+- Cleaned up a run of stray extra spaces in the "Unknown border style"
+  error message (same class of cosmetic bug fixed in
+  `__arrow_c_stream__()`'s error message in 0.3.0, missed there).
+- README's `write_url()` example now shows the full signature
+  (`format=None, text=None, tip=None`) and flags the naming difference
+  from classic `xlsxwriter` for anyone migrating: the display-text
+  override parameter is `text` here, not `string`.
+
 ## [0.3.0] - 2026-09-06
 
 ### Fixed (behavior change -- see note below)

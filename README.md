@@ -219,8 +219,14 @@ ws.merge_range(2, 0, 4, 0, "Vertical Label", merge_fmt)
 ws.write_formula(5, 0, "=SUM(A1:A4)")
 ws.write_formula(5, 1, "=AVERAGE(B1:B4)", money_format)
 
-# Hyperlink
+# Hyperlink -- full signature is write_url(row, col, url, format=None,
+# text=None, tip=None). `text` overrides the displayed label (defaults
+# to the URL itself); `tip` sets the hover tooltip. Note for anyone
+# migrating from classic xlsxwriter: the display-text parameter is
+# named `text` here, not `string`.
 ws.write_url(6, 0, "https://github.com/Godse4ever/rvgsrust-xlsxwriter")
+ws.write_url(7, 0, "https://github.com/Godse4ever/rvgsrust-xlsxwriter",
+             text="Project home", tip="Opens the GitHub repo")
 ```
 
 ### Dates & Times

@@ -186,8 +186,16 @@ fn parse_border(border: &str) -> PyResult<FormatBorder> {
         "dotted" => Ok(FormatBorder::Dotted),
         "double" => Ok(FormatBorder::Double),
         "hair" => Ok(FormatBorder::Hair),
+        "medium_dashed" => Ok(FormatBorder::MediumDashed),
+        "dash_dot" => Ok(FormatBorder::DashDot),
+        "medium_dash_dot" => Ok(FormatBorder::MediumDashDot),
+        "dash_dot_dot" => Ok(FormatBorder::DashDotDot),
+        "medium_dash_dot_dot" => Ok(FormatBorder::MediumDashDotDot),
+        "slant_dash_dot" => Ok(FormatBorder::SlantDashDot),
         _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-            "Unknown border style '{border}'. Expected one of:              thin, medium, thick, dashed, dotted, double, hair"
+            "Unknown border style '{border}'. Expected one of: thin, medium, thick, \
+             dashed, dotted, double, hair, medium_dashed, dash_dot, medium_dash_dot, \
+             dash_dot_dot, medium_dash_dot_dot, slant_dash_dot"
         ))),
     }
 }
@@ -2717,6 +2725,16 @@ impl Worksheet {
     fn set_print_gridlines(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
         self.with_sheet(py, |sheet| {
             sheet.set_print_gridlines(enable);
+            Ok(())
+        })
+    }
+
+    // Screen gridlines are on by default; this is the "View > Show >
+    // Gridlines" checkbox equivalent, independent of set_print_gridlines()
+    // above (which only affects printed pages).
+    fn set_screen_gridlines(&self, py: Python<'_>, enable: bool) -> PyResult<()> {
+        self.with_sheet(py, |sheet| {
+            sheet.set_screen_gridlines(enable);
             Ok(())
         })
     }
