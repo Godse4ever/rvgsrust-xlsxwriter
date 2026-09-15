@@ -1383,3 +1383,122 @@ def test_write_value_default_date_format_round_trips_without_explicit_format():
     sheet = _load().active
     assert sheet["A1"].number_format != "General"
     assert isinstance(sheet["A1"].value, _dt.date)
+
+
+# Regression coverage for two real gaps found during a migration review
+# from classic xlsxwriter (fixed in 0.3.1): 6 missing border styles and
+# screen-gridline hiding, neither previously wrapped despite both having
+# a plain upstream accessor.
+
+
+def test_border_style_medium_dashed():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_border("medium_dashed")
+    ws.write(0, 0, "x", fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].border.top.style == "mediumDashed"
+
+
+def test_border_style_dash_dot():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_border("dash_dot")
+    ws.write(0, 0, "x", fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].border.top.style == "dashDot"
+
+
+def test_border_style_medium_dash_dot():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_border("medium_dash_dot")
+    ws.write(0, 0, "x", fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].border.top.style == "mediumDashDot"
+
+
+def test_border_style_dash_dot_dot():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_border("dash_dot_dot")
+    ws.write(0, 0, "x", fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].border.top.style == "dashDotDot"
+
+
+def test_border_style_medium_dash_dot_dot():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_border("medium_dash_dot_dot")
+    ws.write(0, 0, "x", fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].border.top.style == "mediumDashDotDot"
+
+
+def test_border_style_slant_dash_dot():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_border("slant_dash_dot")
+    ws.write(0, 0, "x", fmt)
+    wb.close(TEST_FILE)
+    sheet = _load().active
+    assert sheet["A1"].border.top.style == "slantDashDot"
+
+
+def test_border_style_still_rejects_unknown():
+    wb = Workbook()
+    fmt = wb.add_format()
+    with pytest.raises(ValueError, match="slant_dash_dot"):
+        fmt.set_border("not_a_real_style")
+
+
+def test_set_screen_gridlines_off():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.set_screen_gridlines(False)
+    ws.write(0, 0, "x")
+    wb.close(TEST_FILE)
+    import zipfile
+
+    with zipfile.ZipFile(TEST_FILE) as z:
+        sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert 'showGridLines="0"' in sheet_xml
+
+
+def test_set_screen_gridlines_on_by_default_omits_attribute():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, "x")
+    wb.close(TEST_FILE)
+    import zipfile
+
+    with zipfile.ZipFile(TEST_FILE) as z:
+        sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert "showGridLines" not in sheet_xml
+
+
+def test_set_screen_gridlines_independent_of_print_gridlines():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.set_screen_gridlines(False)
+    ws.set_print_gridlines(True)
+    ws.write(0, 0, "x")
+    wb.close(TEST_FILE)
+    import zipfile
+
+    with zipfile.ZipFile(TEST_FILE) as z:
+        sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert 'showGridLines="0"' in sheet_xml
+    assert "<printOptions" in sheet_xml
