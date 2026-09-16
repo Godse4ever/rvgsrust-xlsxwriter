@@ -3581,6 +3581,15 @@ impl Worksheet {
         self.with_sheet(py, |sheet| sheet.set_name(name).map(|_| ()))
     }
 
+    // Read-only, matching classic xlsxwriter's worksheet.name attribute
+    // shape. Invalid names already raise immediately at add_worksheet()
+    // time (see the comment there), so this always reflects the actual
+    // applied name -- there's no separate "sanitized" name to reconcile.
+    #[getter]
+    fn name(&self, py: Python<'_>) -> PyResult<String> {
+        self.with_sheet(py, |sheet| Ok(sheet.name()))
+    }
+
     // Adds Excel's autofilter dropdown controls to the header row of a
     // range (first_row is typically the header row; data rows follow
     // below it). Does not itself hide/filter any rows -- that's a

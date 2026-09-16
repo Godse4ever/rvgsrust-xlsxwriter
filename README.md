@@ -68,6 +68,7 @@ from rvgsrust_xlsxwriter import Workbook
 # Create workbook -- pass the path up front so close() needs no argument later
 wb = Workbook("report.xlsx")
 ws = wb.add_worksheet("Sales")
+ws.name  # -> "Sales" -- read-only, reflects set_name() too if called later
 
 # Create a rich format
 header = wb.add_format()

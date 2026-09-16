@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-09-16
+
+Patch release, no breaking changes. Adds a read-only `Worksheet.name`
+property and documents a real, upstream, not-locally-fixable row-height
+quantization limitation -- both surfaced by a user's byte-level output
+comparison against classic `xlsxwriter`.
+
+### Added
+
+- **`Worksheet.name`.** Read-only property matching classic
+  `xlsxwriter`'s `worksheet.name` attribute shape. Wraps upstream's own
+  `Worksheet::name()` getter, which was never exposed in this binding
+  at all. Always reflects the actual applied name -- invalid names
+  already raise immediately at `add_worksheet()` time, so there's no
+  separate "sanitized" name to reconcile.
+
+### Documented (not fixed -- see MISSING.md's Known Limitations)
+
+- **`set_row_height()` quantizes to the nearest 0.75pt (1/288") step.**
+  Traced to upstream: `rust_xlsxwriter`'s own `set_row_height()`
+  converts the point value to pixels, rounds to the nearest integer,
+  and stores *only* that integer pixel count -- there's no
+  fractional-point storage anywhere in its row metadata, even
+  internally, so any height that isn't a multiple of 3 points comes
+  back rounded to the nearest 0.75pt. Not fixable from this binding;
+  full write-up (with the exact conversion math and a worked example
+  table) is in `MISSING.md`.
+
 ## [0.3.2] - 2026-09-15
 
 Patch release, no breaking changes. Adds a way to write genuine
