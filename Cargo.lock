@@ -966,11 +966,12 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rvgsrust-xlsxwriter"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "arrow",
  "pyo3",
  "rust_xlsxwriter",
+ "zip",
 ]
 
 [[package]]

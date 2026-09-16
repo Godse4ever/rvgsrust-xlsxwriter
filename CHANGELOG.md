@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-09-16
+
+Patch release, no breaking changes. Fixes the `set_row_height()`
+quantization documented as a known limitation in 0.3.3 -- turns out it
+*is* fixable, just not by calling a different upstream method.
+
+### Fixed
+
+- **`set_row_height()` now preserves exact point values in the output
+  file.** Previously subject to an upstream pixel-rounding round-trip
+  losing up to 0.25pt of precision (any height not a multiple of 3
+  points came back rounded to the nearest 0.75pt -- e.g. input `20`
+  round-tripped as `20.25`). The imprecision is destroyed at
+  `rust_xlsxwriter`'s own row-metadata storage layer (an integer pixel
+  count, `u32`, with no fractional-point storage anywhere, even
+  internally) -- not reachable by calling a different upstream method,
+  including `set_row_height_pixels()` (same underlying storage).
+
+  Fixed with a post-write XML patch: `Workbook` now records the exact
+  `f64` a caller passes to `set_row_height()`, keyed by (sheet, row),
+  *before* upstream's lossy conversion runs. After `rust_xlsxwriter`
+  serializes the workbook (via `close()` or `save_to_buffer()`, both
+  now routed through one shared in-memory path), if that table is
+  non-empty the generated xlsx is reopened as a zip, the `ht="..."`
+  attribute on each affected row is rewritten to the exact recorded
+  value (every other zip entry is copied verbatim, byte-identical
+  compression and all), and the archive is rebuilt. A true no-op --
+  the file is never even opened as a zip -- when `set_row_height()`
+  was never called, which is the common case.
+
+  One real subtlety resolved along the way: resolving which
+  `xl/worksheets/sheetN.xml` part belongs to which sheet is **not**
+  `sheet_index + 1` -- confirmed via source that chartsheets
+  (`add_chartsheet()`) get their own, separate file-numbering counter
+  from regular worksheets, so a chartsheet interspersed before a given
+  worksheet would desync a naive index-based guess from the real file
+  name. Resolved properly via `xl/workbook.xml`'s `<sheets>` order
+  combined with `xl/_rels/workbook.xml.rels`'s `r:id` -> `Target`
+  mapping, the same approach classic `xlsxwriter` and Excel itself use
+  to resolve sheet identity.
+
+  `set_row_height_pixels()` is untouched and was never affected --
+  its input already is the storage unit, so there's no rounding to
+  patch around.
+
 ## [0.3.3] - 2026-09-16
 
 Patch release, no breaking changes. Adds a read-only `Worksheet.name`

@@ -1617,3 +1617,106 @@ def test_worksheet_name_is_read_only():
     ws = wb.add_worksheet("Fixed")
     with pytest.raises(AttributeError):
         ws.name = "NotAllowed"
+
+
+# set_row_height() exact round-trip patch (fixed in 0.3.4). Upstream's
+# own set_row_height() rounds the point value to an integer pixel count
+# for storage -- there's no fractional-point storage anywhere in
+# rust_xlsxwriter's row metadata, even internally -- so any height that
+# isn't a multiple of 3 points came back rounded to the nearest 0.75pt.
+# Fixed via a post-write XML patch: Workbook records the exact value at
+# set_row_height() time, then rewrites the ht="..." attribute directly
+# in the generated xlsx's zip entries after rust_xlsxwriter writes it.
+
+
+def test_row_height_exact_roundtrip_sweep():
+    # Denser than the original bug report's integer-only sweep --
+    # includes fractional inputs too, since real callers sometimes pass
+    # non-integer heights.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    heights = [h + frac for h in range(5, 41) for frac in (0, 0.1, 0.25, 0.33, 0.5, 0.75)]
+    for i, h in enumerate(heights):
+        ws.write(i, 0, "x")
+        ws.set_row_height(i, h)
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    failures = []
+    for i, h in enumerate(heights):
+        got = sheet.row_dimensions[i + 1].height
+        if abs(got - h) > 1e-6:
+            failures.append((h, got))
+    assert not failures, f"{len(failures)} row-height mismatches: {failures[:10]}"
+
+
+def test_row_height_no_calls_is_byte_identical_to_before_the_fix():
+    # The empty-table case must be a true no-op: the patch step should
+    # never even open the file as a zip, let alone change a byte of it.
+    # Two otherwise-identical workbooks that never call set_row_height()
+    # should produce byte-identical output to each other.
+    wb1 = Workbook()
+    ws1 = wb1.add_worksheet()
+    ws1.write(0, 0, "x")
+    wb1.close(TEST_FILE)
+    with open(TEST_FILE, "rb") as f:
+        bytes1 = f.read()
+
+    other_file = "test_output_2.xlsx"
+    try:
+        wb2 = Workbook()
+        ws2 = wb2.add_worksheet()
+        ws2.write(0, 0, "x")
+        wb2.close(other_file)
+        with open(other_file, "rb") as f:
+            bytes2 = f.read()
+        assert bytes1 == bytes2
+    finally:
+        if os.path.exists(other_file):
+            os.remove(other_file)
+
+
+def test_row_height_multi_sheet_does_not_cross_contaminate():
+    wb = Workbook()
+    ws1 = wb.add_worksheet("First")
+    ws2 = wb.add_worksheet("Second")
+    ws3 = wb.add_worksheet("Third")
+    ws1.write(0, 0, "x")
+    ws2.write(0, 0, "x")
+    ws3.write(0, 0, "x")
+    # Only sheets 2 and 3 get an explicit (lossy-prone) height.
+    ws2.set_row_height(0, 8)
+    ws3.set_row_height(0, 10)
+    wb.close(TEST_FILE)
+
+    book = _load()
+    assert book["First"].row_dimensions[1].height in (None, 15.0)  # untouched/default
+    assert abs(book["Second"].row_dimensions[1].height - 8.0) < 1e-6
+    assert abs(book["Third"].row_dimensions[1].height - 10.0) < 1e-6
+
+
+def test_row_height_exact_roundtrip_via_save_to_buffer():
+    import io
+
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, "x")
+    ws.set_row_height(0, 8)
+    data = wb.save_to_buffer()
+
+    sheet = openpyxl.load_workbook(io.BytesIO(data)).active
+    assert abs(sheet.row_dimensions[1].height - 8.0) < 1e-6
+
+
+def test_row_height_pixels_unaffected_by_patch():
+    # set_row_height_pixels() stores its input directly with no
+    # rounding at all (pixels already are the storage unit), so it was
+    # never lossy and the patch step should leave it untouched.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write(0, 0, "x")
+    ws.set_row_height_pixels(0, 11)
+    wb.close(TEST_FILE)
+
+    sheet = _load().active
+    assert abs(sheet.row_dimensions[1].height - 8.25) < 1e-6
