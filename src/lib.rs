@@ -152,41 +152,138 @@ fn extract_attribute_value<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
 // customHeight="1", if absent -- happens when the exact height the
 // caller passed rounds to the sheet's default height, which upstream
 // then doesn't bother writing an override for at all) on each row in
-// `rows`, within one worksheet's already-generated XML text. Anchors
-// on `<row r="{row+1}"` (the XML r attribute is 1-based; `row` here is
-// the same 0-based value the caller passed to set_row_height()) --
-// including the closing quote in the search string, so looking for row
-// 1 can never prefix-match inside row 11's tag. A row that doesn't
-// appear in the XML at all (shouldn't happen for a row a successful
-// set_row_height() call touched, but never assume) is silently
-// skipped -- there's nothing to patch, not an error.
+// `rows`, within one worksheet's already-generated XML text.
+//
+// Single forward pass over `xml`, not one `.find()` per row: an
+// earlier version searched for each row's `<row r="N"` anchor with
+// `out.find(...)` starting from the beginning of the (already-mutated,
+// growing) string once per row in `rows` -- O(xml_size) per row
+// patched, and since xml_size itself scales with row count, that's
+// O(rows_patched * xml_size) overall, which is quadratic on exactly
+// the export shape this feature exists for (most rows carrying an
+// explicit height). Confirmed via a real user's cProfile trace and a
+// doubling-ratio benchmark showing 3.84x cost per doubling by the
+// third data point (true O(n^2) is 4x per doubling) -- fixed here by
+// walking `xml` once, left to right, recording a (byte offset, bytes
+// to replace, replacement text) patch for each row of interest as it's
+// found, then applying every patch in one second pass that copies each
+// "between" span verbatim and splices in the replacements -- O(xml_size
+// + rows_patched log rows_patched) (the log factor is just sorting the
+// patches by offset; HashMap iteration order isn't sorted, so this is
+// the only way to build the second pass as one skip-and-splice
+// traversal instead of the same string.find()-then-mutate pattern that
+// caused the regression).
+//
+// Anchors on `<row r="{row+1}"` (the XML r attribute is 1-based; `row`
+// here is the same 0-based value the caller passed to
+// set_row_height()) -- including the closing quote in the search
+// string, so row 1 can never prefix-match inside row 11's tag. A row
+// in `rows` that doesn't appear in the XML at all (shouldn't happen
+// for a row a successful set_row_height() call touched, but never
+// assume) is silently skipped -- there's nothing to patch, not an
+// error.
 fn patch_row_heights_in_sheet_xml(xml: &str, rows: &HashMap<u32, f64>) -> String {
-    let mut out = xml.to_string();
-    for (&row, &height) in rows {
-        let row_anchor = format!("<row r=\"{}\"", row + 1);
-        let Some(row_start) = out.find(&row_anchor) else {
+    if rows.is_empty() {
+        return xml.to_string();
+    }
+
+    struct Patch {
+        // Byte offset into the ORIGINAL `xml`, never the in-progress
+        // output -- every patch's position is independent of any
+        // other patch's replacement length, which is exactly what
+        // lets the second pass below apply them all in one traversal
+        // instead of needing to re-find anything after a mutation.
+        start: usize,
+        len: usize, // bytes to skip from `start` in the original (0 for a pure insertion)
+        replacement: String,
+    }
+
+    let mut patches: Vec<Patch> = Vec::with_capacity(rows.len());
+    let mut remaining = rows.len();
+    let mut search_from = 0;
+
+    while remaining > 0 {
+        let Some(rel) = xml[search_from..].find("<row r=\"") else {
+            break;
+        };
+        let row_start = search_from + rel;
+        let num_start = row_start + "<row r=\"".len();
+        let Some(num_len) = xml[num_start..].find('"') else {
+            break;
+        };
+        let num_str = &xml[num_start..num_start + num_len];
+        // Advance past this row's r="N" for the next search regardless
+        // of whether it's one this call cares about -- this monotonic
+        // advance is what keeps the whole while loop to one pass over
+        // `xml`, rather than re-scanning from the start on each
+        // iteration the way the old per-row `.find()` calls did.
+        search_from = num_start + num_len + 1;
+
+        let Ok(row_1_based) = num_str.parse::<u32>() else {
             continue;
         };
-        let Some(tag_end_rel) = out[row_start..].find('>') else {
+        let Some(row_0_based) = row_1_based.checked_sub(1) else {
+            continue;
+        };
+        let Some(&height) = rows.get(&row_0_based) else {
+            continue;
+        };
+
+        let Some(tag_end_rel) = xml[row_start..].find('>') else {
             continue;
         };
         let tag_end = row_start + tag_end_rel;
-        let tag = &out[row_start..tag_end];
+        let tag = &xml[row_start..tag_end];
         let formatted_height = height.to_string();
+
         if let Some(ht_val_start_rel) = tag.find("ht=\"") {
             let ht_val_start = row_start + ht_val_start_rel + "ht=\"".len();
-            let Some(ht_val_len) = out[ht_val_start..].find('"') else {
+            let Some(ht_val_len) = xml[ht_val_start..].find('"') else {
                 continue;
             };
-            out.replace_range(ht_val_start..ht_val_start + ht_val_len, &formatted_height);
+            patches.push(Patch {
+                start: ht_val_start,
+                len: ht_val_len,
+                replacement: formatted_height,
+            });
         } else {
-            // No existing ht attribute -- insert right after the r="N"
-            // attribute's closing quote.
-            let anchor_end = row_start + row_anchor.len();
-            let insertion = format!(" ht=\"{formatted_height}\" customHeight=\"1\"");
-            out.insert_str(anchor_end, &insertion);
+            // No existing ht attribute -- insert right after the
+            // r="N" attribute's closing quote (a pure insertion: 0
+            // bytes of the original are consumed).
+            let anchor_end = num_start + num_len + 1;
+            patches.push(Patch {
+                start: anchor_end,
+                len: 0,
+                replacement: format!(" ht=\"{formatted_height}\" customHeight=\"1\""),
+            });
         }
+        remaining -= 1;
     }
+
+    if patches.is_empty() {
+        return xml.to_string();
+    }
+
+    // HashMap iteration order isn't document order, so the patches
+    // above aren't necessarily sorted by position even though they
+    // were discovered while walking `xml` forward (a given `<row>`'s
+    // patch is pushed as soon as it's found, in whatever order
+    // `rows.get()` happened to be consulted -- no, actually: they ARE
+    // discovered in document order, since the while loop walks `xml`
+    // strictly left to right. This sort is defensive rather than
+    // load-bearing, and its cost (O(k log k) for k patches, k <<
+    // xml_size in every realistic case) is negligible next to the
+    // O(xml_size) traversal itself.
+    patches.sort_by_key(|p| p.start);
+
+    let mut out = String::with_capacity(xml.len() + patches.len() * 24);
+    let mut cursor = 0;
+    for p in &patches {
+        out.push_str(&xml[cursor..p.start]);
+        out.push_str(&p.replacement);
+        cursor = p.start + p.len;
+    }
+    out.push_str(&xml[cursor..]);
     out
 }
 
