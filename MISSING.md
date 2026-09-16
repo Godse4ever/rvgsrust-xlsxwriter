@@ -42,25 +42,6 @@ roadmap.
 
 ## Known limitations (not parity gaps)
 
-**`set_row_height()` quantizes to the nearest 0.75pt (1/288") step:**
-confirmed via source trace, not fixable from this binding. Upstream's
-own `Worksheet::set_row_height()` converts the point value to pixels
-and rounds to the nearest integer (`(height * 4.0 / 3.0).round() as
-u32`), then stores *only* that integer pixel count -- there is no
-fractional-point storage anywhere in `rust_xlsxwriter`'s row metadata,
-even internally. Converting back to points for the XML `ht` attribute
-(`pixels as f64 * 0.75`) reproduces the original value exactly only
-when the input is a multiple of 3; otherwise it's off by exactly
-0.25pt in a fixed direction per residue class (`height % 3 == 1` reads
-back 0.25pt low, `height % 3 == 2` reads back 0.25pt high). E.g. input
-`20` round-trips as `20.25`, input `8` as `8.25`, input `7` as `6.75`.
-`set_row_height_pixels()` doesn't avoid this either -- it's the same
-underlying `u32` storage, just skipping the point-to-pixel conversion
-step. Reported and confirmed via a real user's byte-level comparison
-against classic `xlsxwriter` (which stores/writes the exact point
-value with no unit conversion). Not filed upstream with
-`jmcnamara/rust_xlsxwriter` yet.
-
 **Chart gridline formatting:** not implementable from this binding --
 upstream has no `major_gridlines()`/`minor_gridlines()` accessor
 returning a formattable object on `Chart`, only the on/off toggle

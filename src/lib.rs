@@ -18,6 +18,8 @@ use rust_xlsxwriter::{
 };
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::io::{Cursor, Read, Write};
 
 // ============================================
 // ERROR HELPER
@@ -40,6 +42,272 @@ fn to_pyerr<E: std::fmt::Display>(e: E) -> PyErr {
 // a write() call), so it maps to Python's OSError instead. This is the
 // path most likely to actually hit IoError in practice: see
 // Workbook.close()'s call to save() below.
+// -----------------------------------------------------------------------
+// Row-height exact-value patch
+// -----------------------------------------------------------------------
+//
+// Upstream's own Worksheet::set_row_height() converts the point value
+// to pixels and rounds to the nearest integer for storage:
+//   let pixel_height = (height * 4.0 / 3.0).round() as u32;
+// then stores ONLY that integer pixel count -- rust_xlsxwriter's row
+// metadata has no fractional-point field anywhere, even internally.
+// Converting back to points for the XML `ht` attribute:
+//   let height_in_chars = pixel_height as f64 * 0.75;
+// reproduces the original value exactly only when it was already a
+// multiple of 3 points; otherwise it's off by exactly 0.25pt in a
+// fixed direction (height % 3 == 1 reads back low, == 2 reads back
+// high). Confirmed via a real user's byte-level comparison against
+// classic xlsxwriter (which stores/writes the exact point value with
+// no unit conversion) and via direct source trace of both conversion
+// steps above.
+//
+// Not fixable by calling a different upstream method -- the precision
+// is destroyed at the storage layer (a u32), not at a conversion
+// boundary reachable from any public API, including
+// set_row_height_pixels() (which stores its input directly with no
+// rounding at all, since pixels already are the storage unit -- that
+// path was never lossy and isn't touched by any of this).
+//
+// The only lossless fix is a post-write XML patch: after
+// rust_xlsxwriter writes the file, reopen it as a zip, rewrite the
+// `ht="..."` attribute on each row the caller explicitly set a height
+// on (recorded verbatim in Workbook.exact_row_heights at
+// Worksheet.set_row_height() time, before precision is lost), and
+// re-zip. A true no-op (returns the input unchanged, no zip touched at
+// all) when no one called set_row_height() -- the common case.
+
+// sheet_index (0-based, matches Worksheet.index and rust_xlsxwriter's
+// own internal worksheets Vec position -- see add_worksheet() above
+// for why those can't drift relative to each other) -> the ordered
+// list of <sheet r:id="..."/> values from xl/workbook.xml's <sheets>
+// element, read in document order. Deliberately NOT resolved as
+// "worksheets/sheet{sheet_index+1}.xml" -- confirmed via source that
+// chartsheets get their own, separate file-numbering counter
+// (num_chartsheets vs num_worksheets in rust_xlsxwriter's package
+// assembly), so a chartsheet interspersed before a given worksheet
+// would desync any naive index-based guess from the real file name. A
+// missing/malformed <sheets> element (shouldn't happen for a file this
+// crate just wrote) yields an empty list, which safely resolves no
+// parts, patching nothing rather than guessing wrong.
+fn extract_sheet_rids_in_order(workbook_xml: &str) -> Vec<String> {
+    let mut rids = Vec::new();
+    let Some(sheets_start) = workbook_xml.find("<sheets") else {
+        return rids;
+    };
+    let Some(sheets_end_rel) = workbook_xml[sheets_start..].find("</sheets>") else {
+        return rids;
+    };
+    let sheets_block = &workbook_xml[sheets_start..sheets_start + sheets_end_rel];
+    let mut search_from = 0;
+    while let Some(tag_rel) = sheets_block[search_from..].find("<sheet ") {
+        let tag_start = search_from + tag_rel;
+        let Some(tag_end_rel) = sheets_block[tag_start..].find('>') else {
+            break;
+        };
+        let tag = &sheets_block[tag_start..tag_start + tag_end_rel];
+        if let Some(rid) = extract_attribute_value(tag, "r:id") {
+            rids.push(rid.to_string());
+        }
+        search_from = tag_start + tag_end_rel + 1;
+    }
+    rids
+}
+
+// r:id -> Target, from xl/_rels/workbook.xml.rels' <Relationship
+// Id="rIdN" ... Target="worksheets/sheetN.xml"/> elements. Targets in
+// a rels file are relative to the part that owns the rels (xl/, for
+// workbook.xml.rels), per the OOXML package-relationships convention.
+fn extract_rid_to_target(rels_xml: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut search_from = 0;
+    while let Some(tag_rel) = rels_xml[search_from..].find("<Relationship ") {
+        let tag_start = search_from + tag_rel;
+        let Some(tag_end_rel) = rels_xml[tag_start..].find('>') else {
+            break;
+        };
+        let tag = &rels_xml[tag_start..tag_start + tag_end_rel];
+        if let (Some(id), Some(target)) = (
+            extract_attribute_value(tag, "Id"),
+            extract_attribute_value(tag, "Target"),
+        ) {
+            map.insert(id.to_string(), target.to_string());
+        }
+        search_from = tag_start + tag_end_rel + 1;
+    }
+    map
+}
+
+// Finds attr="value" within a single XML start tag's text and returns
+// `value`. Anchors on `{attr}="` so e.g. looking for `r` never matches
+// inside `r:id` or `spans` -- the search string includes the `="`
+// itself, which only that exact attribute name can precede.
+fn extract_attribute_value<'a>(tag: &'a str, attr: &str) -> Option<&'a str> {
+    let needle = format!("{attr}=\"");
+    let start = tag.find(&needle)? + needle.len();
+    let end = start + tag[start..].find('"')?;
+    Some(&tag[start..end])
+}
+
+// Rewrites the `ht="..."` attribute (or inserts one, with
+// customHeight="1", if absent -- happens when the exact height the
+// caller passed rounds to the sheet's default height, which upstream
+// then doesn't bother writing an override for at all) on each row in
+// `rows`, within one worksheet's already-generated XML text. Anchors
+// on `<row r="{row+1}"` (the XML r attribute is 1-based; `row` here is
+// the same 0-based value the caller passed to set_row_height()) --
+// including the closing quote in the search string, so looking for row
+// 1 can never prefix-match inside row 11's tag. A row that doesn't
+// appear in the XML at all (shouldn't happen for a row a successful
+// set_row_height() call touched, but never assume) is silently
+// skipped -- there's nothing to patch, not an error.
+fn patch_row_heights_in_sheet_xml(xml: &str, rows: &HashMap<u32, f64>) -> String {
+    let mut out = xml.to_string();
+    for (&row, &height) in rows {
+        let row_anchor = format!("<row r=\"{}\"", row + 1);
+        let Some(row_start) = out.find(&row_anchor) else {
+            continue;
+        };
+        let Some(tag_end_rel) = out[row_start..].find('>') else {
+            continue;
+        };
+        let tag_end = row_start + tag_end_rel;
+        let tag = &out[row_start..tag_end];
+        let formatted_height = height.to_string();
+        if let Some(ht_val_start_rel) = tag.find("ht=\"") {
+            let ht_val_start = row_start + ht_val_start_rel + "ht=\"".len();
+            let Some(ht_val_len) = out[ht_val_start..].find('"') else {
+                continue;
+            };
+            out.replace_range(ht_val_start..ht_val_start + ht_val_len, &formatted_height);
+        } else {
+            // No existing ht attribute -- insert right after the r="N"
+            // attribute's closing quote.
+            let anchor_end = row_start + row_anchor.len();
+            let insertion = format!(" ht=\"{formatted_height}\" customHeight=\"1\"");
+            out.insert_str(anchor_end, &insertion);
+        }
+    }
+    out
+}
+
+fn read_zip_entry_to_string<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> PyResult<String> {
+    let mut entry = archive.by_name(name).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+            "row-height patch: couldn't find '{name}' in the generated xlsx: {e}"
+        ))
+    })?;
+    let mut content = String::new();
+    entry.read_to_string(&mut content).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+            "row-height patch: couldn't read '{name}': {e}"
+        ))
+    })?;
+    Ok(content)
+}
+
+// Entry point. `exact_heights` empty -> returns `xlsx_bytes` completely
+// untouched (not even opened as a zip). Non-empty -> resolves which
+// worksheet XML parts are actually affected, patches only those, and
+// copies every other zip entry verbatim (raw_copy_file -- unchanged
+// compression and all, so an untouched sheet's bytes are bit-identical
+// to what rust_xlsxwriter itself would have produced). Any I/O or
+// zip-format error here is propagated as a clean PyErr rather than
+// silently falling back to the unpatched (lossy) bytes -- a failure
+// this deep means something unexpected about the file's structure, and
+// silently keeping the lossy output would hide that a promised exact
+// round-trip didn't happen.
+fn patch_row_heights(
+    xlsx_bytes: Vec<u8>,
+    exact_heights: &HashMap<usize, HashMap<u32, f64>>,
+) -> PyResult<Vec<u8>> {
+    if exact_heights.is_empty() {
+        return Ok(xlsx_bytes);
+    }
+
+    let mut archive = zip::ZipArchive::new(Cursor::new(&xlsx_bytes)).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+            "row-height patch: failed to open the generated xlsx as a zip archive: {e}"
+        ))
+    })?;
+
+    let workbook_xml = read_zip_entry_to_string(&mut archive, "xl/workbook.xml")?;
+    let rids_in_order = extract_sheet_rids_in_order(&workbook_xml);
+    let rels_xml = read_zip_entry_to_string(&mut archive, "xl/_rels/workbook.xml.rels")?;
+    let rid_to_target = extract_rid_to_target(&rels_xml);
+
+    let mut part_paths: HashMap<usize, String> = HashMap::new();
+    for (sheet_index, rid) in rids_in_order.iter().enumerate() {
+        if !exact_heights.contains_key(&sheet_index) {
+            continue;
+        }
+        if let Some(target) = rid_to_target.get(rid) {
+            part_paths.insert(sheet_index, format!("xl/{target}"));
+        }
+    }
+
+    let mut patched_parts: HashMap<String, String> = HashMap::new();
+    for (sheet_index, rows) in exact_heights {
+        let Some(part_path) = part_paths.get(sheet_index) else {
+            continue;
+        };
+        let xml = match patched_parts.get(part_path) {
+            Some(existing) => existing.clone(),
+            None => read_zip_entry_to_string(&mut archive, part_path)?,
+        };
+        let patched = patch_row_heights_in_sheet_xml(&xml, rows);
+        patched_parts.insert(part_path.clone(), patched);
+    }
+
+    if patched_parts.is_empty() {
+        // Every sheet_index in exact_heights failed to resolve to a
+        // real part (shouldn't happen for a file this crate just
+        // wrote) -- nothing to patch, return the original bytes rather
+        // than doing a pointless rezip.
+        return Ok(xlsx_bytes);
+    }
+
+    let mut out_buf: Vec<u8> = Vec::with_capacity(xlsx_bytes.len());
+    {
+        let mut writer = zip::ZipWriter::new(Cursor::new(&mut out_buf));
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).map_err(|e| {
+                PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+                    "row-height patch: failed to read zip entry {i}: {e}"
+                ))
+            })?;
+            let name = entry.name().to_string();
+            if let Some(new_xml) = patched_parts.get(&name) {
+                let options = entry.options();
+                writer.start_file(name, options).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+                        "row-height patch: failed to start writing patched entry: {e}"
+                    ))
+                })?;
+                writer.write_all(new_xml.as_bytes()).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+                        "row-height patch: failed to write patched entry: {e}"
+                    ))
+                })?;
+            } else {
+                writer.raw_copy_file(entry).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+                        "row-height patch: failed to copy an unpatched zip entry: {e}"
+                    ))
+                })?;
+            }
+        }
+        writer.finish().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyOSError, _>(format!(
+                "row-height patch: failed to finalize the patched xlsx: {e}"
+            ))
+        })?;
+    }
+    Ok(out_buf)
+}
+
 fn xlsx_err_to_pyerr(e: rust_xlsxwriter::XlsxError) -> PyErr {
     match e {
         rust_xlsxwriter::XlsxError::IoError(io_err) => {
@@ -2832,8 +3100,24 @@ impl Worksheet {
         self.with_sheet(py, |sheet| sheet.set_column_width(col, width).map(|_| ()))
     }
 
+    // Upstream's own set_row_height() rounds the point value to pixels
+    // for storage (integer u32), so anything that isn't a multiple of 3
+    // points comes back rounded to the nearest 0.75pt -- see
+    // exact_row_heights' doc comment on Workbook and patch_row_heights()
+    // below for the full story and the fix. Recorded only after the
+    // upstream call succeeds, so a failed call (e.g. row out of range)
+    // never pollutes the table with a height that was never actually
+    // applied.
     fn set_row_height(&self, py: Python<'_>, row: u32, height: f64) -> PyResult<()> {
-        self.with_sheet(py, |sheet| sheet.set_row_height(row, height).map(|_| ()))
+        self.with_sheet(py, |sheet| sheet.set_row_height(row, height).map(|_| ()))?;
+        let wb_ref = self.workbook.borrow(py);
+        wb_ref
+            .exact_row_heights
+            .borrow_mut()
+            .entry(self.index)
+            .or_default()
+            .insert(row, height);
+        Ok(())
     }
 
     fn freeze_panes(&self, py: Python<'_>, row: u32, col: u16) -> PyResult<()> {
@@ -3663,6 +3947,20 @@ impl Worksheet {
 #[pyclass(subclass)]
 struct Workbook {
     inner: RefCell<RustWorkbook>,
+    // sheet_index (Worksheet.index -- 0-based creation order, confirmed
+    // to match rust_xlsxwriter's own internal worksheets Vec position
+    // 1:1, see add_worksheet() below) -> { row (0-based) -> the exact
+    // f64 the caller passed to set_row_height() }. Populated only when
+    // set_row_height() is actually called; empty otherwise, so the
+    // patch step in close()/save_to_buffer() below is a true no-op
+    // (skipped entirely) for the common case. See patch_row_heights()
+    // for why this exists: upstream's own set_row_height() rounds the
+    // point value to an integer pixel count for storage, so anything
+    // that isn't already a multiple of 3 points comes back off by up
+    // to 0.25pt -- confirmed via source trace, not fixable by calling
+    // a different upstream method, since the imprecision is baked into
+    // the storage layer (a u32 pixel count), not a conversion step.
+    exact_row_heights: RefCell<HashMap<usize, HashMap<u32, f64>>>,
 }
 
 #[pymethods]
@@ -3671,6 +3969,7 @@ impl Workbook {
     fn new() -> Self {
         Workbook {
             inner: RefCell::new(RustWorkbook::new()),
+            exact_row_heights: RefCell::new(HashMap::new()),
         }
     }
 
@@ -3796,17 +4095,27 @@ impl Workbook {
 
     // `py` is injected by pyo3 and is not part of the Python-visible
     // signature, so this remains `wb.close(path)` from Python.
+    //
+    // Routes through save_to_buffer() internally rather than calling
+    // rust_xlsxwriter's own save(path) directly, so the row-height
+    // patch below (see patch_row_heights()) can run on the bytes
+    // before anything reaches disk -- confirmed save()/save_to_buffer()
+    // are otherwise equivalent (both just call the same internal
+    // save_internal(), writing to a File vs an in-memory Cursor
+    // respectively), so this changes nothing about the unpatched
+    // output, only adds the patch step and moves the disk write to
+    // after it.
     fn close(&self, py: Python<'_>, path: &str) -> PyResult<()> {
         let mut guard = self
             .inner
             .try_borrow_mut()
             .map_err(|_| reentrant_workbook_err())?;
 
-        // save() is the single longest operation in the library -- it
-        // serialises every worksheet and deflates the whole archive -- and it
-        // touches no Python objects at all. Holding the GIL across it stalls
-        // every other thread in the process for the entire duration, which for
-        // a large workbook is seconds.
+        // save_to_buffer() is the single longest operation in the library
+        // -- it serialises every worksheet and deflates the whole archive
+        // -- and it touches no Python objects at all. Holding the GIL
+        // across it stalls every other thread in the process for the
+        // entire duration, which for a large workbook is seconds.
         //
         // Soundness of releasing it here:
         //  - Ungil is satisfied via Send (pyo3 0.22 marker.rs: `unsafe impl<T:
@@ -3821,9 +4130,23 @@ impl Workbook {
         //    happens under the GIL: the guard is created before the release and
         //    dropped after the re-acquire. Nothing touches the flag while the
         //    GIL is released.
+        //
+        // The row-height patch below runs after allow_threads returns
+        // (GIL held) rather than inside it -- it constructs PyErr on
+        // its error paths, which needs the GIL, and it's a small
+        // string-level patch over already-serialised XML, not the
+        // heavy serialise-and-deflate work above, so the GIL-hold cost
+        // here is minor even in the row-height-patching case (which is
+        // itself the uncommon path -- the empty-table case doesn't even
+        // open the file as a zip).
         let workbook: &mut RustWorkbook = &mut guard;
-        py.allow_threads(move || workbook.save(path))
+        let buf: Vec<u8> = py
+            .allow_threads(move || workbook.save_to_buffer())
             .map_err(xlsx_err_to_pyerr)?;
+        let buf = patch_row_heights(buf, &self.exact_row_heights.borrow())?;
+        std::fs::write(path, buf).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyOSError, _>(format!("failed to write '{path}': {e}"))
+        })?;
         Ok(())
     }
 
@@ -3849,6 +4172,7 @@ impl Workbook {
         let buf: Vec<u8> = py
             .allow_threads(move || workbook.save_to_buffer())
             .map_err(xlsx_err_to_pyerr)?;
+        let buf = patch_row_heights(buf, &self.exact_row_heights.borrow())?;
         Ok(PyBytes::new_bound(py, &buf).unbind())
     }
 
