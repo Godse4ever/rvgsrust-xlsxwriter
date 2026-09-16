@@ -75,7 +75,7 @@ Quick Start
 # code 2, taking the whole test job with it.
 from __future__ import annotations
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 __author__ = "RVGS Team"
 __license__ = "MIT"
 

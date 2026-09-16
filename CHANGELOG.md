@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] - 2026-09-16
+
+Patch release, no breaking changes. Fixes a real, high-severity
+performance regression introduced in 0.3.4: `close()`/`save_to_buffer()`
+became effectively quadratic in row count on exports where most rows
+carry an explicit `set_row_height()` call -- large real-world exports
+(thousands of rows) could take many times longer than 0.3.3, or hang
+outright. Reported with a precise cProfile trace and a doubling-ratio
+benchmark (3.84x cost per doubling by the third data point -- true
+O(n^2) is 4x) isolating the regression to exactly this pattern and
+confirming it wasn't present in 0.3.3.
+
+### Fixed
+
+- **The 0.3.4 row-height exact-value patch was O(rows_patched x
+  xml_size) instead of O(xml_size).** The bug: it located each patched
+  row's `<row r="...">` element with `str::find()` starting from the
+  beginning of the (already-mutated, growing) worksheet XML string,
+  once per row in the patch table -- so total cost scaled with both
+  the number of patched rows *and* the size of the XML those rows sit
+  in, which itself grows with row count. Fixed by walking the XML once,
+  left to right, recording every patched row's byte offset and
+  replacement text as it's found (each row's `r="N"` is only ever
+  visited once, in document order), then applying every patch in a
+  single second pass that copies the XML between patches verbatim and
+  splices in the replacements -- O(xml_size + rows_patched log
+  rows_patched), the log factor being only the cost of sorting patches
+  by position since `HashMap` iteration order isn't document order.
+  The exact-value correctness fix from 0.3.4 itself is unchanged --
+  same output, just not quadratic to produce.
+- Added a regression test asserting `close()` time grows close to
+  linearly (under 3x, generously below true O(n^2)'s 4x) across a
+  doubling of rows with per-row heights, so a future change can't
+  silently reintroduce this the way 0.3.4 did.
+
 ## [0.3.4] - 2026-09-16
 
 Patch release, no breaking changes. Fixes the `set_row_height()`

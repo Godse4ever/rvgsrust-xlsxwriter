@@ -1720,3 +1720,51 @@ def test_row_height_pixels_unaffected_by_patch():
 
     sheet = _load().active
     assert abs(sheet.row_dimensions[1].height - 8.25) < 1e-6
+
+
+def test_row_height_patch_is_not_quadratic():
+    # Regression test for a real O(n^2) close() slowdown found in 0.3.4:
+    # the row-height patch used to re-scan the entire (growing) sheet
+    # XML from the beginning for every single patched row, via
+    # str.find() starting fresh each time, rather than a single forward
+    # pass -- O(rows_patched * xml_size), which is O(n^2) whenever most
+    # rows carry an explicit height (confirmed via a user's cProfile
+    # trace and a doubling-ratio benchmark showing ~3.84x cost per
+    # doubling, vs. true O(n^2)'s 4x). Fixed by resolving every row's
+    # patch position in one linear walk over the XML, then applying all
+    # of them in a second single pass.
+    #
+    # A doubling-ratio check rather than an absolute wall-clock
+    # threshold, since CI runners vary in speed -- a fixed-time budget
+    # would be flaky on a slow runner and meaningless on a fast one. A
+    # true O(n^2) algorithm costs ~4x per doubling; this asserts well
+    # under that (3.0x) to leave headroom for CI noise while still
+    # catching a real regression, which showed 3.84x already at a much
+    # smaller row count than used here.
+    import time
+
+    def close_time(n_rows):
+        wb = Workbook()
+        ws = wb.add_worksheet()
+        for r in range(n_rows):
+            ws.write(r, 0, "x")
+            ws.set_row_height(r, 16)
+        start = time.perf_counter()
+        wb.close(TEST_FILE)
+        return time.perf_counter() - start
+
+    # Warm up (first call in a process can carry extra one-time cost --
+    # module loading, allocator warm-up -- unrelated to the algorithm
+    # being tested) before timing the two data points that matter.
+    close_time(50)
+
+    t_small = close_time(400)
+    t_large = close_time(800)
+
+    ratio = t_large / t_small if t_small > 0 else 0
+    assert ratio < 3.0, (
+        f"close() time roughly {ratio:.2f}x from 400 to 800 rows with "
+        f"per-row heights (400: {t_small:.3f}s, 800: {t_large:.3f}s) -- "
+        "should be close to linear (~2x); this large a jump suggests "
+        "the row-height patch has become quadratic again."
+    )
