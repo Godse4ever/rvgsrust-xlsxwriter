@@ -229,6 +229,25 @@ ws.write_url(7, 0, "https://github.com/Godse4ever/rvgsrust-xlsxwriter",
              text="Project home", tip="Opens the GitHub repo")
 ```
 
+### Error Values
+
+`write_error(row, col, error_code, format=None)` writes a genuine
+Excel error-typed cell -- `#DIV/0!`, `#N/A`, `#NAME?`, `#NULL!`,
+`#NUM!`, `#REF!`, `#VALUE!`, or `#GETTING_DATA` -- not a string that
+merely looks like one. This is different from
+`Worksheet.set_nan_value()`/`set_infinity_value()`/
+`set_neg_infinity_value()`: those substitute a *string* for an
+unrepresentable float (upstream's own NaN/Inf mechanism), so a
+number-typed write with `float("nan")` always ends up as a string
+cell, never a true error cell, no matter what value those are
+configured with. `write_error()` is the only way to get a cell that
+Excel and readers like openpyxl recognize as `data_type == "e"`.
+
+```python
+ws.write_error(0, 0, "#N/A")
+ws.write_error(0, 1, "#DIV/0!", bold_format)
+```
+
 ### Dates & Times
 
 ```python

@@ -200,6 +200,32 @@ fn parse_border(border: &str) -> PyResult<FormatBorder> {
     }
 }
 
+// Maps each of the 8 error codes Excel recognizes to a formula that
+// genuinely evaluates to that same error, so a live recalculation in
+// Excel (e.g. the user hits F9) stays consistent with the cached
+// result write_error() sets below -- not just a syntactically-valid
+// placeholder. #GETTING_DATA is the one exception: it only ever occurs
+// transiently during a live external-data-connection refresh and
+// can't be constructed via a static formula at all, so NA() is used
+// there purely as a harmless placeholder; the cached value is the only
+// way to represent it, by definition.
+fn parse_error_code(error_code: &str) -> PyResult<&'static str> {
+    match error_code {
+        "#DIV/0!" => Ok("1/0"),
+        "#N/A" => Ok("NA()"),
+        "#NAME?" => Ok("_RVGSRUST_UNDEFINED_FUNCTION_()"),
+        "#NULL!" => Ok("A1 A2"),
+        "#NUM!" => Ok("SQRT(-1)"),
+        "#REF!" => Ok("OFFSET(A1,-1,0)"),
+        "#VALUE!" => Ok("\"a\"+1"),
+        "#GETTING_DATA" => Ok("NA()"),
+        other => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Unknown error code '{other}'. Expected one of: #DIV/0!, #N/A, #NAME?, \
+             #NULL!, #NUM!, #REF!, #VALUE!, #GETTING_DATA"
+        ))),
+    }
+}
+
 fn parse_font_script(script: &str) -> PyResult<rust_xlsxwriter::FormatScript> {
     match script.to_lowercase().as_str() {
         "none" => Ok(rust_xlsxwriter::FormatScript::None),
@@ -3073,6 +3099,41 @@ impl Worksheet {
                 .write_formula_with_format(row, col, formula, f)
                 .map(|_| ()),
             None => sheet.write_formula(row, col, formula).map(|_| ()),
+        })
+    }
+
+    // Writes a genuine Excel error-typed cell (t="e" in the XML, and
+    // openpyxl reads it back as cell.data_type == "e") rather than a
+    // string that merely looks like an error. Excel has no way to write
+    // a literal error value directly -- upstream's own mechanism is a
+    // formula whose cached result is an error string, so that's what
+    // this does under the hood: writes a real formula that evaluates to
+    // the same error (see parse_error_code() above for exactly which
+    // one per code), then overrides its cached result to match. Callers
+    // don't need to know any of that; it's just write_error(row, col,
+    // "#NUM!"). Unlike set_nan_value()/set_infinity_value(), which
+    // substitute a *string* for an unrepresentable float and were never
+    // going to produce a true error cell (that's how upstream's own
+    // NaN/Inf handling works, not a limitation of this binding).
+    #[pyo3(signature = (row, col, error_code, format=None))]
+    fn write_error(
+        &self,
+        py: Python<'_>,
+        row: u32,
+        col: u16,
+        error_code: &str,
+        format: Option<&Format>,
+    ) -> PyResult<()> {
+        self.check_row_order(row)?;
+        let formula = parse_error_code(error_code)?;
+        let fmt = format.map(|f| &f.inner);
+        self.with_sheet(py, |sheet| {
+            match fmt {
+                Some(f) => sheet.write_formula_with_format(row, col, formula, f)?,
+                None => sheet.write_formula(row, col, formula)?,
+            };
+            sheet.set_formula_result(row, col, error_code);
+            Ok(())
         })
     }
 
