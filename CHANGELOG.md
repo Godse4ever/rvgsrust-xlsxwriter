@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-09-15
+
+Patch release, no breaking changes. Adds a way to write genuine
+Excel error-typed cells, surfaced by a user question asking whether
+`set_nan_value()`/etc. could produce a true error cell (they can't --
+that's upstream's own NaN/Inf string-substitution mechanism, not a
+limitation of this binding).
+
+### Added
+
+- **`Worksheet.write_error(row, col, error_code, format=None)`.**
+  Writes a genuine `t="e"` error cell for any of Excel's 8 recognized
+  error codes: `#DIV/0!`, `#N/A`, `#NAME?`, `#NULL!`, `#NUM!`, `#REF!`,
+  `#VALUE!`, `#GETTING_DATA`. Upstream has no way to write a literal
+  error value directly -- its own mechanism is a formula whose cached
+  result is an error string, so that's what this does internally:
+  writes a formula that genuinely evaluates to the same error (so a
+  live Excel recalculation stays consistent, not just the initial
+  cached display), then overrides its cached result to match. Callers
+  don't need to know any of that -- it's just
+  `ws.write_error(row, col, "#NUM!")`. `#GETTING_DATA` is the one
+  exception to the "genuinely evaluates to" property: it only ever
+  occurs transiently during a live external-data-connection refresh
+  and can't be constructed via a static formula at all, so the cached
+  value is the only way to represent it, by definition.
+
+  Design choice worth noting: this is a convenience wrapping upstream's
+  two-step `write_formula()` + `set_formula_result()` mechanism, rather
+  than exposing that mechanism directly -- matches this project's
+  established pattern of validating a small fixed set of string values
+  and raising a clean `ValueError` on anything else (`parse_border()`,
+  `parse_ignore_error()`), and avoids leaking an internal
+  implementation detail (formula result caching) into a Python API
+  where nobody asking for an error cell should need to know about it.
+
 ## [0.3.1] - 2026-09-14
 
 Patch release, no breaking changes. Two real gaps surfaced during a

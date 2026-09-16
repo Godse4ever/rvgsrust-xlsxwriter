@@ -26,6 +26,9 @@ BorderStyle = Literal[
     "medium_dash_dot_dot", "slant_dash_dot",
 ]
 DiagonalBorderType = Literal["none", "up", "down", "up_down"]
+ExcelErrorCode = Literal[
+    "#DIV/0!", "#N/A", "#NAME?", "#NULL!", "#NUM!", "#REF!", "#VALUE!", "#GETTING_DATA",
+]
 Align = Literal["left", "center", "right", "fill", "justify", "center_across", "distributed"]
 VerticalAlign = Literal["top", "vcenter", "center", "bottom", "vdistributed", "distributed", "vjustify", "justify"]
 Pattern = Literal[
@@ -277,6 +280,15 @@ class Worksheet:
         """
         ...
     def write_formula(self, row: int, col: int, formula: str, format: Optional[Format] = None) -> None: ...
+    def write_error(
+        self, row: int, col: int, error_code: ExcelErrorCode, format: Optional[Format] = None
+    ) -> None:
+        """Writes a genuine Excel error-typed cell (t="e"; openpyxl reads
+        it back as cell.data_type == "e"), not a string that merely looks
+        like an error. Internally a formula that evaluates to the same
+        error, with its cached result overridden to match -- see the
+        source for exactly which formula per code."""
+        ...
     def write_url(
         self, row: int, col: int, url: str, format: Optional[Format] = None,
         text: Optional[str] = None, tip: Optional[str] = None,

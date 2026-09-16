@@ -1502,3 +1502,84 @@ def test_set_screen_gridlines_independent_of_print_gridlines():
         sheet_xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
     assert 'showGridLines="0"' in sheet_xml
     assert "<printOptions" in sheet_xml
+
+
+# write_error(): writes a genuine Excel error-typed cell (t="e" in the
+# XML), not a string that merely looks like one -- see the discussion
+# in CHANGELOG.md's 0.3.2 entry for why set_nan_value()/etc. can't do
+# this (they substitute a string for an unrepresentable float, which is
+# upstream's own NaN/Inf mechanism, not a true error cell). Internally
+# writes a formula that genuinely evaluates to the same error, with its
+# cached result overridden to match, so openpyxl (opened with
+# data_only=True, which reads cached values instead of formula text)
+# reads back data_type == "e" and the exact error string.
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    ["#DIV/0!", "#N/A", "#NAME?", "#NULL!", "#NUM!", "#REF!", "#VALUE!", "#GETTING_DATA"],
+)
+def test_write_error_all_codes(error_code):
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_error(0, 0, error_code)
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE, data_only=True).active
+    cell = sheet["A1"]
+    assert cell.data_type == "e"
+    assert cell.value == error_code
+
+
+def test_write_error_is_not_a_string_cell():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.write_error(0, 0, "#NUM!")
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE, data_only=True).active
+    cell = sheet["A1"]
+    assert cell.data_type != "s"
+    assert isinstance(cell.value, str)  # the error code itself is a str,
+    assert cell.data_type == "e"  # but the cell TYPE is error, not string
+
+
+def test_write_error_with_format():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    fmt = wb.add_format()
+    fmt.set_bold()
+    fmt.set_font_color("red")
+    ws.write_error(0, 0, "#DIV/0!", fmt)
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE, data_only=True).active
+    cell = sheet["A1"]
+    assert cell.data_type == "e"
+    assert cell.value == "#DIV/0!"
+    assert cell.font.bold is True
+
+
+def test_write_error_invalid_code_raises():
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    with pytest.raises(ValueError, match="#NUM!"):
+        ws.write_error(0, 0, "#BOGUS!")
+
+
+def test_write_error_contrasts_with_set_nan_value_string_output():
+    # Confirms the distinction the feature exists to draw: set_nan_value()
+    # genuinely produces a string cell (t="s"/"str"), not an error cell --
+    # this isn't a bug, it's upstream's own NaN/Inf substitution mechanism.
+    # write_error() is the only way to get a real t="e" cell.
+    wb = Workbook()
+    ws = wb.add_worksheet()
+    ws.set_nan_value("#NUM!")
+    ws.write(0, 0, float("nan"))
+    ws.write_error(0, 1, "#NUM!")
+    wb.close(TEST_FILE)
+
+    sheet = openpyxl.load_workbook(TEST_FILE, data_only=True).active
+    assert sheet["A1"].data_type == "s"
+    assert sheet["B1"].data_type == "e"
+    assert sheet["A1"].value == sheet["B1"].value == "#NUM!"
