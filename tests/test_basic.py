@@ -1583,3 +1583,37 @@ def test_write_error_contrasts_with_set_nan_value_string_output():
     assert sheet["A1"].data_type == "s"
     assert sheet["B1"].data_type == "e"
     assert sheet["A1"].value == sheet["B1"].value == "#NUM!"
+
+
+# Worksheet.name: read-only getter matching classic xlsxwriter's
+# worksheet.name attribute shape. Upstream's own Worksheet::name()
+# getter was never wrapped in this binding at all.
+
+
+def test_worksheet_name_getter_explicit():
+    wb = Workbook()
+    ws = wb.add_worksheet("MySheet")
+    assert ws.name == "MySheet"
+
+
+def test_worksheet_name_getter_default_auto_generated():
+    wb = Workbook()
+    ws1 = wb.add_worksheet()
+    ws2 = wb.add_worksheet()
+    assert ws1.name == "Sheet1"
+    assert ws2.name == "Sheet2"
+
+
+def test_worksheet_name_getter_reflects_set_name():
+    wb = Workbook()
+    ws = wb.add_worksheet("Original")
+    assert ws.name == "Original"
+    ws.set_name("Renamed")
+    assert ws.name == "Renamed"
+
+
+def test_worksheet_name_is_read_only():
+    wb = Workbook()
+    ws = wb.add_worksheet("Fixed")
+    with pytest.raises(AttributeError):
+        ws.name = "NotAllowed"
